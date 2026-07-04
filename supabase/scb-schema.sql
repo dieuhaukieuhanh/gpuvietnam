@@ -190,10 +190,10 @@ COMMENT ON TABLE public.gpu_sessions IS
   'Machine (public.machines) is a disposable projection.';
 
 COMMENT ON COLUMN public.gpu_sessions.status IS
-  'SCB 3.0 session lifecycle target: pending -> running -> closed. '
-  'Legacy values closing/interrupted/completed are retained in the CHECK during M2 for '
-  'backward compatibility; they will be removed from the CHECK in M3 after the Session/Billing rewrite. '
-  'New code MUST write only pending / running / closed.';
+  'SCB 3.0 session lifecycle: pending -> running -> closed (enforced by '
+  'gpu_sessions_status_check since M5). Legacy values closing / interrupted / '
+  'completed are NO LONGER accepted by the CHECK. Runtime writes only '
+  'pending / running / closed — verified by the M5 final runtime audit.';
 
 COMMENT ON COLUMN public.gpu_sessions.started_at IS
   'SCB 3.0 billable start timestamp. NULL when status=pending (not yet billable). '
@@ -323,8 +323,10 @@ COMMENT ON COLUMN public.machines.gpu_session_id IS
 --     AND conname = 'machines_gpu_session_fk';
 --
 -- NOTE on validating NOT VALID constraints:
---   After M3 (Session/Billing rewrite) and M6 (Destroy Pipeline rewrite)
---   complete and the legacy status values are migrated, run:
+--   AUTOMATED by supabase/scb-schema-m5-finalize.sql (M5) since the M5 final
+--   runtime audit returned PASS. M5 also narrows gpu_sessions.status CHECK to
+--   ('pending','running','closed'). Do NOT re-run the statements below by hand
+--   unless M5 reported a failure; M5 is idempotent and safe to re-run instead.
 --     ALTER TABLE public.gpu_sessions VALIDATE CONSTRAINT gpu_sessions_pending_has_no_started_at;
 --     ALTER TABLE public.gpu_sessions VALIDATE CONSTRAINT gpu_sessions_running_requires_machine_id;
 --     ALTER TABLE public.gpu_sessions VALIDATE CONSTRAINT gpu_sessions_running_requires_verified_running_at;

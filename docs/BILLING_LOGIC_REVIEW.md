@@ -1,5 +1,19 @@
 # BILLING_LOGIC_REVIEW
 
+> **STATUS — OUTDATED (pre-SCB-3.0 model):** Tài liệu này review mô hình
+> **per-minute tick billing** (`deductPerMinute`, `stopBilling`,
+> `applyBillingDeduction`, `chargeWalletForHours`,
+> `deductHoursFromInventoryPlan`) — các hàm này **đã bị xóa** trong quá trình
+> rebuild SCB (xem `docs/IMPLEMENTATION_REPORT_M6.md`). Billing hiện tại là
+> **Session-Centric Settlement** (SCB): settlement chạy một lần sau Provider
+> Verify DESTROYED, và từ **SCB 3.4B** bước commit (W2–W7) thực hiện atomic
+> trong RPC `settle_session_transaction()`. **Đừng dùng tài liệu này làm
+> reference cho code hiện tại.** Tham chiếu chính thức:
+> [`docs/scb/SCB-ARCHITECTURE.md`](./scb/SCB-ARCHITECTURE.md),
+> [`docs/SESSION_CENTRIC_BILLING_ARCHITECTURE.md`](./SESSION_CENTRIC_BILLING_ARCHITECTURE.md),
+> [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md).
+> Nội dung bên dưới giữ nguyên làm bản ghi lịch sử của review pre-SCB.
+
 Tài liệu mô tả **logic hiện tại** của hệ thống billing / session / machine, dựa trên code trong repo `gpuvietnam` tại thời điểm review.
 
 **Quy ước:** Không mô tả mong muốn. Không suy đoán. Phần chưa xác minh từ code ghi **UNKNOWN**.

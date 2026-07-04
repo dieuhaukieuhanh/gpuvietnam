@@ -112,3 +112,68 @@ describe('M8 auto-stop read-only', () => {
     assert.ok(!source.includes('VastProvider'));
   });
 });
+
+describe('M4 — billing no longer mutates session lifecycle', () => {
+  it('billing.js source contains no legacy status string literals', () => {
+    const source = readGpuSrc('billing.js');
+    assert.ok(!source.includes("'interrupted'"), 'must not reference interrupted');
+    assert.ok(!source.includes("'completed'"), 'must not reference completed');
+    assert.ok(!source.includes("'closing'"), 'must not reference closing');
+  });
+
+  it('billing.js source contains no status / ended_at writes to gpu_sessions', () => {
+    const source = readGpuSrc('billing.js');
+    assert.ok(!source.includes("status: 'interrupted'"), 'must not write status=interrupted');
+    assert.ok(!source.includes("status: 'completed'"), 'must not write status=completed');
+    assert.ok(!source.includes("status: 'closing'"), 'must not write status=closing');
+    assert.ok(!source.includes('patch.status ='), 'must not assign patch.status');
+    assert.ok(!source.includes('patch.ended_at ='), 'must not assign patch.ended_at');
+    assert.ok(!source.includes('ended_at: now'), 'must not write ended_at: now');
+    assert.ok(!source.includes('ended_at: billingResult.endedAt'), 'must not write ended_at from billingResult');
+  });
+
+  it('finalizeGpuSession metrics typedef no longer carries interrupted flag', () => {
+    const source = readGpuSrc('billing.js');
+    assert.ok(!source.includes('interrupted?: boolean'));
+    assert.ok(!source.includes('metrics.interrupted'));
+  });
+
+  it('closeSessionWithoutCharge writes only usage fields (duration_seconds + output_summary)', () => {
+    const source = readGpuSrc('billing.js');
+    const fnStart = source.indexOf('async function closeSessionWithoutCharge');
+    assert.ok(fnStart !== -1, 'closeSessionWithoutCharge must exist');
+    const fnEnd = source.indexOf('\n}', fnStart);
+    const body = source.slice(fnStart, fnEnd);
+    assert.ok(body.includes('duration_seconds: 0'), 'should zero duration_seconds');
+    assert.ok(body.includes('output_summary: reason'), 'should record output_summary reason');
+    assert.ok(!body.includes('status:'), 'must not write status');
+    assert.ok(!body.includes('ended_at'), 'must not write ended_at');
+    assert.ok(!body.includes(".eq('status', 'running')"), 'must not gate on lifecycle status');
+  });
+
+  it('finalizeGpuSession writes only usage fields and is idempotent / status-agnostic', () => {
+    const source = readGpuSrc('billing.js');
+    const fnStart = source.indexOf('export async function finalizeGpuSession');
+    assert.ok(fnStart !== -1, 'finalizeGpuSession must exist');
+    const fnEnd = source.indexOf('\n}', fnStart);
+    const body = source.slice(fnStart, fnEnd);
+    assert.ok(body.includes('duration_seconds: durationSeconds'), 'should write duration_seconds');
+    assert.ok(body.includes('vram_avg_pct: metrics.vramAvg'), 'should write vram_avg_pct');
+    assert.ok(body.includes('output_count: outputCount'), 'should write output_count');
+    assert.ok(body.includes('output_summary: outputSummary'), 'should write output_summary');
+    assert.ok(!body.includes('patch.status'), 'must not write status');
+    assert.ok(!body.includes('patch.ended_at'), 'must not write ended_at');
+    assert.ok(!body.includes("'closed'"), 'must not branch on closed status');
+    assert.ok(!body.includes("'running'"), 'must not branch on running status');
+    assert.ok(body.includes("if (!existing) return null"), 'must no-op when session row missing (idempotent)');
+  });
+
+  it('settleLinkedSessionWithoutCharge no longer references completed', () => {
+    const source = readGpuSrc('billing.js');
+    const fnStart = source.indexOf('async function settleLinkedSessionWithoutCharge');
+    const fnEnd = source.indexOf('\n}', fnStart);
+    const body = source.slice(fnStart, fnEnd);
+    assert.ok(!body.includes("'completed'"), 'must not reference completed');
+    assert.ok(body.includes("session?.status === 'closed'"), 'should settle only when closed');
+  });
+});

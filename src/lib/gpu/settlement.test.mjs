@@ -263,6 +263,131 @@ function createMockSupabase(initial, options = {}) {
         };
         return api;
       },
+      /**
+       * SCB 3.4B — mock of the server-side `settle_session_transaction` RPC.
+       * Applies the W2–W7 unit atomically against the in-memory mock state,
+       * returning the SCB 3.4A §4 response shape. Mirrors the real PL/pgSQL
+       * function's claim guard, wallet CAS + ledger idempotency, entitlement
+       * CAS, projection re-derive, and finalize.
+       */
+      async rpc(name, args) {
+        if (name !== 'settle_session_transaction') {
+          return { data: null, error: { message: `unknown rpc ${name}` } };
+        }
+        /** @param {number} v */
+        const round2 = (v) => Math.round(Number(v) * 100) / 100;
+        const p = args.payload;
+        const pSessionId = p.session_id;
+        const pUserId = p.user_id;
+        const pExpectedPre = p.expected_pre_settlement_status;
+        const pWallet = p.wallet_charge;
+        /** @type {Array<Record<string, unknown>>} */
+        const pLines = Array.isArray(p.entitlement_lines) ? p.entitlement_lines : [];
+        const pBreakdown = p.settlement_breakdown ?? null;
+        const pSettlementAt = p.settlement_at ?? new Date().toISOString();
+        const pIdempotencyKey = p.idempotency_key ?? null;
+
+        // STEP 1 — CLAIM (W2)
+        if (String(session.id) !== String(pSessionId)) {
+          return { data: { state: 'ERROR', code: 'CLAIM_PRECONDITION', message: 'session not found', rolled_back: true, settlement_status: null }, error: null };
+        }
+        if (String(session.user_id) !== String(pUserId)) {
+          return { data: { state: 'ERROR', code: 'CLAIM_PRECONDITION', message: 'user mismatch', rolled_back: true, settlement_status: session.settlement_status }, error: null };
+        }
+        if (session.status !== 'closed' && session.status !== 'completed') {
+          return { data: { state: 'ERROR', code: 'CLAIM_PRECONDITION', message: 'not closed', rolled_back: true, settlement_status: session.settlement_status }, error: null };
+        }
+        if (session.settlement_status !== pExpectedPre) {
+          return { data: { state: 'ERROR', code: 'CLAIM_LOST', message: 'settlement_status mismatch', rolled_back: true, settlement_status: session.settlement_status }, error: null };
+        }
+        session.settlement_status = 'in_progress';
+
+        // STEP 2 — WALLET (W3 + W4)
+        let walletCharged = 0;
+        if (pWallet && Number(pWallet.amount) > 0) {
+          const amount = Number(pWallet.amount);
+          if (pIdempotencyKey && walletTx.some((tx) => tx.idempotency_key === pIdempotencyKey)) {
+            session.settlement_status = pExpectedPre; // rollback
+            return { data: { state: 'ERROR', code: 'LEDGER_CONFLICT', message: 'ledger dup', rolled_back: true, settlement_status: pExpectedPre }, error: null };
+          }
+          walletBalance = Math.max(0, walletBalance - amount);
+          walletTx.push({
+            user_id: pUserId,
+            type: 'payment',
+            amount,
+            bonus_amount: 0,
+            balance_after: Number(pWallet.balance_after),
+            description: pWallet.description,
+            status: 'completed',
+            created_at: pSettlementAt,
+            idempotency_key: pIdempotencyKey,
+          });
+          walletCharged = amount;
+        }
+
+        // STEP 3 — ENTITLEMENT (W5), per line CAS
+        /** @type {Array<Record<string, unknown>>} */
+        const consumed = [];
+        for (const line of pLines) {
+          if (Number(line.hours) <= 0) {
+            consumed.push({ table: line.table, id: line.id, hours: 0, final_hours_used: null });
+            continue;
+          }
+          const store = line.table === 'manual_hour_grants' ? grants : subscriptions;
+          const row = store.find((r) => String(r.id) === String(line.id));
+          if (!row) {
+            session.settlement_status = pExpectedPre; // rollback
+            return { data: { state: 'ERROR', code: 'CLAIM_PRECONDITION', message: 'entitlement row not found', rolled_back: true, settlement_status: pExpectedPre }, error: null };
+          }
+          const current = Number(row.hours_used ?? 0);
+          // CAS: use expected_hours_used on first attempt; if mismatch (concurrent
+          // writer), fall back to current (mirrors server retry-success).
+          const base = current === Number(line.expected_hours_used) ? Number(line.expected_hours_used) : current;
+          const next = round2(base + Number(line.hours));
+          row.hours_used = next;
+          consumed.push({ table: line.table, id: line.id, hours: Number(line.hours), final_hours_used: next });
+        }
+
+        // STEP 4 — PROJECTION SYNC (W6): re-derive hours_remaining on plans.
+        for (const plan of plans) {
+          if (plan.grant_id != null) {
+            const g = grants.find((r) => String(r.id) === String(plan.grant_id));
+            if (g) {
+              const remaining = Math.max(0, Number(g.hours_granted ?? 0) - Number(g.hours_used ?? 0));
+              plan.hours_remaining = round2(remaining);
+              plan.status = remaining <= 0 ? 'depleted' : 'active';
+            }
+            continue;
+          }
+          if (plan.subscription_id != null) {
+            const s = subscriptions.find((r) => String(r.id) === String(plan.subscription_id));
+            if (s) {
+              const remaining = Math.max(0, Number(s.hours_total ?? 0) - Number(s.hours_used ?? 0));
+              plan.hours_remaining = round2(remaining);
+              plan.status = remaining <= 0 && s.billing !== 'hourly' ? 'depleted' : 'active';
+            }
+          }
+        }
+
+        // STEP 5 — FINALIZE (W7)
+        session.settlement_status = 'settled';
+        session.settlement_at = pSettlementAt;
+        session.settlement_breakdown = pBreakdown;
+
+        return {
+          data: {
+            state: 'OK',
+            session_id: pSessionId,
+            settlement_status: 'settled',
+            settlement_at: pSettlementAt,
+            wallet_charged: walletCharged,
+            entitlement_consumed: consumed,
+            projection_synced: true,
+            attempts: { claim: 1, entitlement_lines: pLines.map(() => 1) },
+          },
+          error: null,
+        };
+      },
     },
     syncInventory,
   };
@@ -377,7 +502,7 @@ describe('settleSession', () => {
     assert.equal(mock.session.settlement_status, 'skipped');
   });
 
-  it('T7 — retry from failed does not duplicate wallet tx', async () => {
+  it('T7 — second settle after committed T returns IDEMPOTENT (no double debit) [SCB 3.4 §7]', async () => {
     const mock = createMockSupabase(closedSession({ settlement_status: 'failed' }), {
       plans: [
         {
@@ -392,21 +517,25 @@ describe('settleSession', () => {
       walletBalance: 20000,
     });
 
+    // First call: T commits atomically. status -> settled, exactly one ledger row.
     const first = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
       { syncUserPlanInventory: mock.syncInventory },
     );
     assert.equal(first.state, 'OK');
+    assert.equal(mock.session.settlement_status, 'settled');
     assert.equal(mock.walletTx.length, 1);
 
-    mock.session.settlement_status = 'failed';
+    // Second call: SCB 3.4 §7 — settlement_status='settled' hits the JS
+    // idempotency fast path (and would hit the RPC claim guard if it didn't).
+    // No second debit, no second ledger row.
     const retry = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
       { syncUserPlanInventory: mock.syncInventory },
     );
-    assert.equal(retry.state, 'OK');
+    assert.equal(retry.state, 'IDEMPOTENT');
     assert.equal(mock.walletTx.length, 1);
   });
 

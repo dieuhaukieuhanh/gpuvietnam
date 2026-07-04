@@ -1,5 +1,21 @@
 # BILLING_SAFETY
 
+> **STATUS — OUTDATED (pre-SCB-3.0 model):** Tài liệu này đánh giá an toàn của
+> mô hình **per-minute tick billing** (`deductPerMinute`, `stopBilling`,
+> `applyBillingDeduction`, `chargeWalletForHours`,
+> `deductHoursFromInventoryPlan`) — các hàm này **đã bị xóa** trong rebuild SCB.
+> Billing hiện tại là **Session-Centric Settlement** (SCB): settlement một lần
+> sau Provider Verify DESTROYED; từ **SCB 3.4B** bước commit (W2–W7) là một
+> transaction atomic trong RPC `settle_session_transaction()` với claim guard
+> `settlement_status` + `wallet_transactions.idempotency_key` (defence-in-depth)
+> + CAS entitlement trong RPC → các rủi ro "double charge / lost update /
+> partial commit" được giải quyết ở mức transaction. **Đừng dùng tài liệu này
+> làm reference cho code hiện tại.** Tham chiếu chính thức:
+> [`docs/scb/SCB-ARCHITECTURE.md`](./scb/SCB-ARCHITECTURE.md),
+> [`docs/SESSION_CENTRIC_BILLING_ARCHITECTURE.md`](./SESSION_CENTRIC_BILLING_ARCHITECTURE.md),
+> [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md).
+> Nội dung bên dưới giữ nguyên làm bản ghi lịch sử của review pre-SCB.
+
 Tài liệu trả lời câu hỏi:
 
 > **Hệ thống Billing hiện tại có thể bị tính thiếu, tính thừa hoặc double charge không?**

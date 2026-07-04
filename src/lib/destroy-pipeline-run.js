@@ -10,10 +10,7 @@ import {
   isVerifyPass,
 } from './gpu/provider-verify.js';
 import {
-  requestDestroy,
   closeSession,
-  rollbackClosingToRunning,
-  retryDestroyVerification,
   SETTLEMENT_STATUS,
 } from './gpu/session-lifecycle.js';
 import { calculateBillableSeconds } from './gpu/settlement-core.js';
@@ -236,6 +233,15 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   }
 
   if (String(machine.status ?? '') === 'destroyed') {
+    // SCB 3.4 §9 / SCB 3.4A §9 — W11 reachability fix: the ALREADY_DESTROYED
+    // early-return previously skipped markSubscriptionOffline, leaving the
+    // subscription stuck `online` when a retry re-entered the pipeline after
+    // the machine row was already marked destroyed. W11 is idempotent and
+    // outside T (SCB 3.4 §1 step 19); make it retry-reachable here so a
+    // retry converges the subscription projection. The other post-T steps
+    // (W8–W10) are correctly skipped — they already ran on the prior pass
+    // that destroyed the machine, and re-running them would be redundant.
+    await markSubscriptionOffline(supabaseAdmin, userId);
     return {
       destroyed: true,
       outcome: DESTROY_PIPELINE_OUTCOME.ALREADY_DESTROYED,
@@ -301,23 +307,8 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
 
   let sessionRecord = toSessionRecord(sessionRow, String(machine.id));
 
-  if (sessionRecord && sessionRecord.status === 'running') {
-    trace(DESTROY_PIPELINE_STEP.SESSION_CLOSING);
-    const closingResult = requestDestroy(
-      sessionRecord,
-      {
-        machineExists: true,
-        machineStatus: String(machine.status ?? ''),
-      },
-      { destroyReason },
-    );
-    assertTransitionOk(closingResult);
-    sessionRecord = closingResult.session;
-    await persistSessionRecord(supabaseAdmin, sessionId, sessionRecord);
-    sessionRow = { ...sessionRow, ...sessionRecord };
-  } else if (sessionRecord?.status === 'closing') {
-    trace(DESTROY_PIPELINE_STEP.SESSION_CLOSING);
-  }
+  // SCB 3.0: no `closing` intermediate state. A running session stays running
+  // until provider-destroyed is verified, then transitions directly to closed.
 
   let verifyResult = null;
 
@@ -330,23 +321,21 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
       await deps.gpuService.destroyInstance(instanceId);
     } catch (error) {
       console.warn('[destroy-pipeline] provider destroy failed:', error);
-      if (sessionRecord?.status === 'closing') {
-        return {
-          destroyed: false,
-          outcome: DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED,
-          lastStep: DESTROY_PIPELINE_STEP.PROVIDER_DESTROY,
-          machine,
-          session: sessionRow,
-          settlement: null,
-          verify: null,
-          backupSuccess,
-          reason: destroyReason,
-          retryable: true,
-          billingResult: null,
-          metrics,
-          stepTrace,
-        };
-      }
+      return {
+        destroyed: false,
+        outcome: DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED,
+        lastStep: DESTROY_PIPELINE_STEP.PROVIDER_DESTROY,
+        machine,
+        session: sessionRow,
+        settlement: null,
+        verify: null,
+        backupSuccess,
+        reason: destroyReason,
+        retryable: true,
+        billingResult: null,
+        metrics,
+        stepTrace,
+      };
     }
   }
 
@@ -354,19 +343,15 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   verifyResult = await verifyDestroyed(instanceId, verifyPort, { port });
   const verifyOutcome = mapDestroyedVerifyOutcome(verifyResult);
 
-  if (verifyOutcome === 'still_running' && sessionRecord?.status === 'closing') {
-    const rollback = rollbackClosingToRunning(sessionRecord, {
-      machineExists: true,
-      machineStatus: 'running',
-    });
-    assertTransitionOk(rollback);
-    await persistSessionRecord(supabaseAdmin, sessionId, rollback.session);
+  if (verifyOutcome === 'still_running') {
+    // Session never left `running`; nothing to roll back. The destroy did not
+    // complete — the instance is still alive and the session remains billable.
     return {
       destroyed: false,
       outcome: DESTROY_PIPELINE_OUTCOME.ROLLED_BACK,
       lastStep: DESTROY_PIPELINE_STEP.VERIFY_DESTROYED,
       machine,
-      session: { ...sessionRow, ...rollback.session },
+      session: sessionRow,
       settlement: null,
       verify: verifyResult,
       backupSuccess,
@@ -380,15 +365,6 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
 
   if (!isVerifyPass(verifyResult, 'destroyed')) {
     const retryable = isDestroyVerifyRetryable(verifyOutcome);
-    if (sessionRecord?.status === 'closing' && verifyOutcome === 'unknown') {
-      const retry = retryDestroyVerification(sessionRecord, {
-        verifyOutcome: 'timeout',
-        machineExists: true,
-      });
-      if (retry.state !== 'ERROR') {
-        await persistSessionRecord(supabaseAdmin, sessionId, retry.session);
-      }
-    }
     return {
       destroyed: false,
       outcome: DESTROY_PIPELINE_OUTCOME.PENDING_VERIFY,
@@ -408,12 +384,16 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
 
   const verifiedAt = verifyResult.verifiedAt ?? new Date().toISOString();
 
-  if (sessionRecord && sessionRecord.status === 'closing') {
+  if (sessionRecord && sessionRecord.status === 'running') {
     trace(DESTROY_PIPELINE_STEP.SESSION_CLOSED);
     const closeResult = closeSession(
       sessionRecord,
       { providerDestroyedVerified: true, now: verifiedAt },
-      { ended_at: verifiedAt, verified_destroyed_at: verifiedAt },
+      {
+        ended_at: verifiedAt,
+        verified_destroyed_at: verifiedAt,
+        destroyReason,
+      },
     );
     assertTransitionOk(closeResult);
     sessionRecord = closeResult.session;

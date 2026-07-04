@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
-  INTERRUPT_REASON,
   SESSION_COMMAND,
   SESSION_DOMAIN_EVENT,
   SESSION_ERROR_CODE,
@@ -12,7 +14,6 @@ import {
   activateRunningSession,
   assertAtMostOneRunningSession,
   assertSessionIntegrity,
-  cancelSession,
   closeSession,
   completeSettlement,
   createPendingSession,
@@ -20,17 +21,18 @@ import {
   failSettlement,
   findTransitions,
   getTransitionMap,
-  handleRunningVerifyFailed,
-  interruptSession,
-  requestDestroy,
-  retryDestroyVerification,
+  isScbStatus,
+  isTerminalStatus,
   retrySettlement,
-  rollbackClosingToRunning,
   skipSettlement,
   startSettlement,
 } from './session-lifecycle.js';
 
 const NOW = '2026-07-03T10:00:00.000Z';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const srcPath = join(__dirname, 'session-lifecycle.js');
+const srcText = readFileSync(srcPath, 'utf8');
 
 /** @param {Record<string, unknown>} [overrides] */
 function ctx(overrides = {}) {
@@ -40,7 +42,6 @@ function ctx(overrides = {}) {
     providerRunningVerified: true,
     providerDestroyedVerified: true,
     otherRunningSessionCount: 0,
-    runningVerifyRetriesRemaining: 3,
     now: NOW,
     ...overrides,
   };
@@ -56,10 +57,84 @@ function pendingSession(overrides = {}) {
   return result.session;
 }
 
-describe('transition map', () => {
-  it('covers all design transitions', () => {
+/** @returns {import('./session-lifecycle.js').SessionRecord} */
+function runningSession() {
+  const session = pendingSession();
+  return activateRunningSession(session, ctx()).session;
+}
+
+/** @returns {import('./session-lifecycle.js').SessionRecord} */
+function closedSession() {
+  let session = runningSession();
+  return closeSession(session, ctx()).session;
+}
+
+describe('SCB 3.0 purity', () => {
+  it('SESSION_STATUS only contains pending, running, closed', () => {
+    assert.deepEqual(
+      Object.values(SESSION_STATUS).sort(),
+      ['closed', 'pending', 'running'],
+    );
+  });
+
+  it('source file contains no legacy state tokens', () => {
+    const legacyIdentifiers = [
+      "'closing'",
+      "'interrupted'",
+      "'completed'",
+      'INTERRUPT_REASON',
+      'REQUEST_DESTROY',
+      'ROLLBACK_CLOSING',
+      'RETRY_DESTROY_VERIFY',
+      'RUNNING_VERIFY_FAILED',
+      'SESSION_LEGACY_COMPLETED',
+      'LEGACY_STATUS_FORBIDDEN',
+      'INVALID_INTERRUPT_REASON',
+      'SESSION_NOT_CLOSING',
+      'DESTROY_INITIATED',
+      'SESSION_CANCELLED',
+      'CLOSING_ROLLBACK',
+      'DESTROY_VERIFY_TIMEOUT',
+      'SESSION_INTERRUPTED',
+      'cancelSession',
+      'interruptSession',
+      'handleRunningVerifyFailed',
+      'rollbackClosingToRunning',
+      'retryDestroyVerification',
+      'notLegacyCompleted',
+      'statusClosing',
+      'destroyReasonProvided',
+    ];
+    for (const token of legacyIdentifiers) {
+      assert.ok(
+        !srcText.includes(token),
+        `legacy identifier "${token}" still present in session-lifecycle.js`,
+      );
+    }
+  });
+
+  it('transition map only references the three SCB statuses', () => {
     const map = getTransitionMap();
-    assert.ok(map.length >= 17);
+    const used = new Set();
+    for (const def of map) {
+      if (def.from != null) used.add(def.from);
+      if (def.to != null) used.add(def.to);
+    }
+    for (const status of used) {
+      assert.ok(
+        status === SESSION_STATUS.PENDING ||
+          status === SESSION_STATUS.RUNNING ||
+          status === SESSION_STATUS.CLOSED,
+        `non-SCB status in transition map: ${status}`,
+      );
+    }
+  });
+});
+
+describe('transition map', () => {
+  it('covers all SCB 3.0 transitions', () => {
+    const map = getTransitionMap();
+    assert.ok(map.length >= 8);
 
     const keys = map.map((d) => `${d.from ?? 'null'}:${d.command}:${d.to}`);
     assert.ok(keys.includes(`null:${SESSION_COMMAND.CREATE_PENDING}:${SESSION_STATUS.PENDING}`));
@@ -67,14 +142,18 @@ describe('transition map', () => {
       keys.includes(`${SESSION_STATUS.PENDING}:${SESSION_COMMAND.ACTIVATE_RUNNING}:${SESSION_STATUS.RUNNING}`),
     );
     assert.ok(
-      keys.includes(`${SESSION_STATUS.RUNNING}:${SESSION_COMMAND.REQUEST_DESTROY}:${SESSION_STATUS.CLOSING}`),
+      keys.includes(`${SESSION_STATUS.RUNNING}:${SESSION_COMMAND.CLOSE}:${SESSION_STATUS.CLOSED}`),
     );
-    assert.ok(keys.includes(`${SESSION_STATUS.CLOSING}:${SESSION_COMMAND.CLOSE}:${SESSION_STATUS.CLOSED}`));
   });
 
   it('findTransitions returns matching rows', () => {
-    const rows = findTransitions(SESSION_STATUS.PENDING, SESSION_COMMAND.INTERRUPT);
-    assert.equal(rows.length, 2);
+    const rows = findTransitions(SESSION_STATUS.CLOSED, SESSION_COMMAND.START_SETTLEMENT);
+    assert.equal(rows.length, 1);
+  });
+
+  it('findTransitions returns empty for removed legacy commands', () => {
+    assert.equal(findTransitions(SESSION_STATUS.RUNNING, 'REQUEST_DESTROY').length, 0);
+    assert.equal(findTransitions(SESSION_STATUS.RUNNING, 'INTERRUPT').length, 0);
   });
 });
 
@@ -89,6 +168,8 @@ describe('createPendingSession', () => {
     assert.equal(result.event, SESSION_DOMAIN_EVENT.SESSION_CREATED);
     assert.equal(result.session.settlement_status, SETTLEMENT_STATUS.NOT_APPLICABLE);
     assert.equal(result.session.started_at, null);
+    assert.equal(result.session.ended_at, null);
+    assert.equal(result.session.destroy_reason, null);
   });
 
   it('rejects when subscription inactive', () => {
@@ -119,15 +200,6 @@ describe('createPendingSession', () => {
       SessionInvariantViolationError,
     );
   });
-
-  it('forbids completed status on create', () => {
-    const result = createPendingSession(
-      { id: 's1', userId: 'u1', status: SESSION_STATUS.COMPLETED },
-      ctx(),
-    );
-    assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.LEGACY_STATUS_FORBIDDEN);
-  });
 });
 
 describe('activateRunningSession', () => {
@@ -137,6 +209,7 @@ describe('activateRunningSession', () => {
     assert.equal(result.state, 'OK');
     assert.equal(result.session.status, SESSION_STATUS.RUNNING);
     assert.equal(result.session.started_at, NOW);
+    assert.equal(result.session.verified_running_at, NOW);
     assert.equal(result.event, SESSION_DOMAIN_EVENT.SESSION_ACTIVATED);
   });
 
@@ -147,198 +220,90 @@ describe('activateRunningSession', () => {
     assert.equal(result.code, SESSION_ERROR_CODE.PROVIDER_NOT_VERIFIED);
   });
 
-  it('rejects from running state', () => {
+  it('rejects without machine existing', () => {
     const session = pendingSession();
-    const running = activateRunningSession(session, ctx()).session;
-    const result = activateRunningSession(running, ctx());
+    const result = activateRunningSession(session, ctx({ machineExists: false }));
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.MACHINE_NOT_LINKED);
+  });
+
+  it('rejects activate from running state', () => {
+    const session = runningSession();
+    const result = activateRunningSession(session, ctx());
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_PENDING);
+  });
+
+  it('rejects activate from closed state', () => {
+    const session = closedSession();
+    const result = activateRunningSession(session, ctx());
     assert.equal(result.state, 'ERROR');
     assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_PENDING);
   });
 });
 
-describe('handleRunningVerifyFailed', () => {
-  it('stays pending when retries remain', () => {
-    const session = pendingSession();
-    const result = handleRunningVerifyFailed(session, ctx({ runningVerifyRetriesRemaining: 2 }));
-    assert.equal(result.state, 'IGNORED');
-    assert.equal(result.session.status, SESSION_STATUS.PENDING);
-  });
-
-  it('interrupts when retries exhausted', () => {
-    const session = pendingSession();
-    const result = handleRunningVerifyFailed(session, ctx({ runningVerifyRetriesRemaining: 0 }));
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.status, SESSION_STATUS.INTERRUPTED);
-  });
-});
-
-describe('interruptSession', () => {
-  it('provision failed from pending', () => {
-    const session = pendingSession();
-    const result = interruptSession(session, ctx(), {
-      reason: INTERRUPT_REASON.PROVISION_FAILED,
-    });
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.settlement_status, SETTLEMENT_STATUS.NOT_APPLICABLE);
-  });
-
-  it('cancel from pending via cancelSession', () => {
-    const session = pendingSession();
-    const result = cancelSession(session, ctx());
-    assert.equal(result.state, 'OK');
-    assert.equal(result.event, SESSION_DOMAIN_EVENT.SESSION_CANCELLED);
-  });
-
-  it('orphan from running sets ended_at', () => {
-    let session = pendingSession();
-    session = activateRunningSession(session, ctx()).session;
-    const result = interruptSession(session, ctx(), { reason: INTERRUPT_REASON.ORPHAN });
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.ended_at, NOW);
-  });
-
-  it('ignores duplicate interrupt on terminal interrupted', () => {
-    const session = pendingSession();
-    const interrupted = interruptSession(session, ctx(), {
-      reason: INTERRUPT_REASON.PROVISION_FAILED,
-    }).session;
-    const result = interruptSession(interrupted, ctx(), {
-      reason: INTERRUPT_REASON.PROVISION_FAILED,
-    });
-    assert.equal(result.state, 'IGNORED');
-  });
-
-  it('rejects invalid reason', () => {
-    const session = pendingSession();
-    const result = interruptSession(session, ctx(), { reason: 'unknown' });
-    assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.INVALID_INTERRUPT_REASON);
-  });
-});
-
-describe('requestDestroy and closing lifecycle', () => {
-  /** @returns {import('./session-lifecycle.js').SessionRecord} */
-  function runningSession() {
-    const session = pendingSession();
-    return activateRunningSession(session, ctx()).session;
-  }
-
-  it('enters closing from running', () => {
+describe('closeSession (running -> closed)', () => {
+  it('closes a running session after provider destroyed verified', () => {
     const session = runningSession();
-    const result = requestDestroy(session, ctx(), { destroyReason: 'user' });
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.status, SESSION_STATUS.CLOSING);
-    assert.equal(result.session.destroy_reason, 'user');
-    assert.equal(result.session.settlement_status, SETTLEMENT_STATUS.AWAITING_VERIFY);
-  });
-
-  it('requires destroy reason', () => {
-    const session = runningSession();
-    const result = requestDestroy(session, ctx(), {});
-    assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.DESTROY_REASON_REQUIRED);
-  });
-
-  it('ignores duplicate destroy while closing', () => {
-    let session = runningSession();
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
-    const result = requestDestroy(session, ctx(), { destroyReason: 'user' });
-    assert.equal(result.state, 'IGNORED');
-  });
-
-  it('rejects destroy from pending', () => {
-    const session = pendingSession();
-    const result = requestDestroy(session, ctx(), { destroyReason: 'user' });
-    assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_RUNNING);
-  });
-
-  it('closes after provider destroyed verified', () => {
-    let session = runningSession();
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
     const result = closeSession(session, ctx({ providerDestroyedVerified: true }));
     assert.equal(result.state, 'OK');
     assert.equal(result.session.status, SESSION_STATUS.CLOSED);
     assert.equal(result.session.ended_at, NOW);
+    assert.equal(result.session.verified_destroyed_at, NOW);
     assert.equal(result.session.settlement_status, SETTLEMENT_STATUS.PENDING);
+    assert.equal(result.event, SESSION_DOMAIN_EVENT.SESSION_CLOSED);
   });
 
-  it('rejects close without provider verify (SD-7 / OP-1)', () => {
-    let session = runningSession();
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
+  it('records destroy_reason when provided', () => {
+    const session = runningSession();
+    const result = closeSession(session, ctx(), { destroyReason: 'user' });
+    assert.equal(result.state, 'OK');
+    assert.equal(result.session.destroy_reason, 'user');
+  });
+
+  it('rejects close without provider destroyed verify (OP-1)', () => {
+    const session = runningSession();
     const result = closeSession(session, ctx({ providerDestroyedVerified: false }));
     assert.equal(result.state, 'ERROR');
     assert.equal(result.code, SESSION_ERROR_CODE.PROVIDER_NOT_VERIFIED);
   });
 
-  it('rejects close directly from running', () => {
-    const session = runningSession();
+  it('rejects close from pending (not running)', () => {
+    const session = pendingSession();
     const result = closeSession(session, ctx());
     assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_CLOSING);
+    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_RUNNING);
   });
 
-  it('rolls back closing to running on verify fail', () => {
-    let session = runningSession();
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
-    const result = rollbackClosingToRunning(session, ctx());
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.status, SESSION_STATUS.RUNNING);
-    assert.equal(result.session.destroy_reason, null);
-  });
-});
-
-describe('retryDestroyVerification', () => {
-  /** @returns {import('./session-lifecycle.js').SessionRecord} */
-  function closingSession() {
-    let session = pendingSession();
-    session = activateRunningSession(session, ctx()).session;
-    return requestDestroy(session, ctx(), { destroyReason: 'idle' }).session;
-  }
-
-  it('closes on destroyed outcome', () => {
-    const session = closingSession();
-    const result = retryDestroyVerification(session, ctx({ verifyOutcome: 'destroyed' }));
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.status, SESSION_STATUS.CLOSED);
-  });
-
-  it('rolls back on still_running outcome', () => {
-    const session = closingSession();
-    const result = retryDestroyVerification(session, ctx({ verifyOutcome: 'still_running' }));
-    assert.equal(result.state, 'OK');
-    assert.equal(result.session.status, SESSION_STATUS.RUNNING);
-  });
-
-  it('stays closing on timeout outcome', () => {
-    const session = closingSession();
-    const result = retryDestroyVerification(session, ctx({ verifyOutcome: 'timeout' }));
+  it('ignores duplicate close on already closed session', () => {
+    const session = closedSession();
+    const result = closeSession(session, ctx());
     assert.equal(result.state, 'IGNORED');
-    assert.equal(result.session.status, SESSION_STATUS.CLOSING);
   });
 
-  it('ignores when already closed', () => {
-    let session = closingSession();
-    session = retryDestroyVerification(session, ctx({ verifyOutcome: 'destroyed' })).session;
-    const result = retryDestroyVerification(session, ctx({ verifyOutcome: 'timeout' }));
-    assert.equal(result.state, 'IGNORED');
+  it('rejects close when machine not linked', () => {
+    const session = {
+      ...runningSession(),
+      machineId: null,
+    };
+    const result = closeSession(session, ctx());
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.MACHINE_NOT_LINKED);
   });
 });
 
 describe('settlement sub-state', () => {
-  /** @returns {import('./session-lifecycle.js').SessionRecord} */
-  function closedSession() {
-    let session = pendingSession();
-    session = activateRunningSession(session, ctx()).session;
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
-    return closeSession(session, ctx()).session;
-  }
-
   it('happy path settlement flow', () => {
     let session = closedSession();
-    assert.equal(startSettlement(session, ctx()).session.settlement_status, SETTLEMENT_STATUS.IN_PROGRESS);
+    assert.equal(
+      startSettlement(session, ctx()).session.settlement_status,
+      SETTLEMENT_STATUS.IN_PROGRESS,
+    );
     session = startSettlement(session, ctx()).session;
-    assert.equal(completeSettlement(session, ctx()).session.settlement_status, SETTLEMENT_STATUS.SETTLED);
+    assert.equal(
+      completeSettlement(session, ctx()).session.settlement_status,
+      SETTLEMENT_STATUS.SETTLED,
+    );
   });
 
   it('ignores duplicate completeSettlement when settled', () => {
@@ -366,45 +331,34 @@ describe('settlement sub-state', () => {
     assert.equal(result.state, 'IGNORED');
   });
 
+  it('rejects retry when settlement not failed', () => {
+    const session = closedSession();
+    const result = retrySettlement(session, ctx());
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.SETTLEMENT_NOT_FAILED);
+  });
+
   it('skip settlement', () => {
     const session = closedSession();
     const result = skipSettlement(session, ctx());
     assert.equal(result.state, 'OK');
     assert.equal(result.session.settlement_status, SETTLEMENT_STATUS.SKIPPED);
   });
-});
 
-describe('legacy completed', () => {
-  it('rejects activate on completed session', () => {
-    /** @type {import('./session-lifecycle.js').SessionRecord} */
-    const legacy = {
-      id: 'legacy-1',
-      userId: 'u1',
-      status: SESSION_STATUS.COMPLETED,
-      machineId: null,
-      started_at: NOW,
-      ended_at: NOW,
-      settlement_status: SETTLEMENT_STATUS.SETTLED,
-      destroy_reason: null,
-      verified_running_at: null,
-      verified_destroyed_at: null,
-    };
-    const result = activateRunningSession(legacy, ctx());
+  it('startSettlement rejects from non-closed state', () => {
+    const session = runningSession();
+    const result = startSettlement(session, ctx());
     assert.equal(result.state, 'ERROR');
-    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_LEGACY_COMPLETED);
+    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_CLOSED);
   });
 
-  it('assertSessionIntegrity allows legacy completed', () => {
-    assert.doesNotThrow(() =>
-      assertSessionIntegrity({
-        id: 'legacy-1',
-        userId: 'u1',
-        status: SESSION_STATUS.COMPLETED,
-        started_at: NOW,
-        ended_at: NOW,
-        settlement_status: SETTLEMENT_STATUS.SETTLED,
-      }),
-    );
+  it('settlement stays within closed status (no status mutation)', () => {
+    let session = closedSession();
+    session = startSettlement(session, ctx()).session;
+    session = failSettlement(session, ctx()).session;
+    session = retrySettlement(session, ctx()).session;
+    session = completeSettlement(session, ctx()).session;
+    assert.equal(session.status, SESSION_STATUS.CLOSED);
   });
 });
 
@@ -436,6 +390,20 @@ describe('invariants', () => {
     );
   });
 
+  it('assertSessionIntegrity throws on closed without settlement_status', () => {
+    assert.throws(
+      () =>
+        assertSessionIntegrity({
+          id: 'x',
+          userId: 'u',
+          status: SESSION_STATUS.CLOSED,
+          ended_at: NOW,
+          settlement_status: null,
+        }),
+      SessionInvariantViolationError,
+    );
+  });
+
   it('assertAtMostOneRunningSession throws when count > 1', () => {
     assert.throws(
       () => assertAtMostOneRunningSession({ otherRunningSessionCount: 2 }),
@@ -455,9 +423,7 @@ describe('invariants', () => {
   });
 
   it('ended_at immutable on close', () => {
-    let session = pendingSession();
-    session = activateRunningSession(session, ctx()).session;
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
+    let session = runningSession();
     session = {
       ...session,
       ended_at: '2026-01-01T00:00:00.000Z',
@@ -467,13 +433,27 @@ describe('invariants', () => {
       SessionInvariantViolationError,
     );
   });
+
+  it('isTerminalStatus is true only for closed', () => {
+    assert.equal(isTerminalStatus(SESSION_STATUS.CLOSED), true);
+    assert.equal(isTerminalStatus(SESSION_STATUS.PENDING), false);
+    assert.equal(isTerminalStatus(SESSION_STATUS.RUNNING), false);
+  });
+
+  it('isScbStatus is true for the three SCB statuses', () => {
+    assert.equal(isScbStatus(SESSION_STATUS.PENDING), true);
+    assert.equal(isScbStatus(SESSION_STATUS.RUNNING), true);
+    assert.equal(isScbStatus(SESSION_STATUS.CLOSED), true);
+    assert.equal(isScbStatus('closing'), false);
+    assert.equal(isScbStatus('interrupted'), false);
+    assert.equal(isScbStatus('completed'), false);
+  });
 });
 
 describe('full happy path lifecycle', () => {
-  it('pending → running → closing → closed → settled', () => {
+  it('pending -> running -> closed -> settled', () => {
     let session = pendingSession();
     session = activateRunningSession(session, ctx()).session;
-    session = requestDestroy(session, ctx(), { destroyReason: 'user' }).session;
     session = closeSession(session, ctx()).session;
     session = startSettlement(session, ctx()).session;
     session = completeSettlement(session, ctx()).session;
@@ -482,6 +462,8 @@ describe('full happy path lifecycle', () => {
     assert.equal(session.settlement_status, SETTLEMENT_STATUS.SETTLED);
     assert.ok(session.started_at);
     assert.ok(session.ended_at);
+    assert.ok(session.verified_running_at);
+    assert.ok(session.verified_destroyed_at);
   });
 });
 
@@ -493,12 +475,31 @@ describe('illegal transitions', () => {
     assert.equal(result.code, SESSION_ERROR_CODE.INVALID_TRANSITION);
   });
 
-  it('rejects interrupted → running (SD-17)', () => {
-    const session = interruptSession(pendingSession(), ctx(), {
-      reason: INTERRUPT_REASON.CANCELLED,
-    }).session;
+  it('rejects closed -> activate (already terminal)', () => {
+    const session = closedSession();
     const result = activateRunningSession(session, ctx());
     assert.equal(result.state, 'ERROR');
     assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_PENDING);
+  });
+
+  it('rejects legacy REQUEST_DESTROY command', () => {
+    const session = runningSession();
+    const result = executeCommand(session, 'REQUEST_DESTROY', ctx(), { destroyReason: 'user' });
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.INVALID_TRANSITION);
+  });
+
+  it('rejects legacy INTERRUPT command', () => {
+    const session = runningSession();
+    const result = executeCommand(session, 'INTERRUPT', ctx(), { reason: 'orphan' });
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.INVALID_TRANSITION);
+  });
+
+  it('rejects close on pending session with inferred SESSION_NOT_RUNNING', () => {
+    const session = pendingSession();
+    const result = closeSession(session, ctx());
+    assert.equal(result.state, 'ERROR');
+    assert.equal(result.code, SESSION_ERROR_CODE.SESSION_NOT_RUNNING);
   });
 });

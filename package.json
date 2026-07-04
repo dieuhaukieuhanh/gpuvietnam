@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test src/lib/gpu/remaining-time.test.mjs src/lib/gpu/session-lifecycle.test.mjs src/lib/gpu/provider-verify.test.mjs src/lib/gpu/billing-m5.test.mjs src/lib/gpu/billing-anchor.test.mjs src/lib/gpu/settlement-core.test.mjs src/lib/gpu/settlement.test.mjs src/lib/destroy-pipeline-core.test.mjs src/lib/destroy-pipeline.test.mjs src/lib/gpu/auto-stop-m8.test.mjs src/lib/gpu/api-m9.test.mjs src/lib/gpu/auto-renew-m10.test.mjs src/lib/scb-ui-m11.test.mjs src/lib/scb-ui-m12.test.mjs src/lib/infrastructure/reconciliation.test.mjs src/lib/scb-m14.test.mjs src/lib/machines-provisioning-sync.test.mjs",
+    "test": "node --test src/lib/gpu/remaining-time.test.mjs src/lib/gpu/session-lifecycle.test.mjs src/lib/gpu/session-activate.test.mjs src/lib/gpu/session-orphan-close.test.mjs src/lib/gpu/entitlement-increment.test.mjs src/lib/gpu/provider-verify.test.mjs src/lib/gpu/billing-m5.test.mjs src/lib/gpu/billing-anchor.test.mjs src/lib/gpu/settlement-core.test.mjs src/lib/gpu/settlement.test.mjs src/lib/gpu/settlement-transaction-rpc.test.mjs src/lib/destroy-pipeline-core.test.mjs src/lib/destroy-pipeline.test.mjs src/lib/gpu/auto-stop-m8.test.mjs src/lib/gpu/api-m9.test.mjs src/lib/gpu/auto-renew-m10.test.mjs src/lib/scb-ui-m11.test.mjs src/lib/scb-ui-m12.test.mjs src/lib/infrastructure/reconciliation.test.mjs src/lib/scb-m14.test.mjs src/lib/machines-provisioning-sync.test.mjs",
     "convert": "node scripts/convert-html.mjs",
     "db:user-settings": "node scripts/run-user-settings-sql.mjs",
     "db:user-settings:cli": "npx supabase db query --linked -f supabase/user-settings.sql"

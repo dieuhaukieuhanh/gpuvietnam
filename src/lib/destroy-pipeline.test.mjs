@@ -282,7 +282,7 @@ describe('runDestroyPipeline', () => {
     assert.equal(mock.session.settlement_status, 'skipped');
   });
 
-  it('T2 — provider destroy fail keeps session closing, no settlement', async () => {
+  it('T2 — provider destroy fail keeps session running, no settlement', async () => {
     const mock = createMockSupabase(runningSession());
     let settleCalls = 0;
 
@@ -306,7 +306,7 @@ describe('runDestroyPipeline', () => {
 
     assert.equal(result.destroyed, false);
     assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED);
-    assert.equal(mock.session.status, 'closing');
+    assert.equal(mock.session.status, 'running');
     assert.equal(settleCalls, 0);
   });
 
@@ -372,7 +372,7 @@ describe('runDestroyPipeline', () => {
     assert.equal(mock.session.status, 'closed');
     assert.equal(mock.session.settlement_status, 'settled');
     assert.equal(mock.machine.status, 'destroyed');
-    assert.ok(steps.includes(DESTROY_PIPELINE_STEP.SESSION_CLOSING));
+    assert.ok(steps.includes(DESTROY_PIPELINE_STEP.SESSION_CLOSED));
     assert.ok(steps.includes(DESTROY_PIPELINE_STEP.SETTLEMENT));
     assert.equal(assertSettlementAfterVerify(steps), true);
   });

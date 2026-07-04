@@ -1,8 +1,16 @@
 /**
- * Settlement Domain — M6.
- * Sole entitlement writer for session consumption (SCB §6).
- * Runs only after Provider Verify DESTROYED and session closed.
+ * Settlement Domain — SCB 3.4B.
+ *
+ * Orchestrates session settlement: computes eligibility, billable seconds,
+ * allocation, and breakdown in JS (settlement-core.js), reads CAS guard
+ * values outside T, then invokes the server-side atomic transaction RPC
+ * `settle_session_transaction` (W2–W7). The RPC is the sole entitlement /
+ * wallet writer; this module performs no settlement writes. Runs only after
+ * Provider Verify DESTROYED and session closed (W1).
+ *
  * @see docs/SESSION_CENTRIC_BILLING_ARCHITECTURE.md §6
+ * @see docs/scb/SCB_3_4_SPECIFICATION_FREEZE.md
+ * @see docs/scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md
  */
 
 import {
@@ -19,6 +27,12 @@ import {
   isSettlementIdempotentTerminal,
   orderPlansForSettlement,
 } from './settlement-core.js';
+import {
+  executeSettlementTransaction,
+  readCasGuardValues,
+  SETTLEMENT_RPC_ERROR,
+  isSettlementRpcRetryable,
+} from './settlement-transaction-rpc.js';
 
 export {
   SETTLEMENT_MODULE_VERSION,
@@ -37,14 +51,6 @@ export {
   settlementPlanTier,
   isSettlementPlanUsable,
 } from './settlement-core.js';
-
-/**
- * @param {unknown} value
- * @returns {number}
- */
-function roundHours(value) {
-  return Math.round(Number(value) * 100) / 100;
-}
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
@@ -78,159 +84,6 @@ async function loadSessionForSettlement(supabaseAdmin, sessionId) {
 
   if (error) throw error;
   return data;
-}
-
-/**
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {Record<string, unknown>} plan
- * @param {number} hours
- */
-async function deductHoursFromInventoryPlan(supabaseAdmin, plan, hours) {
-  if (hours <= 0) return;
-
-  if (plan.grant_id) {
-    const { data: grant } = await supabaseAdmin
-      .from('manual_hour_grants')
-      .select('hours_used')
-      .eq('id', plan.grant_id)
-      .single();
-
-    await supabaseAdmin
-      .from('manual_hour_grants')
-      .update({
-        hours_used: roundHours(Number(grant?.hours_used ?? 0) + hours),
-      })
-      .eq('id', plan.grant_id);
-  } else if (plan.subscription_id) {
-    const { data: subscription } = await supabaseAdmin
-      .from('subscriptions')
-      .select('hours_used')
-      .eq('id', plan.subscription_id)
-      .single();
-
-    await supabaseAdmin
-      .from('subscriptions')
-      .update({
-        hours_used: roundHours(Number(subscription?.hours_used ?? 0) + hours),
-      })
-      .eq('id', plan.subscription_id);
-  }
-}
-
-/**
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {string} userId
- * @param {Record<string, unknown>} plan
- * @param {number} hours
- * @param {string} sessionId
- * @returns {Promise<number>}
- */
-async function chargeWalletForSession(supabaseAdmin, userId, plan, hours, sessionId) {
-  const pricePerHour = Number(plan.price_per_hour ?? 0);
-  if (hours <= 0 || pricePerHour <= 0) return 0;
-
-  const walletCharge = Math.round(hours * pricePerHour);
-  if (walletCharge <= 0) return 0;
-
-  const txDescription = `GPU session ${sessionId} · ${roundHours(hours)}h · ${plan.plan_name ?? 'hourly'}`;
-
-  const { data: existingTx } = await supabaseAdmin
-    .from('wallet_transactions')
-    .select('id, amount')
-    .eq('user_id', userId)
-    .eq('description', txDescription)
-    .maybeSingle();
-
-  if (existingTx) {
-    return Number(existingTx.amount ?? 0);
-  }
-
-  const { data: userRow, error: userError } = await supabaseAdmin
-    .from('users')
-    .select('wallet_balance')
-    .eq('id', userId)
-    .single();
-
-  if (userError) throw userError;
-
-  const balance = Number(userRow?.wallet_balance ?? 0);
-  const appliedCharge = Math.min(balance, walletCharge);
-  if (appliedCharge <= 0) return 0;
-
-  const walletBalanceAfter = balance - appliedCharge;
-  const now = new Date().toISOString();
-
-  await supabaseAdmin
-    .from('users')
-    .update({ wallet_balance: walletBalanceAfter, updated_at: now })
-    .eq('id', userId);
-
-  await supabaseAdmin.from('wallet_transactions').insert({
-    user_id: userId,
-    type: 'payment',
-    amount: appliedCharge,
-    bonus_amount: 0,
-    balance_after: walletBalanceAfter,
-    description: txDescription,
-    status: 'completed',
-  });
-
-  return appliedCharge;
-}
-
-/**
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {string} userId
- * @param {string} sessionId
- * @param {import('./settlement-core.js').SettlementAllocationLine[]} lines
- * @param {Record<string, unknown>[]} plans
- */
-async function commitSettlementLines(supabaseAdmin, userId, sessionId, lines, plans) {
-  const planById = new Map(plans.map((plan) => [String(plan.id), plan]));
-  let walletCharge = 0;
-
-  for (const line of lines) {
-    if (line.source === 'wallet') {
-      const plan =
-        line.inventoryId != null
-          ? planById.get(String(line.inventoryId))
-          : plans.find((row) => row.plan_type === 'hourly');
-      if (!plan) continue;
-      walletCharge += await chargeWalletForSession(
-        supabaseAdmin,
-        userId,
-        plan,
-        line.hours,
-        sessionId,
-      );
-      continue;
-    }
-
-    const plan =
-      line.inventoryId != null
-        ? planById.get(String(line.inventoryId))
-        : plans.find((row) => {
-            if (line.grantId != null) return Number(row.grant_id) === line.grantId;
-            if (line.subscriptionId) return String(row.subscription_id) === line.subscriptionId;
-            return false;
-          });
-
-    if (!plan) continue;
-    await deductHoursFromInventoryPlan(supabaseAdmin, plan, line.hours);
-  }
-
-  return { walletCharge };
-}
-
-/**
- * @param {{ syncUserPlanInventory?: (client: unknown, userId: string) => Promise<unknown> }} deps
- */
-async function resolveSyncInventory(deps) {
-  if (deps?.syncUserPlanInventory) {
-    return deps.syncUserPlanInventory;
-  }
-  const mod = await import('@/lib/user-plan-inventory');
-  return mod.syncUserPlanInventory;
 }
 
 /**
@@ -335,7 +188,23 @@ export async function skipSessionSettlement(supabaseAdmin, sessionId, reason = '
 }
 
 /**
- * Settle session once — write-once entitlement commit (SCB §6).
+ * Settle session once — single atomic server-side transaction (SCB 3.4).
+ *
+ * SCB 3.4 contract:
+ *   - Pre-T (here, JS): load session, evaluate eligibility, compute
+ *     billable seconds, allocation, breakdown, and read CAS guard
+ *     values (wallet_balance, entitlement hours_used). All business
+ *     math stays in JS (settlement-core.js).
+ *   - T (server-side RPC `settle_session_transaction`): W2 claim →
+ *     W3 wallet debit → W4 ledger insert → W5 entitlement CAS →
+ *     W6 projection sync → W7 finalize. Exactly one atomic unit.
+ *   - Post-T (destroy-pipeline-run.js): W8–W11, outside T.
+ *
+ * Replay / idempotency (SCB 3.4 §6, SCB 3.4A §7): the transaction is
+ * the replay boundary. A committed T leaves settlement_status='settled';
+ * any subsequent call returns IDEMPOTENT (JS pre-check) or CLAIM_LOST
+ * (RPC claim guard) → JS re-loads → IDEMPOTENT. No double debit.
+ *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {{
  *   sessionId: string;
@@ -343,6 +212,9 @@ export async function skipSessionSettlement(supabaseAdmin, sessionId, reason = '
  *   providerDestroyedVerified?: boolean;
  * }} input
  * @param {{ syncUserPlanInventory?: (client: unknown, userId: string) => Promise<unknown> }} [deps]
+ *        Reserved for signature compatibility. Projection sync (W6) is now
+ *        performed server-side inside T per SCB 3.4 §3, so the JS-side
+ *        `syncUserPlanInventory` is no longer invoked from this path.
  * @returns {Promise<SettlementResult>}
  */
 export async function settleSession(supabaseAdmin, input, deps = {}) {
@@ -357,6 +229,8 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
     };
   }
 
+  // Pre-RPC idempotency fast path (SCB 3.4A §7): a terminal session is
+  // returned IDEMPOTENT without invoking the RPC.
   if (session.settlement_status === 'settled') {
     return {
       state: 'IDEMPOTENT',
@@ -381,6 +255,7 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
     };
   }
 
+  // Eligibility — pure JS (settlement-core.js). Unchanged.
   const eligibility = evaluateSettlementEligibility(session, {
     providerDestroyedVerified: input.providerDestroyedVerified,
   });
@@ -392,83 +267,39 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
     };
   }
 
+  // Zero-billable → skip (non-financial, outside T). Unchanged.
   const billableSeconds = calculateBillableSeconds(session.started_at, session.ended_at);
   if (billableSeconds <= 0) {
     return skipSessionSettlement(supabaseAdmin, sessionId, 'zero_billable', { userId });
   }
 
-  const claimableStatuses = [...SETTLEABLE_SETTLEMENT_STATUSES];
-  const { data: claimed, error: claimError } = await supabaseAdmin
-    .from('gpu_sessions')
-    .update({ settlement_status: 'in_progress' })
-    .eq('id', sessionId)
-    .eq('user_id', userId)
-    .in('status', ['closed', 'completed'])
-    .in('settlement_status', claimableStatuses)
-    .select('id')
-    .maybeSingle();
+  // ──────────────── PRE-T (JS business math) ────────────────
+  // All allocation / breakdown math stays in JS. The RPC receives the
+  // prepared plan and executes it atomically (SCB 3.4A §2).
+  const [{ data: userRow }, plans] = await Promise.all([
+    supabaseAdmin.from('users').select('wallet_balance').eq('id', userId).maybeSingle(),
+    fetchBillablePlans(supabaseAdmin, userId),
+  ]);
 
-  if (claimError) {
-    return {
-      state: 'ERROR',
-      code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,
-      message: claimError.message,
-    };
-  }
+  const walletBalance = Number(userRow?.wallet_balance ?? 0);
+  const availableSeconds = computeAvailableEntitlementSeconds(plans, walletBalance);
+  const { chargeSeconds, capAppliedSeconds } = capChargeSeconds(billableSeconds, availableSeconds);
 
-  if (!claimed) {
-    const latest = await loadSessionForSettlement(supabaseAdmin, sessionId);
-    if (latest?.settlement_status === 'settled' || latest?.settlement_status === 'skipped') {
-      return settleSession(supabaseAdmin, input, deps);
-    }
-    return {
-      state: 'ERROR',
-      code: SETTLEMENT_ERROR_CODE.INVALID_SETTLEMENT_STATE,
-      message: 'Could not claim session for settlement',
-    };
-  }
+  /** @type {import('./settlement-core.js').SettlementAllocationLine[]} */
+  let allocationLines = [];
+  let chargedSeconds = 0;
+  let unchargedSeconds = billableSeconds;
 
-  try {
-    const [{ data: userRow }, plans] = await Promise.all([
-      supabaseAdmin.from('users').select('wallet_balance').eq('id', userId).maybeSingle(),
-      fetchBillablePlans(supabaseAdmin, userId),
-    ]);
-
-    const walletBalance = Number(userRow?.wallet_balance ?? 0);
-    const availableSeconds = computeAvailableEntitlementSeconds(plans, walletBalance);
-    const { chargeSeconds, capAppliedSeconds } = capChargeSeconds(billableSeconds, availableSeconds);
-
-    if (chargeSeconds <= 0) {
-      const breakdown = buildSettlementBreakdown({
-        sessionId,
-        billableSeconds,
-        chargeSeconds: 0,
-        unchargedSeconds: billableSeconds,
-        capAppliedSeconds,
-        lines: [],
-      });
-
-      const now = new Date().toISOString();
-      await supabaseAdmin
-        .from('gpu_sessions')
-        .update({
-          settlement_status: 'settled',
-          settlement_at: now,
-          settlement_breakdown: breakdown,
-        })
-        .eq('id', sessionId);
-
-      return {
-        state: 'OK',
-        sessionId,
-        settlementStatus: 'settled',
-        breakdown,
-        billableSeconds,
-        chargedSeconds: 0,
-        walletCharge: 0,
-      };
-    }
-
+  if (chargeSeconds <= 0) {
+    // Billable but nothing available to charge (cap applied). Route through
+    // the RPC with empty wallet_charge / entitlement_lines so the
+    // pending → settled transition is still atomic (W2 → W7 with W3–W6
+    // skipped). Breakdown records the uncharged seconds. Preserves the
+    // previous skipSessionSettlement behaviour (uncharged_seconds = billable).
+    allocationLines = [];
+    chargedSeconds = 0;
+    unchargedSeconds = billableSeconds;
+  } else {
     const orderedPlans = orderPlansForSettlement(
       plans.map((plan) => ({ ...plan, hours_remaining: Number(plan.hours_remaining ?? 0) })),
     );
@@ -477,64 +308,123 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
       plans: orderedPlans,
       walletBalance,
     });
+    allocationLines = allocation.lines;
+    chargedSeconds = allocation.chargedSeconds;
+    unchargedSeconds = allocation.unchargedSeconds + (capAppliedSeconds ?? 0);
+  }
 
-    const breakdown = buildSettlementBreakdown({
-      sessionId,
-      billableSeconds,
-      chargeSeconds: allocation.chargedSeconds,
-      unchargedSeconds: allocation.unchargedSeconds + (capAppliedSeconds ?? 0),
-      capAppliedSeconds,
-      lines: allocation.lines,
-    });
+  const breakdown = buildSettlementBreakdown({
+    sessionId,
+    billableSeconds,
+    chargeSeconds: chargedSeconds,
+    unchargedSeconds,
+    capAppliedSeconds,
+    lines: allocationLines,
+  });
 
-    const { walletCharge } = await commitSettlementLines(
-      supabaseAdmin,
-      userId,
-      sessionId,
-      allocation.lines,
-      plans,
-    );
+  // Read CAS guard values OUTSIDE T (SCB 3.4A §9 pre-RPC). These are
+  // inputs to the server-side CAS inside T; the RPC's claim guard and
+  // row locks are the authoritative protection.
+  const { walletBalance: casWalletBalance, entitlementReads } = await readCasGuardValues(
+    supabaseAdmin,
+    userId,
+    allocationLines,
+    plans,
+  );
 
-    const syncInventory = await resolveSyncInventory(deps);
-    await syncInventory(supabaseAdmin, userId);
+  const settlementAt = new Date().toISOString();
 
-    const now = new Date().toISOString();
-    const { error: finalizeError } = await supabaseAdmin
-      .from('gpu_sessions')
-      .update({
-        settlement_status: 'settled',
-        settlement_at: now,
-        settlement_breakdown: breakdown,
-      })
-      .eq('id', sessionId)
-      .eq('settlement_status', 'in_progress');
+  // ──────────────── T (single server-side RPC) ────────────────
+  const rpcResult = await executeSettlementTransaction(supabaseAdmin, {
+    sessionId,
+    userId,
+    providerDestroyedVerified: input.providerDestroyedVerified === true,
+    expectedPreSettlementStatus: String(session.settlement_status),
+    lines: allocationLines,
+    plans,
+    breakdown,
+    billableSeconds,
+    chargedSeconds,
+    walletBalance: casWalletBalance,
+    entitlementReads,
+    settlementAt,
+  });
 
-    if (finalizeError) {
-      throw finalizeError;
-    }
-
+  // ──────────────── POST-RPC classification (SCB 3.4A §9) ────────────────
+  if (rpcResult.state === 'OK' || rpcResult.state === 'IDEMPOTENT') {
+    // Preserve the existing SettlementResult shape exactly.
     return {
-      state: 'OK',
+      state: rpcResult.state,
       sessionId,
-      settlementStatus: 'settled',
+      settlementStatus: rpcResult.settlementStatus ?? 'settled',
       breakdown,
       billableSeconds,
-      chargedSeconds: allocation.chargedSeconds,
-      walletCharge,
+      chargedSeconds,
+      walletCharge: Number(rpcResult.walletCharge ?? 0),
     };
-  } catch (error) {
-    await supabaseAdmin
-      .from('gpu_sessions')
-      .update({ settlement_status: 'failed' })
-      .eq('id', sessionId)
-      .eq('settlement_status', 'in_progress');
+  }
 
+  // ERROR — T rolled back; no partial financial state persists (SCB 3.4A §6).
+  const code = String(rpcResult.code ?? SETTLEMENT_RPC_ERROR.INTERNAL);
+
+  if (code === SETTLEMENT_RPC_ERROR.CLAIM_LOST) {
+    // Re-load session; if a rival committed → IDEMPOTENT, else retry once
+    // with a fresh expected_pre_settlement_status (preserves the existing
+    // single-retry-on-claim-failure behaviour under the new RPC contract).
+    const latest = await loadSessionForSettlement(supabaseAdmin, sessionId);
+    if (latest?.settlement_status === 'settled' || latest?.settlement_status === 'skipped') {
+      return settleSession(supabaseAdmin, input, deps);
+    }
+    return {
+      state: 'ERROR',
+      code: SETTLEMENT_ERROR_CODE.INVALID_SETTLEMENT_STATE,
+      message: 'Settlement claim lost to a concurrent settler',
+    };
+  }
+
+  if (code === SETTLEMENT_RPC_ERROR.LEDGER_CONFLICT) {
+    // Possible prior committed T (duplicate idempotency_key). Re-load; if
+    // settled → IDEMPOTENT, else escalate (SCB 3.4A §9).
+    const latest = await loadSessionForSettlement(supabaseAdmin, sessionId);
+    if (latest?.settlement_status === 'settled') {
+      return settleSession(supabaseAdmin, input, deps);
+    }
     return {
       state: 'ERROR',
       code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,
-      message: error instanceof Error ? error.message : String(error),
+      message: 'Settlement ledger conflict — possible duplicate; investigate',
     };
   }
+
+  if (code === SETTLEMENT_RPC_ERROR.CLAIM_PRECONDITION) {
+    // Abort; surface to reconciliation (SCB 3.4A §9). This covers the
+    // stuck in_progress / awaiting_verify cases that are not inline-settleable
+    // under SCB 3.4 (no in_progress lease — §9 known limitation).
+    return {
+      state: 'ERROR',
+      code: SETTLEMENT_ERROR_CODE.INVALID_SETTLEMENT_STATE,
+      message: rpcResult.message ?? 'Settlement precondition not met',
+    };
+  }
+
+  // WALLET_CAS / CAS_EXHAUSTED / PROJECTION_FAILED / INTERNAL → retryable.
+  // Preserve existing logging style (console.error, same as prior catch path).
+  if (isSettlementRpcRetryable(code)) {
+    console.error('[settlement] transaction RPC failed (retryable):', code, rpcResult.message);
+    return {
+      state: 'ERROR',
+      code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,
+      message: rpcResult.message ?? 'Settlement transaction failed',
+    };
+  }
+
+  // Unknown code — treat as internal/retryable.
+  console.error('[settlement] transaction RPC failed (unknown code):', code, rpcResult.message);
+  return {
+    state: 'ERROR',
+    code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,
+    message: rpcResult.message ?? 'Settlement transaction failed',
+  };
 }
 
 /**

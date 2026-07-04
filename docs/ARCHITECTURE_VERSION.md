@@ -115,4 +115,16 @@ Toàn bộ hoạt động triển khai từ thời điểm này phải tuân th�
 
 ---
 
+## Post-Freeze Refinements (Architecture 2.0)
+
+Các refinement được phép trong Architecture 2.0 (refactor không đổi Billing Model / state machine / SoT — xem "Allowed Changes During Version 2.x"):
+
+| Refinement | Mô tả | Tham chiếu |
+|------------|-------|------------|
+| **SCB 3.4B** | Settlement transaction atomicity: W2–W7 (claim → wallet → ledger → entitlement CAS → projection sync → finalize) chuyển từ client-side multi-round-trip vào một RPC server-side `settle_session_transaction(payload json)` (PL/pgSQL, PostgREST). Pure executor, atomic rollback, replay boundary = một RPC call, idempotency claim guard + `wallet_transactions.idempotency_key`, CAS entitlement giữ nguyên trong RPC. JS giữ toàn bộ business math. | [`docs/scb/SCB_3_4_SPECIFICATION_FREEZE.md`](./scb/SCB_3_4_SPECIFICATION_FREEZE.md), [`docs/scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md`](./scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md), [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md) |
+
+SCB 3.4B **không** kích hoạt Architecture 3.0 (không đổi Billing Model, Session Model, Provider Architecture, Remaining Formula, hay state machine).
+
+---
+
 *GPUVietnam Architecture Release 2.0 — Frozen — 2026-06-28*

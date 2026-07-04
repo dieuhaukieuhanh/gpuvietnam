@@ -38,8 +38,8 @@ Các module sau là **Core Domain** — nguồn sự thật duy nhất cho logic
 
 ### Settlement
 
-**Module:** `src/lib/gpu/settlement.js`  
-**Vai trò:** Sole entitlement writer — commit consumption sau provider verify DESTROYED. Allocation order và billable seconds theo SCB §6.
+**Module:** `src/lib/gpu/settlement.js` (+ RPC `settle_session_transaction` trong `supabase/settle-session-transaction.sql`)  
+**Vai trò:** Orchestrator settlement — tính eligibility / billable seconds / allocation / breakdown trong JS, sau đó invoke server-side atomic transaction RPC thực hiện W2–W7 (claim → wallet debit → ledger insert → entitlement CAS → projection sync → finalize). RPC là sole entitlement/wallet writer; JS không ghi settlement ngoài RPC. SCB 3.4B — xem [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md).
 
 ### Destroy
 
@@ -137,5 +137,6 @@ Tài liệu draft/review/feasibility **không** override bộ chính thức trê
 |-----------|-------------|
 | M1–M14 | Session-Centric Billing end-to-end |
 | M14 | Production wiring, cleanup, architecture audit |
+| SCB 3.4B | Settlement transaction atomicity — W2–W7 chuyển vào RPC server-side `settle_session_transaction` (pure executor, atomic rollback, idempotency + CAS giữ nguyên). Refactor atomicity trong Architecture 2.0 — không đổi Billing Model / state machine / SoT. Xem [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md). |
 
-**Verdict:** Architecture 2.0 implementation **complete**. System behavior frozen at completion date unless bug fix or Architecture Review.
+**Verdict:** Architecture 2.0 implementation **complete**. System behavior frozen at completion date unless bug fix or Architecture Review. SCB 3.4B là refactor atomicity được phép trong Architecture 2.0 (refactor không đổi hành vi nghiệp vụ).

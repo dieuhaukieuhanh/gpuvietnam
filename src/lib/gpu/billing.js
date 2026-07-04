@@ -269,7 +269,12 @@ export async function clearMachineBillingFieldsForPipeline(supabaseAdmin, machin
 
 /**
 
- * Close a running session without charging plan hours (orphan / boot cancel).
+ * Record zero-charge usage on a session that the lifecycle layer closes without
+ * charging plan hours (orphan / boot cancel).
+ *
+ * SCB 3.0 (M4): billing must NOT mutate session lifecycle. Writes only usage
+ * fields. The lifecycle transition (running -> closed) is owned by
+ * session-lifecycle.js / destroy pipeline / reconciliation.
 
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
 
@@ -281,17 +286,11 @@ export async function clearMachineBillingFieldsForPipeline(supabaseAdmin, machin
 
 async function closeSessionWithoutCharge(supabaseAdmin, sessionId, reason = 'orphan_auto_closed') {
 
-  const now = new Date().toISOString();
-
   await supabaseAdmin
 
     .from('gpu_sessions')
 
     .update({
-
-      status: 'interrupted',
-
-      ended_at: now,
 
       duration_seconds: 0,
 
@@ -299,9 +298,7 @@ async function closeSessionWithoutCharge(supabaseAdmin, sessionId, reason = 'orp
 
     })
 
-    .eq('id', sessionId)
-
-    .eq('status', 'running');
+    .eq('id', sessionId);
 
 }
 
@@ -407,7 +404,7 @@ async function settleLinkedSessionWithoutCharge(supabaseAdmin, machine) {
 
 
 
-    if (session?.status === 'closed' || session?.status === 'completed') {
+    if (session?.status === 'closed') {
 
       await skipSessionSettlement(supabaseAdmin, sessionId, 'billing_waived');
 
@@ -943,7 +940,7 @@ export async function collectSessionMetrics(machine) {
 
  * @param {{ durationSeconds?: number; hoursUsed?: number; sessionId?: string | null; endedAt?: string; skipped?: boolean }} billingResult
 
- * @param {{ vramAvg?: number | null; outputCount?: number; interrupted?: boolean }} metrics
+ * @param {{ vramAvg?: number | null; outputCount?: number }} metrics
 
  */
 
@@ -956,99 +953,37 @@ export async function finalizeGpuSession(supabaseAdmin, machine, billingResult, 
 
 
   const { data: existing, error: loadError } = await supabaseAdmin
-
     .from('gpu_sessions')
-
-    .select('status, ended_at, settlement_status')
-
+    .select('id')
     .eq('id', sessionId)
-
     .maybeSingle();
 
-
-
   if (loadError) throw loadError;
-
-
+  if (!existing) return null;
 
   const outputCount = Number(metrics.outputCount ?? 0);
-
   const outputSummary = outputCount > 0 ? `${outputCount} file output` : '—';
-
   const durationSeconds = billingResult.durationSeconds ?? 0;
 
-
-
+  // SCB 3.0 (M4): billing records usage only. Lifecycle (status / ended_at) is
+  // owned by session-lifecycle.js and must already be transitioned to `closed`
+  // by the destroy pipeline before this step. No status / ended_at write here.
   const patch = {
-
     duration_seconds: durationSeconds,
-
     vram_avg_pct: metrics.vramAvg ?? null,
-
     output_count: outputCount,
-
     output_summary: outputSummary,
-
   };
 
-
-
-  if (existing?.status === 'closed') {
-
-    const { data, error } = await supabaseAdmin
-
-      .from('gpu_sessions')
-
-      .update(patch)
-
-      .eq('id', sessionId)
-
-      .select('*')
-
-      .single();
-
-    if (error) throw error;
-
-    return data;
-
-  }
-
-
-
-  if (metrics.interrupted && existing?.status === 'running') {
-
-    patch.status = 'interrupted';
-
-    patch.ended_at = billingResult.endedAt ?? new Date().toISOString();
-
-  } else if (existing?.status !== 'closing') {
-
-    patch.status = metrics.interrupted ? 'interrupted' : 'completed';
-
-    patch.ended_at = billingResult.endedAt ?? new Date().toISOString();
-
-  }
-
-
-
   const { data, error } = await supabaseAdmin
-
     .from('gpu_sessions')
-
     .update(patch)
-
     .eq('id', sessionId)
-
     .select('*')
-
-    .single();
-
-
+    .maybeSingle();
 
   if (error) throw error;
-
   return data;
-
 }
 
 

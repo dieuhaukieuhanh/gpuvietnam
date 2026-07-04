@@ -132,7 +132,8 @@ describe('session-start module (M9)', () => {
     assert.ok(source.includes('verifyInstanceRunning'));
     assert.ok(source.includes('createPendingSession'));
     assert.ok(source.includes('activateRunningSession'));
-    assert.ok(source.includes('interruptSession'));
+    assert.ok(!source.includes('interruptSession'));
+    assert.ok(!source.includes('INTERRUPT_REASON'));
     assert.ok(!source.includes('deductPerMinute'));
     assert.ok(!source.includes('applyBillingDeduction'));
     assert.ok(!source.includes('stopBilling'));

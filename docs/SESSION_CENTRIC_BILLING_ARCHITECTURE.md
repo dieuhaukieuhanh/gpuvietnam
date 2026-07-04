@@ -332,14 +332,24 @@ Nếu bước 3–4 **thất bại**: session quay `running` (hoặc giữ `clos
 
 ### 6.3 Nội dung Settlement (conceptual)
 
+> **SCB 3.4B:** Từ milestone SCB 3.4B, bước **Commit** + **Đánh dấu** thực hiện
+> trong một transaction atomic server-side duy nhất — RPC
+> `settle_session_transaction(payload json)` (PL/pgSQL, PostgREST). W2–W7
+> (claim → wallet debit → ledger insert → entitlement CAS → projection sync →
+> finalize) là một đơn vị không chia cắt: commit toàn bộ hoặc rollback toàn bộ.
+> JS (`settlement.js`) chỉ tính business math và orchestrate; không ghi
+> entitlement/wallet ngoài RPC. Xem
+> [`docs/scb/SCB_3_4_SPECIFICATION_FREEZE.md`](./scb/SCB_3_4_SPECIFICATION_FREEZE.md)
+> và [`docs/scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md`](./scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md).
+
 | Bước | Mô tả |
 |------|-------|
-| **Tính billable** | `billable_seconds = ended_at − started_at` (seconds, floor ≥ 0) |
-| **Cap entitlement** | `charge_seconds = min(billable_seconds, entitlement_available_seconds)` |
-| **Allocate** | gift → combo → hourly (giữ policy hiện tại) |
-| **Commit** | Cập nhật `hours_used` / grant / wallet + wallet_transaction (hourly) |
-| **Đánh dấu** | `settlement_status = settled`, lưu breakdown trên session |
-| **Idempotent** | Settlement key = `session_id` — gọi lại không double charge (Nguyên tắc 29) |
+| **Tính billable** | `billable_seconds = ended_at − started_at` (seconds, floor ≥ 0) — JS |
+| **Cap entitlement** | `charge_seconds = min(billable_seconds, entitlement_available_seconds)` — JS |
+| **Allocate** | gift → combo → hourly (giữ policy hiện tại) — JS |
+| **Commit (W2–W7)** | Atomic trong `settle_session_transaction()`: cập nhật `hours_used` / grant / wallet + `wallet_transactions` (hourly) + projection sync `user_plan_inventory` |
+| **Đánh dấu (W7)** | Trong cùng RPC: `settlement_status = 'settled'`, lưu breakdown trên session |
+| **Idempotent** | Replay boundary = một RPC call; claim guard `settlement_status` + `wallet_transactions.idempotency_key` (defence-in-depth) — gọi lại không double charge (Nguyên tắc 29) |
 
 ### 6.4 Settlement skipped
 

@@ -129,6 +129,34 @@ Chỉ có một flow duy nhất.
 
 ---
 
+## 1.4 SCB 3.4B — Settlement Transaction RPC
+
+Kiến trúc SCB (Architecture 2.0) mô tả Settlement ở mức domain (§6,
+[SESSION_CENTRIC_BILLING_ARCHITECTURE.md](./SESSION_CENTRIC_BILLING_ARCHITECTURE.md)).
+Từ milestone **SCB 3.4B**, transaction boundary settlement được đóng băng chi tiết:
+
+- **W2–W7** (claim → wallet debit → ledger insert → entitlement CAS →
+  projection sync → finalize) là **một transaction atomic server-side duy nhất**
+  trong RPC `settle_session_transaction(payload json)` (PL/pgSQL, PostgREST).
+- **W1** và **W8–W11** nằm ngoài transaction.
+- JS (`settlement.js`) giữ toàn bộ business math (eligibility, allocation,
+  billable seconds, breakdown) và orchestrate; RPC là pure transaction executor.
+- Replay boundary = một RPC call. Idempotency: `settlement_status` claim guard
+  (primary) + `wallet_transactions.idempotency_key` partial unique index
+  (defence-in-depth). CAS entitlement giữ nguyên, thực hiện trong RPC.
+- Projection sync (`user_plan_inventory`) thực hiện trong RPC (W6), inside T.
+
+Tài liệu frozen:
+- [`docs/scb/SCB_3_4_SPECIFICATION_FREEZE.md`](./scb/SCB_3_4_SPECIFICATION_FREEZE.md)
+- [`docs/scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md`](./scb/SCB_3_4A_RPC_DESIGN_CONTRACT.md)
+- [`docs/scb/SCB_3_4B_COMPLETION_REPORT.md`](./scb/SCB_3_4B_COMPLETION_REPORT.md)
+
+SCB 3.4B là refactor atomicity trong Architecture 2.0 (không đổi Billing Model,
+không đổi state machine, không đổi SoT) — nằm trong nhóm "Allowed Changes"
+của [ARCHITECTURE_VERSION.md](./ARCHITECTURE_VERSION.md).
+
+---
+
 # 2. Design Philosophy
 
 ## 2.1 Session-Centric

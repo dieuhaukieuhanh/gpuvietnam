@@ -5,8 +5,7 @@
 
 import { runDestroyPipeline } from '../destroy-pipeline-run.js';
 import {
-  interruptSession,
-  INTERRUPT_REASON,
+  closeSession,
   SETTLEMENT_STATUS,
 } from '../gpu/session-lifecycle.js';
 import {
@@ -148,27 +147,38 @@ async function repairOrphanSession(supabaseAdmin, drift, deps) {
   }
 
   const record = mapSessionRowToRecord(row);
-  const interruptResult = interruptSession(record, { now: deps.now ?? new Date().toISOString() }, {
-    reason: INTERRUPT_REASON.ORPHAN,
-  });
+  const now = deps.now ?? new Date().toISOString();
 
-  if (interruptResult.state === 'IGNORED') {
-    return { outcome: REPAIR_OUTCOME.ALREADY_CONSISTENT, reason: 'already_interrupted' };
-  }
-  if (interruptResult.state !== 'OK') {
-    return { outcome: REPAIR_OUTCOME.FAILED, reason: interruptResult.message ?? 'interrupt_failed' };
-  }
-  assertTransitionOk(interruptResult);
+  // SCB 3.0: an orphan running session (no active machine) is closed directly
+  // running -> closed. The provider instance is gone, so provider-destroyed is
+  // treated as verified. Settlement is then handled by settlement-drift repair.
+  const closeResult = closeSession(
+    record,
+    { providerDestroyedVerified: true, now },
+    {
+      ended_at: now,
+      verified_destroyed_at: now,
+      destroyReason: 'orphan',
+    },
+  );
 
-  await persistSessionRecord(supabaseAdmin, sessionId, interruptResult.session);
+  if (closeResult.state === 'IGNORED') {
+    return { outcome: REPAIR_OUTCOME.ALREADY_CONSISTENT, reason: 'already_closed' };
+  }
+  if (closeResult.state !== 'OK') {
+    return { outcome: REPAIR_OUTCOME.FAILED, reason: closeResult.message ?? 'close_failed' };
+  }
+  assertTransitionOk(closeResult);
+
+  await persistSessionRecord(supabaseAdmin, sessionId, closeResult.session);
   deps.log?.('repair orphan session', { sessionId, driftType: drift.driftType });
 
   return {
     outcome: REPAIR_OUTCOME.REPAIRED,
-    action: 'interrupt_orphan',
+    action: 'close_orphan',
     sessionId,
-    sessionStatus: interruptResult.session.status,
-    settlementStatus: interruptResult.session.settlement_status,
+    sessionStatus: closeResult.session.status,
+    settlementStatus: closeResult.session.settlement_status,
   };
 }
 
@@ -330,7 +340,7 @@ export async function runInfrastructureReconciliation(supabaseAdmin, deps = {}, 
     supabaseAdmin
       .from('gpu_sessions')
       .select('*')
-      .in('status', ['running', 'closing', 'closed', 'completed'])
+      .in('status', ['running', 'closed'])
       .order('started_at', { ascending: false })
       .limit(limit),
     supabaseAdmin

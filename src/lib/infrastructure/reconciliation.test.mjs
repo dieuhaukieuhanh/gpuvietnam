@@ -90,11 +90,12 @@ describe('reconciliation-core detection (M13)', () => {
 });
 
 describe('repairDriftItem (M13)', () => {
-  it('T5 — repair orphan interrupts session without settlement', async () => {
+  it('T5 — repair orphan closes session without settlement', async () => {
     /** @type {Record<string, unknown>} */
     const session = {
       id: SESSION_ID,
       user_id: USER_ID,
+      machine_id: MACHINE_ID,
       status: 'running',
       started_at: '2026-07-03T10:00:00.000Z',
       ended_at: null,
@@ -149,8 +150,8 @@ describe('repairDriftItem (M13)', () => {
     );
 
     assert.equal(result.outcome, REPAIR_OUTCOME.REPAIRED);
-    assert.equal(session.status, 'interrupted');
-    assert.equal(session.settlement_status, 'skipped');
+    assert.equal(session.status, 'closed');
+    assert.equal(session.settlement_status, 'pending');
     assert.equal(settleCalled, false);
   });
 
@@ -224,8 +225,8 @@ describe('repairDriftItem (M13)', () => {
     const session = {
       id: SESSION_ID,
       user_id: USER_ID,
-      status: 'interrupted',
-      settlement_status: 'skipped',
+      status: 'closed',
+      settlement_status: 'settled',
       started_at: NOW,
       ended_at: NOW,
     };

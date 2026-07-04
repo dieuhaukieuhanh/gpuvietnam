@@ -8,7 +8,9 @@ import { getPlanNameFromKey } from '@/lib/gpu-pricing';
 import { parseInventoryId } from '@/lib/user-plan-inventory';
 
 import {
-  closeOrphanRunningSessions,
+  closeOrphanRunningSessionsLifecycle,
+} from './session-orphan-close.js';
+import {
   findMachineForBilling,
   linkMachineToBillingSession,
   fetchOrderedBillablePlansForUser,
@@ -16,10 +18,12 @@ import {
 import {
   createPendingSession,
   activateRunningSession,
-  interruptSession,
-  INTERRUPT_REASON,
   SETTLEMENT_STATUS,
 } from './session-lifecycle.js';
+import {
+  activateSessionRow,
+  ACTIVATE_OUTCOME,
+} from './session-activate.js';
 import {
   verifyInstanceRunning,
   createProviderVerifyPortFromGpuService,
@@ -175,10 +179,18 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     return { skipped: true, reason: 'machine_not_running' };
   }
 
-  await closeOrphanRunningSessions(supabaseAdmin, userId);
-  scbObs('after closeOrphanRunningSessions', {
+  // SCB 3.2 — lifecycle close of orphan running sessions (was a billing call
+  // that after M4 no longer closes lifecycle state, leaving users blocked by
+  // the per-user unique index). This closes running -> closed via the state
+  // machine and persists ONLY lifecycle fields. No settlement/billing/wallet/
+  // inventory. See session-orphan-close.js.
+  const orphanResult = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId);
+  scbObs('after closeOrphanRunningSessionsLifecycle', {
     userId,
     machineId: machine.id,
+    closed: orphanResult.closed,
+    skipped: orphanResult.skipped,
+    orphanSessionIds: orphanResult.sessionIds,
     gpu_session_id: machine.gpu_session_id ?? null,
     billing_started_at: machine.billing_started_at ?? null,
   });
@@ -522,32 +534,83 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
 
   const activated = activateResult.session;
 
-  const { error: updateError } = await supabaseAdmin
-    .from('gpu_sessions')
-    .update({
-      status: activated.status,
-      started_at: activated.started_at,
-      verified_running_at: activated.verified_running_at,
-      settlement_status: activated.settlement_status,
-      duration_seconds: 0,
-    })
-    .eq('id', sessionId);
-  scbObs('after gpu_sessions.update (running)', {
+  // SCB 3.1 — Optimistic concurrency: the update is guarded by `status='pending'`.
+  // If a concurrent flow already moved the row (close/re-activate/delete) the
+  // update affects 0 rows → we return a clear domain result, no retry, no force.
+  // started_at is set ONCE here (pending rows have NULL started_at per SCB
+  // invariant); the guard guarantees we never overwrite a row that left pending.
+  const activateRow = await activateSessionRow(supabaseAdmin, sessionId, {
+    status: activated.status,
+    started_at: activated.started_at,
+    verified_running_at: activated.verified_running_at,
+    settlement_status: activated.settlement_status,
+  });
+  scbObs('after activateSessionRow', {
     machineId: machine.id,
     sessionId,
-    updateError: updateError ? String(updateError.message) : null,
-    activatedStatus: activated.status,
+    outcome: activateRow.outcome,
+    currentStatus: activateRow.currentStatus ?? activateRow.session?.status ?? null,
     activatedStartedAt: activated.started_at,
   });
 
-  if (updateError) {
-    scbObs('THROW updateError', {
+  if (activateRow.outcome === ACTIVATE_OUTCOME.ERROR) {
+    scbObs('THROW activateSessionRow ERROR', {
       machineId: machine.id,
       sessionId,
-      error: String(updateError.message),
+      error: activateRow.error ?? null,
     });
-    throw updateError;
+    throw new Error(activateRow.error ?? 'activateSessionRow failed');
   }
+
+  // Concurrent activate won — treat as already started (idempotent success).
+  if (activateRow.outcome === ACTIVATE_OUTCOME.ALREADY_RUNNING) {
+    const running = activateRow.session;
+    scbObs('RETURN alreadyStarted (concurrent activate won)', {
+      machineId: machine.id,
+      sessionId,
+      startedAt: running?.started_at ?? activated.started_at,
+    });
+    return {
+      alreadyStarted: true,
+      sessionId,
+      startedAt: running?.started_at ?? activated.started_at ?? verifiedAt,
+      sessionStatus: 'running',
+      settlementStatus: running?.settlement_status ?? activated.settlement_status ?? null,
+      verifiedRunningAt: running?.verified_running_at ?? activated.verified_running_at ?? verifiedAt,
+      verifyStatus,
+    };
+  }
+
+  // Session was closed by a concurrent flow — do not link machine projection.
+  if (activateRow.outcome === ACTIVATE_OUTCOME.CLOSED) {
+    scbObs('RETURN skipped (session closed by concurrent flow)', {
+      machineId: machine.id,
+      sessionId,
+    });
+    return {
+      skipped: true,
+      reason: 'session_closed',
+      sessionId,
+      sessionStatus: 'closed',
+    };
+  }
+
+  // Any other concurrent transition (e.g. row deleted) — surface clearly.
+  if (activateRow.outcome === ACTIVATE_OUTCOME.CONCURRENT_TRANSITION) {
+    scbObs('RETURN skipped (concurrent transition)', {
+      machineId: machine.id,
+      sessionId,
+      currentStatus: activateRow.currentStatus ?? null,
+    });
+    return {
+      skipped: true,
+      reason: 'concurrent_transition',
+      sessionId,
+      currentStatus: activateRow.currentStatus ?? null,
+    };
+  }
+
+  // ACTIVATED — proceed to link machine projection.
 
   try {
     await linkMachineToBillingSession(
@@ -670,7 +733,14 @@ export async function createProvisioningPendingSession(supabaseAdmin, input) {
 }
 
 /**
- * Interrupt pending session on cancel-start (M3 only).
+ * Cancel a pending session for a user (cancel-start path).
+ *
+ * ADR (SCB 3.0): a `pending` session that never reaches `running` is
+ * DELETED, not transitioned to a terminal state. The state machine has no
+ * `pending -> closed` transition, so the row is removed from `gpu_sessions`
+ * and the machine projection link is cleared. This is not a state-machine
+ * transition; it is disposal of a never-billable provisioning record.
+ *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {string} userId
  */
@@ -689,35 +759,25 @@ export async function interruptPendingSessionForUser(supabaseAdmin, userId) {
     return { skipped: true, reason: 'no_pending_session' };
   }
 
-  const context = {
-    subscriptionActive: true,
-    now: new Date().toISOString(),
-  };
+  const sessionId = String(pending.id);
 
-  const interruptResult = interruptSession(mapGpuSessionRowToRecord(pending), context, {
-    reason: INTERRUPT_REASON.CANCELLED,
-  });
+  const { error: deleteError } = await supabaseAdmin
+    .from('gpu_sessions')
+    .delete()
+    .eq('id', sessionId);
 
-  if (!interruptResult.ok) {
-    return { skipped: true, reason: interruptResult.message ?? 'interrupt_failed' };
+  if (deleteError) throw deleteError;
+
+  if (pending.machine_id) {
+    await supabaseAdmin
+      .from('machines')
+      .update({ gpu_session_id: null, updated_at: new Date().toISOString() })
+      .eq('id', String(pending.machine_id));
   }
 
-  const next = interruptResult.session;
-  const { error: updateError } = await supabaseAdmin
-    .from('gpu_sessions')
-    .update({
-      status: next.status,
-      settlement_status: next.settlement_status,
-      destroy_reason: next.destroy_reason,
-      ended_at: next.ended_at,
-    })
-    .eq('id', pending.id);
-
-  if (updateError) throw updateError;
-
   return {
-    sessionId: String(pending.id),
-    sessionStatus: next.status,
-    settlementStatus: next.settlement_status,
+    sessionId,
+    deleted: true,
+    reason: 'pending_session_cancelled',
   };
 }

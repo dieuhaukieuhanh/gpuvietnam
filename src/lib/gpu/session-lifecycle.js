@@ -1,10 +1,21 @@
 /**
- * Session Lifecycle Domain — M3B.
+ * Session Lifecycle Domain — SCB 3.0 (M3).
  * Pure state machine. No DB, HTTP, Supabase, logging, or side effects.
- * @see docs/SESSION_DOMAIN_DESIGN.md v1.1
+ *
+ * State machine (strict):
+ *   pending -> running -> closed
+ *
+ * Settlement is a sub-state machine confined to `closed`:
+ *   closed.settlement_status: pending -> in_progress -> settled | skipped | failed
+ *
+ * All non-SCB states and the transitions / commands / helpers that produced
+ * them have been removed. There is no compatibility layer and no shortcut
+ * from `pending` directly to `closed`: a session that never reaches `running`
+ * cannot be terminated through this state machine (see Remaining Work in the
+ * M3 report).
  */
 
-/** @typedef {'pending'|'running'|'closing'|'closed'|'interrupted'|'completed'} SessionStatus */
+/** @typedef {'pending'|'running'|'closed'} SessionStatus */
 
 /** @typedef {'not_applicable'|'awaiting_verify'|'pending'|'in_progress'|'settled'|'skipped'|'failed'} SettlementStatus */
 
@@ -20,6 +31,7 @@
  * @property {string|null} [destroy_reason]
  * @property {string|null} [verified_running_at]
  * @property {string|null} [verified_destroyed_at]
+ * @property {string} [created_at]
  */
 
 /**
@@ -30,8 +42,6 @@
  * @property {boolean} [providerRunningVerified]
  * @property {boolean} [providerDestroyedVerified]
  * @property {number} [otherRunningSessionCount]
- * @property {number} [runningVerifyRetriesRemaining]
- * @property {'destroyed'|'still_running'|'timeout'} [verifyOutcome]
  * @property {string} [now]
  */
 
@@ -55,10 +65,7 @@
 export const SESSION_STATUS = Object.freeze({
   PENDING: 'pending',
   RUNNING: 'running',
-  CLOSING: 'closing',
   CLOSED: 'closed',
-  INTERRUPTED: 'interrupted',
-  COMPLETED: 'completed',
 });
 
 export const SETTLEMENT_STATUS = Object.freeze({
@@ -74,12 +81,7 @@ export const SETTLEMENT_STATUS = Object.freeze({
 export const SESSION_COMMAND = Object.freeze({
   CREATE_PENDING: 'CREATE_PENDING',
   ACTIVATE_RUNNING: 'ACTIVATE_RUNNING',
-  RUNNING_VERIFY_FAILED: 'RUNNING_VERIFY_FAILED',
-  REQUEST_DESTROY: 'REQUEST_DESTROY',
   CLOSE: 'CLOSE',
-  ROLLBACK_CLOSING: 'ROLLBACK_CLOSING',
-  RETRY_DESTROY_VERIFY: 'RETRY_DESTROY_VERIFY',
-  INTERRUPT: 'INTERRUPT',
   START_SETTLEMENT: 'START_SETTLEMENT',
   COMPLETE_SETTLEMENT: 'COMPLETE_SETTLEMENT',
   SKIP_SETTLEMENT: 'SKIP_SETTLEMENT',
@@ -90,12 +92,7 @@ export const SESSION_COMMAND = Object.freeze({
 export const SESSION_DOMAIN_EVENT = Object.freeze({
   SESSION_CREATED: 'SessionCreated',
   SESSION_ACTIVATED: 'SessionActivated',
-  SESSION_CANCELLED: 'SessionCancelled',
-  DESTROY_INITIATED: 'DestroyInitiated',
   SESSION_CLOSED: 'SessionClosed',
-  SESSION_INTERRUPTED: 'SessionInterrupted',
-  CLOSING_ROLLBACK: 'ProviderDestroyVerifyFailed',
-  DESTROY_VERIFY_TIMEOUT: 'DestroyVerifyTimeout',
   SETTLEMENT_STARTED: 'SettlementStarted',
   SETTLEMENT_COMPLETED: 'SettlementCompleted',
   SETTLEMENT_SKIPPED: 'SettlementSkipped',
@@ -108,22 +105,17 @@ export const SESSION_ERROR_CODE = Object.freeze({
   INVALID_SESSION_STATE: 'INVALID_SESSION_STATE',
   SESSION_NOT_PENDING: 'SESSION_NOT_PENDING',
   SESSION_NOT_RUNNING: 'SESSION_NOT_RUNNING',
-  SESSION_NOT_CLOSING: 'SESSION_NOT_CLOSING',
   SESSION_NOT_CLOSED: 'SESSION_NOT_CLOSED',
   SESSION_ALREADY_CLOSED: 'SESSION_ALREADY_CLOSED',
   SESSION_ALREADY_TERMINAL: 'SESSION_ALREADY_TERMINAL',
-  SESSION_LEGACY_COMPLETED: 'SESSION_LEGACY_COMPLETED',
   SUBSCRIPTION_NOT_ACTIVE: 'SUBSCRIPTION_NOT_ACTIVE',
   MACHINE_NOT_LINKED: 'MACHINE_NOT_LINKED',
   PROVIDER_NOT_VERIFIED: 'PROVIDER_NOT_VERIFIED',
-  DESTROY_REASON_REQUIRED: 'DESTROY_REASON_REQUIRED',
   MULTIPLE_RUNNING_SESSIONS: 'MULTIPLE_RUNNING_SESSIONS',
   STARTED_AT_IMMUTABLE: 'STARTED_AT_IMMUTABLE',
   ENDED_AT_IMMUTABLE: 'ENDED_AT_IMMUTABLE',
   SETTLEMENT_ALREADY_SETTLED: 'SETTLEMENT_ALREADY_SETTLED',
   SETTLEMENT_NOT_FAILED: 'SETTLEMENT_NOT_FAILED',
-  INVALID_INTERRUPT_REASON: 'INVALID_INTERRUPT_REASON',
-  LEGACY_STATUS_FORBIDDEN: 'LEGACY_STATUS_FORBIDDEN',
 });
 
 export const ILLEGAL_POLICY = Object.freeze({
@@ -133,16 +125,8 @@ export const ILLEGAL_POLICY = Object.freeze({
   INVARIANT_VIOLATION: 'INVARIANT_VIOLATION',
 });
 
-export const INTERRUPT_REASON = Object.freeze({
-  PROVISION_FAILED: 'provision_failed',
-  CANCELLED: 'cancelled',
-  ORPHAN: 'orphan',
-  ADMIN: 'admin',
-  RUNNING_VERIFY_FATAL: 'running_verify_fatal',
-});
-
 /** Semantic version of the session state machine definition (bump when transitions change). */
-export const SESSION_STATE_MACHINE_VERSION = '1.0';
+export const SESSION_STATE_MACHINE_VERSION = '2.0';
 
 /**
  * Recursively freeze plain objects and arrays (functions are frozen as object refs only).
@@ -169,18 +153,12 @@ function deepFreeze(value) {
   return value;
 }
 
-const TERMINAL_STATUSES = new Set([
-  SESSION_STATUS.CLOSED,
-  SESSION_STATUS.INTERRUPTED,
-  SESSION_STATUS.COMPLETED,
-]);
+const TERMINAL_STATUSES = new Set([SESSION_STATUS.CLOSED]);
 
 const SCB_STATUSES = new Set([
   SESSION_STATUS.PENDING,
   SESSION_STATUS.RUNNING,
-  SESSION_STATUS.CLOSING,
   SESSION_STATUS.CLOSED,
-  SESSION_STATUS.INTERRUPTED,
 ]);
 
 export class SessionInvariantViolationError extends Error {
@@ -240,10 +218,6 @@ export function assertSessionIntegrity(session) {
     );
   }
 
-  if (session.status === SESSION_STATUS.COMPLETED) {
-    return;
-  }
-
   if (session.status === SESSION_STATUS.RUNNING && session.started_at == null) {
     throw new SessionInvariantViolationError(
       SESSION_ERROR_CODE.INVALID_SESSION_STATE,
@@ -287,18 +261,6 @@ export function assertAtMostOneRunningSession(context) {
 
 /** @type {Record<string, (session: SessionRecord|null, context: SessionContext, payload: Record<string, unknown>) => { ok: true } | { ok: false, code: string, message: string, policy?: string }>} */
 export const SESSION_GUARDS = Object.freeze({
-  notLegacyCompleted(session) {
-    if (session?.status === SESSION_STATUS.COMPLETED) {
-      return {
-        ok: false,
-        code: SESSION_ERROR_CODE.SESSION_LEGACY_COMPLETED,
-        message: 'Legacy completed session is read-only',
-        policy: ILLEGAL_POLICY.DOMAIN_ERROR,
-      };
-    }
-    return { ok: true };
-  },
-
   subscriptionActive(_session, context) {
     if (context.subscriptionActive !== true) {
       return {
@@ -377,18 +339,6 @@ export const SESSION_GUARDS = Object.freeze({
     return { ok: true };
   },
 
-  statusClosing(session) {
-    if (session?.status !== SESSION_STATUS.CLOSING) {
-      return {
-        ok: false,
-        code: SESSION_ERROR_CODE.SESSION_NOT_CLOSING,
-        message: 'Session must be closing',
-        policy: ILLEGAL_POLICY.DOMAIN_ERROR,
-      };
-    }
-    return { ok: true };
-  },
-
   statusClosed(session) {
     if (session?.status !== SESSION_STATUS.CLOSED) {
       return {
@@ -422,7 +372,7 @@ export const SESSION_GUARDS = Object.freeze({
         policy: ILLEGAL_POLICY.DOMAIN_ERROR,
       };
     }
-    if (session.status === SESSION_STATUS.RUNNING && contextMachineRunning(session) === false) {
+    if (session.status === SESSION_STATUS.RUNNING && !session.machineId) {
       return {
         ok: false,
         code: SESSION_ERROR_CODE.MACHINE_NOT_LINKED,
@@ -516,24 +466,7 @@ export const SESSION_GUARDS = Object.freeze({
     }
     return { ok: true };
   },
-
-  destroyReasonProvided(_session, _context, payload) {
-    if (!payload.destroyReason || typeof payload.destroyReason !== 'string') {
-      return {
-        ok: false,
-        code: SESSION_ERROR_CODE.DESTROY_REASON_REQUIRED,
-        message: 'SD-18: destroy_reason required when entering closing',
-        policy: ILLEGAL_POLICY.DOMAIN_ERROR,
-      };
-    }
-    return { ok: true };
-  },
 });
-
-/** @param {SessionRecord} session */
-function contextMachineRunning(session) {
-  return Boolean(session.machineId);
-}
 
 /**
  * @param {string[]} guardNames
@@ -622,7 +555,6 @@ const SESSION_TRANSITION_MAP = [
     command: SESSION_COMMAND.ACTIVATE_RUNNING,
     to: SESSION_STATUS.RUNNING,
     guards: [
-      'notLegacyCompleted',
       'statusPending',
       'ses1Activate',
       'subscriptionActive',
@@ -646,157 +578,15 @@ const SESSION_TRANSITION_MAP = [
   },
   {
     transitionId: 'SES-TR-003',
-    from: SESSION_STATUS.PENDING,
-    command: SESSION_COMMAND.RUNNING_VERIFY_FAILED,
-    to: SESSION_STATUS.PENDING,
-    guards: ['notLegacyCompleted', 'statusPending'],
-    event: null,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, context) {
-      return (context.runningVerifyRetriesRemaining ?? 0) > 0;
-    },
-    apply(session) {
-      return { ...session };
-    },
-    idempotent() {
-      return true;
-    },
-  },
-  {
-    transitionId: 'SES-TR-004',
-    from: SESSION_STATUS.PENDING,
-    command: SESSION_COMMAND.RUNNING_VERIFY_FAILED,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted', 'statusPending'],
-    event: SESSION_DOMAIN_EVENT.SESSION_INTERRUPTED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, context) {
-      return (context.runningVerifyRetriesRemaining ?? 0) <= 0;
-    },
-    apply(session, context) {
-      return {
-        ...session,
-        status: SESSION_STATUS.INTERRUPTED,
-        settlement_status: SETTLEMENT_STATUS.SKIPPED,
-        ended_at: null,
-        destroy_reason: 'running_verify_fatal',
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-005',
-    from: SESSION_STATUS.PENDING,
-    command: SESSION_COMMAND.INTERRUPT,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted', 'statusPending'],
-    event: SESSION_DOMAIN_EVENT.SESSION_INTERRUPTED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, _context, payload) {
-      return payload.reason === INTERRUPT_REASON.PROVISION_FAILED;
-    },
-    apply(session) {
-      return {
-        ...session,
-        status: SESSION_STATUS.INTERRUPTED,
-        settlement_status: SETTLEMENT_STATUS.NOT_APPLICABLE,
-        ended_at: null,
-        destroy_reason: INTERRUPT_REASON.PROVISION_FAILED,
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-006',
-    from: SESSION_STATUS.PENDING,
-    command: SESSION_COMMAND.INTERRUPT,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted', 'statusPending'],
-    event: SESSION_DOMAIN_EVENT.SESSION_CANCELLED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, _context, payload) {
-      return payload.reason === INTERRUPT_REASON.CANCELLED;
-    },
-    apply(session) {
-      return {
-        ...session,
-        status: SESSION_STATUS.INTERRUPTED,
-        settlement_status: SETTLEMENT_STATUS.SKIPPED,
-        ended_at: null,
-        destroy_reason: INTERRUPT_REASON.CANCELLED,
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-007',
     from: SESSION_STATUS.RUNNING,
-    command: SESSION_COMMAND.REQUEST_DESTROY,
-    to: SESSION_STATUS.CLOSING,
+    command: SESSION_COMMAND.CLOSE,
+    to: SESSION_STATUS.CLOSED,
     guards: [
-      'notLegacyCompleted',
       'statusRunning',
       'startedAtSet',
       'machineLinked',
-      'destroyReasonProvided',
+      'providerDestroyedVerified',
     ],
-    event: SESSION_DOMAIN_EVENT.DESTROY_INITIATED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    apply(session, _context, payload) {
-      assertSessionIntegrity(session);
-      return {
-        ...session,
-        status: SESSION_STATUS.CLOSING,
-        destroy_reason: String(payload.destroyReason),
-        settlement_status: SETTLEMENT_STATUS.AWAITING_VERIFY,
-      };
-    },
-    idempotent(session) {
-      return session.status === SESSION_STATUS.CLOSING;
-    },
-  },
-  {
-    transitionId: 'SES-TR-008',
-    from: SESSION_STATUS.CLOSING,
-    command: SESSION_COMMAND.REQUEST_DESTROY,
-    to: SESSION_STATUS.CLOSING,
-    guards: ['notLegacyCompleted', 'statusClosing'],
-    event: null,
-    illegalPolicy: ILLEGAL_POLICY.IGNORE,
-    apply(session) {
-      return { ...session };
-    },
-    idempotent() {
-      return true;
-    },
-  },
-  {
-    transitionId: 'SES-TR-009',
-    from: SESSION_STATUS.RUNNING,
-    command: SESSION_COMMAND.INTERRUPT,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted', 'statusRunning'],
-    event: SESSION_DOMAIN_EVENT.SESSION_INTERRUPTED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, _context, payload) {
-      return (
-        payload.reason === INTERRUPT_REASON.ORPHAN || payload.reason === INTERRUPT_REASON.ADMIN
-      );
-    },
-    apply(session, context, payload) {
-      const wasBillable = session.started_at != null;
-      return {
-        ...session,
-        status: SESSION_STATUS.INTERRUPTED,
-        settlement_status: SETTLEMENT_STATUS.SKIPPED,
-        ended_at: wasBillable ? ctxNow(context) : null,
-        destroy_reason: String(payload.reason),
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-010',
-    from: SESSION_STATUS.CLOSING,
-    command: SESSION_COMMAND.CLOSE,
-    to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosing', 'providerDestroyedVerified'],
     event: SESSION_DOMAIN_EVENT.SESSION_CLOSED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     apply(session, context, payload) {
@@ -808,6 +598,7 @@ const SESSION_TRANSITION_MAP = [
         status: SESSION_STATUS.CLOSED,
         ended_at: session.ended_at ?? endedAt,
         verified_destroyed_at: payload.verified_destroyed_at ?? ctxNow(context),
+        destroy_reason: payload.destroyReason != null ? String(payload.destroyReason) : session.destroy_reason,
         settlement_status: SETTLEMENT_STATUS.PENDING,
       };
     },
@@ -816,65 +607,11 @@ const SESSION_TRANSITION_MAP = [
     },
   },
   {
-    transitionId: 'SES-TR-011',
-    from: SESSION_STATUS.CLOSING,
-    command: SESSION_COMMAND.ROLLBACK_CLOSING,
-    to: SESSION_STATUS.RUNNING,
-    guards: ['notLegacyCompleted', 'statusClosing'],
-    event: SESSION_DOMAIN_EVENT.CLOSING_ROLLBACK,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    apply(session) {
-      return {
-        ...session,
-        status: SESSION_STATUS.RUNNING,
-        destroy_reason: null,
-        settlement_status: null,
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-012',
-    from: SESSION_STATUS.CLOSING,
-    command: SESSION_COMMAND.RETRY_DESTROY_VERIFY,
-    to: SESSION_STATUS.CLOSING,
-    guards: ['notLegacyCompleted', 'statusClosing'],
-    event: SESSION_DOMAIN_EVENT.DESTROY_VERIFY_TIMEOUT,
-    illegalPolicy: ILLEGAL_POLICY.IGNORE,
-    apply(session) {
-      return { ...session };
-    },
-    idempotent() {
-      return true;
-    },
-  },
-  {
-    transitionId: 'SES-TR-013',
-    from: SESSION_STATUS.CLOSING,
-    command: SESSION_COMMAND.INTERRUPT,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted', 'statusClosing'],
-    event: SESSION_DOMAIN_EVENT.SESSION_INTERRUPTED,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    match(_session, _context, payload) {
-      return payload.reason === INTERRUPT_REASON.ADMIN;
-    },
-    apply(session, context) {
-      const wasBillable = session.started_at != null;
-      return {
-        ...session,
-        status: SESSION_STATUS.INTERRUPTED,
-        settlement_status: SETTLEMENT_STATUS.SKIPPED,
-        ended_at: wasBillable ? ctxNow(context) : null,
-        destroy_reason: INTERRUPT_REASON.ADMIN,
-      };
-    },
-  },
-  {
-    transitionId: 'SES-TR-014',
+    transitionId: 'SES-TR-004',
     from: SESSION_STATUS.CLOSED,
     command: SESSION_COMMAND.START_SETTLEMENT,
     to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosed', 'endedAtSet', 'settlementNotSettled'],
+    guards: ['statusClosed', 'endedAtSet', 'settlementNotSettled'],
     event: SESSION_DOMAIN_EVENT.SETTLEMENT_STARTED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     match(session) {
@@ -891,11 +628,11 @@ const SESSION_TRANSITION_MAP = [
     },
   },
   {
-    transitionId: 'SES-TR-015',
+    transitionId: 'SES-TR-005',
     from: SESSION_STATUS.CLOSED,
     command: SESSION_COMMAND.COMPLETE_SETTLEMENT,
     to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosed', 'endedAtSet'],
+    guards: ['statusClosed', 'endedAtSet'],
     event: SESSION_DOMAIN_EVENT.SETTLEMENT_COMPLETED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     apply(session) {
@@ -909,11 +646,11 @@ const SESSION_TRANSITION_MAP = [
     },
   },
   {
-    transitionId: 'SES-TR-016',
+    transitionId: 'SES-TR-006',
     from: SESSION_STATUS.CLOSED,
     command: SESSION_COMMAND.SKIP_SETTLEMENT,
     to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosed', 'endedAtSet', 'settlementNotSettled'],
+    guards: ['statusClosed', 'endedAtSet', 'settlementNotSettled'],
     event: SESSION_DOMAIN_EVENT.SETTLEMENT_SKIPPED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     apply(session) {
@@ -921,11 +658,11 @@ const SESSION_TRANSITION_MAP = [
     },
   },
   {
-    transitionId: 'SES-TR-017',
+    transitionId: 'SES-TR-007',
     from: SESSION_STATUS.CLOSED,
     command: SESSION_COMMAND.FAIL_SETTLEMENT,
     to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosed', 'endedAtSet'],
+    guards: ['statusClosed', 'endedAtSet'],
     event: SESSION_DOMAIN_EVENT.SETTLEMENT_FAILED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     match(session) {
@@ -936,11 +673,11 @@ const SESSION_TRANSITION_MAP = [
     },
   },
   {
-    transitionId: 'SES-TR-018',
+    transitionId: 'SES-TR-008',
     from: SESSION_STATUS.CLOSED,
     command: SESSION_COMMAND.RETRY_SETTLEMENT,
     to: SESSION_STATUS.CLOSED,
-    guards: ['notLegacyCompleted', 'statusClosed', 'endedAtSet', 'settlementFailed'],
+    guards: ['statusClosed', 'endedAtSet', 'settlementFailed'],
     event: SESSION_DOMAIN_EVENT.SETTLEMENT_RETRIED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
     apply(session) {
@@ -948,33 +685,6 @@ const SESSION_TRANSITION_MAP = [
     },
     idempotent(session) {
       return session.settlement_status === SETTLEMENT_STATUS.SETTLED;
-    },
-  },
-  {
-    transitionId: 'SES-TR-019',
-    from: SESSION_STATUS.INTERRUPTED,
-    command: SESSION_COMMAND.INTERRUPT,
-    to: SESSION_STATUS.INTERRUPTED,
-    guards: ['notLegacyCompleted'],
-    event: null,
-    illegalPolicy: ILLEGAL_POLICY.IGNORE,
-    apply(session) {
-      return { ...session };
-    },
-    idempotent() {
-      return true;
-    },
-  },
-  {
-    transitionId: 'SES-TR-020',
-    from: SESSION_STATUS.COMPLETED,
-    command: SESSION_COMMAND.ACTIVATE_RUNNING,
-    to: SESSION_STATUS.COMPLETED,
-    guards: ['notLegacyCompleted'],
-    event: null,
-    illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
-    apply(session) {
-      return session;
     },
   },
 ];
@@ -1037,15 +747,8 @@ function inferGuardErrorForCommand(session, command, context, payload) {
 export function executeCommand(session, command, context, payload = {}) {
   const from = currentStatus(session);
 
-  if (session && from !== SESSION_STATUS.COMPLETED) {
-    try {
-      assertSessionIntegrity(session);
-    } catch (err) {
-      if (err instanceof SessionInvariantViolationError) {
-        throw err;
-      }
-      throw err;
-    }
+  if (session) {
+    assertSessionIntegrity(session);
   }
 
   const candidates = findTransitions(from, command);
@@ -1087,22 +790,8 @@ export function executeCommand(session, command, context, payload = {}) {
 
   const nextSession = definition.apply(session, context, payload);
 
-  if (nextSession.status === SESSION_STATUS.COMPLETED && command === SESSION_COMMAND.CREATE_PENDING) {
-    return errorResult(
-      SESSION_ERROR_CODE.LEGACY_STATUS_FORBIDDEN,
-      'SD-14: cannot create completed session',
-    );
-  }
-
-  if (SCB_STATUSES.has(nextSession.status) || nextSession.status === SESSION_STATUS.COMPLETED) {
-    try {
-      assertSessionIntegrity(nextSession);
-    } catch (err) {
-      if (err instanceof SessionInvariantViolationError) {
-        throw err;
-      }
-      throw err;
-    }
+  if (SCB_STATUSES.has(nextSession.status)) {
+    assertSessionIntegrity(nextSession);
   }
 
   const transition =
@@ -1119,13 +808,6 @@ export function executeCommand(session, command, context, payload = {}) {
  * @returns {TransitionResult}
  */
 export function createPendingSession(input, context) {
-  if (input.status === SESSION_STATUS.COMPLETED) {
-    return errorResult(
-      SESSION_ERROR_CODE.LEGACY_STATUS_FORBIDDEN,
-      'SD-14: cannot create completed session',
-    );
-  }
-
   return executeCommand(null, SESSION_COMMAND.CREATE_PENDING, context, input);
 }
 
@@ -1142,93 +824,14 @@ export function activateRunningSession(session, context, payload = {}) {
 /**
  * @param {SessionRecord} session
  * @param {SessionContext} context
- * @param {{ destroyReason: string }} payload
- * @returns {TransitionResult}
- */
-export function requestDestroy(session, context, payload) {
-  return executeCommand(session, SESSION_COMMAND.REQUEST_DESTROY, context, payload);
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
  * @param {Record<string, unknown>} [payload]
  * @returns {TransitionResult}
  */
 export function closeSession(session, context, payload = {}) {
-  return executeCommand(session, SESSION_COMMAND.CLOSE, context, payload);
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
- * @param {{ reason: string }} payload
- * @returns {TransitionResult}
- */
-export function interruptSession(session, context, payload) {
-  const validReasons = new Set(Object.values(INTERRUPT_REASON));
-  if (!validReasons.has(payload.reason)) {
-    return errorResult(
-      SESSION_ERROR_CODE.INVALID_INTERRUPT_REASON,
-      `Invalid interrupt reason: ${payload.reason}`,
-    );
-  }
-  return executeCommand(session, SESSION_COMMAND.INTERRUPT, context, payload);
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
- * @returns {TransitionResult}
- */
-export function handleRunningVerifyFailed(session, context) {
-  return executeCommand(session, SESSION_COMMAND.RUNNING_VERIFY_FAILED, context, {});
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
- * @returns {TransitionResult}
- */
-export function rollbackClosingToRunning(session, context) {
-  return executeCommand(session, SESSION_COMMAND.ROLLBACK_CLOSING, context, {});
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
- * @returns {TransitionResult}
- */
-export function retryDestroyVerification(session, context) {
-  const outcome = context.verifyOutcome;
-
-  if (session.status === SESSION_STATUS.CLOSED) {
+  if (session?.status === SESSION_STATUS.CLOSED) {
     return ignoredResult(session);
   }
-
-  if (session.status !== SESSION_STATUS.CLOSING) {
-    return errorResult(
-      SESSION_ERROR_CODE.SESSION_NOT_CLOSING,
-      'Retry destroy verify requires closing session',
-    );
-  }
-
-  if (outcome === 'destroyed') {
-    return closeSession(session, { ...context, providerDestroyedVerified: true }, {});
-  }
-
-  if (outcome === 'still_running') {
-    return rollbackClosingToRunning(session, context);
-  }
-
-  if (outcome === 'timeout') {
-    return executeCommand(session, SESSION_COMMAND.RETRY_DESTROY_VERIFY, context, {});
-  }
-
-  return errorResult(
-    SESSION_ERROR_CODE.INVALID_TRANSITION,
-    'verifyOutcome must be destroyed, still_running, or timeout',
-  );
+  return executeCommand(session, SESSION_COMMAND.CLOSE, context, payload);
 }
 
 /**
@@ -1241,15 +844,6 @@ export function retrySettlement(session, context) {
     return ignoredResult(session);
   }
   return executeCommand(session, SESSION_COMMAND.RETRY_SETTLEMENT, context, {});
-}
-
-/**
- * @param {SessionRecord} session
- * @param {SessionContext} context
- * @returns {TransitionResult}
- */
-export function cancelSession(session, context) {
-  return interruptSession(session, context, { reason: INTERRUPT_REASON.CANCELLED });
 }
 
 /**

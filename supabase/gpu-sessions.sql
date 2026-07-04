@@ -4,25 +4,24 @@
 -- Milestone: M2 — Database Rebuild (additive, backward compatible)
 -- Architecture: SCB 3.0 (docs/scb/SCB-ARCHITECTURE.md)
 --
--- SCB 3.0 Session Lifecycle (target, enforced at application layer in M3):
+-- SCB 3.0 Session Lifecycle (enforced at DB layer since M5):
 --     pending -> running -> closed
---     NO closing / interrupted / completed in the final model.
+--     NO closing / interrupted / completed in the model.
 --
--- M2 policy (per M2 plan, "additive + backward compatible"):
---   * status CHECK is KEPT WIDE (6 values) so legacy runtime that still writes
---     completed / interrupted / closing does not break. Narrowing to
---     ('pending','running','closed') is deferred to M3 after Session/Billing
---     rewrite completes.
---   * status DEFAULT changed from legacy 'completed' to 'pending'.
+-- M5 policy (per approved M5 plan, "SQL Finalization"):
+--   * status CHECK is NARROW: ('pending','running','closed'). Legacy values
+--     closing / interrupted / completed are no longer accepted.
+--   * status DEFAULT is 'pending'.
 --   * started_at is NULLABLE (pending is not yet billable).
 --   * machine_id is folded into canonical schema (previously added by the
 --     legacy incremental file machines-billing.sql, now Superseded).
---   * New SCB 3.0 invariants are declared as CHECK constraints. On a greenfield
---     install they are VALID (no existing rows). On an existing DB they are
---     added via scb-schema.sql with NOT VALID (skip existing rows; future
---     writes are still checked). Current runtime (session-start.js,
---     session-lifecycle.js, destroy-pipeline-run.js) already satisfies every
---     new constraint on writes — verified during M2.
+--   * SCB 3.0 invariants are declared as CHECK constraints. On a greenfield
+--     install they are VALID (no existing rows). On an existing DB they were
+--     added via scb-schema.sql with NOT VALID (M2) and are VALIDATEd by
+--     scb-schema-m5-finalize.sql (M5). Current runtime (session-start.js,
+--     session-lifecycle.js, destroy-pipeline-run.js, reconciliation.js,
+--     billing.js) writes only pending / running / closed — verified by the
+--     M5 final runtime audit.
 --
 -- Apply order (greenfield):
 --   1. schema.sql (auth)
@@ -43,15 +42,7 @@ create table if not exists public.gpu_sessions (
   billing text not null default 'combo1',
   gpu_config text,
   status text not null default 'pending'
-    check (status in (
-      'pending',
-      'running',
-      'closed',
-      -- Legacy values retained for M2 compatibility; removed from CHECK in M3:
-      'closing',
-      'interrupted',
-      'completed'
-    )),
+    check (status in ('pending', 'running', 'closed')),
   vram_avg_pct numeric,
   vram_current_pct numeric,
   started_at timestamptz,
@@ -115,10 +106,10 @@ comment on table public.gpu_sessions is
   'SCB 3.0 Single Source of Truth for GPU session billing. Billing reads ONLY this table. '
   'Machine (public.machines) is a disposable projection.';
 comment on column public.gpu_sessions.status is
-  'SCB 3.0 session lifecycle target: pending -> running -> closed. '
-  'Legacy values closing/interrupted/completed are retained in the CHECK during M2 for '
-  'backward compatibility; they will be removed from the CHECK in M3 after the Session/Billing rewrite. '
-  'New code MUST write only pending / running / closed.';
+  'SCB 3.0 session lifecycle: pending -> running -> closed (enforced by '
+  'gpu_sessions_status_check since M5). Legacy values closing / interrupted / '
+  'completed are NO LONGER accepted by the CHECK. Runtime writes only '
+  'pending / running / closed — verified by the M5 final runtime audit.';
 comment on column public.gpu_sessions.started_at is
   'SCB 3.0 billable start timestamp. NULL when status=pending (not yet billable). '
   'NOT NULL when status in (running, closed). Set ONCE at pending -> running (immutable). '
