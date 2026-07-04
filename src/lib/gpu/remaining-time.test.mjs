@@ -1,0 +1,357 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import {
+  REMAINING_ERROR_MULTIPLE_RUNNING_SESSIONS,
+  REMAINING_INVALID_STATE,
+  REMAINING_STATE_OK,
+  RemainingInvariantError,
+  calculateCurrentSessionElapsed,
+  calculateRemaining,
+  calculateSessionBillableSeconds,
+  calculateSettledUsage,
+  calculateTotalEntitlement,
+  clampRemainingHours,
+  createClock,
+  isOutOfCredit,
+} from './remaining-time.js';
+
+const T0 = '2026-06-28T10:00:00.000Z';
+const clock = createClock(T0);
+
+describe('calculateTotalEntitlement', () => {
+  it('returns 0 when no entitlement', () => {
+    assert.equal(calculateTotalEntitlement({ entitlementPlans: [], walletBalance: 0 }, clock), 0);
+  });
+
+  it('sums gift and combo hours', () => {
+    const snapshot = {
+      entitlementPlans: [
+        { status: 'active', plan_type: 'gift', hours_remaining: 2 },
+        { status: 'active', plan_type: 'combo', hours_remaining: 3 },
+      ],
+      walletBalance: 0,
+    };
+    assert.equal(calculateTotalEntitlement(snapshot, clock), 5);
+  });
+
+  it('excludes expired gift', () => {
+    const snapshot = {
+      entitlementPlans: [
+        {
+          status: 'active',
+          plan_type: 'gift',
+          hours_remaining: 10,
+          valid_until: '2026-06-27T00:00:00.000Z',
+        },
+      ],
+      walletBalance: 0,
+    };
+    assert.equal(calculateTotalEntitlement(snapshot, clock), 0);
+  });
+
+  it('includes wallet hours when hourly plan active (full precision)', () => {
+    const snapshot = {
+      entitlementPlans: [
+        { status: 'active', plan_type: 'hourly', price_per_hour: 30000, hours_remaining: 0 },
+      ],
+      walletBalance: 100000,
+    };
+    assert.equal(calculateTotalEntitlement(snapshot, clock), 100000 / 30000);
+  });
+});
+
+describe('calculateSettledUsage', () => {
+  it('sums only settlement_status=settled sessions', () => {
+    const snapshot = {
+      sessions: [
+        {
+          status: 'closed',
+          settlement_status: 'settled',
+          started_at: '2026-06-28T08:00:00.000Z',
+          ended_at: '2026-06-28T10:00:00.000Z',
+        },
+        {
+          status: 'closed',
+          settlement_status: 'failed',
+          started_at: '2026-06-28T06:00:00.000Z',
+          ended_at: '2026-06-28T07:00:00.000Z',
+        },
+        {
+          status: 'interrupted',
+          settlement_status: 'skipped',
+          started_at: '2026-06-28T04:00:00.000Z',
+          ended_at: '2026-06-28T05:00:00.000Z',
+        },
+      ],
+    };
+    assert.equal(calculateSettledUsage(snapshot, clock), 2);
+  });
+
+  it('ignores running session', () => {
+    const snapshot = {
+      sessions: [
+        {
+          status: 'running',
+          settlement_status: null,
+          started_at: '2026-06-28T09:00:00.000Z',
+          ended_at: null,
+        },
+      ],
+    };
+    assert.equal(calculateSettledUsage(snapshot, clock), 0);
+  });
+});
+
+describe('calculateCurrentSessionElapsed', () => {
+  it('returns 0 when no running session', () => {
+    assert.equal(
+      calculateCurrentSessionElapsed({ sessions: [], providerRunningVerified: true }, clock),
+      0,
+    );
+  });
+
+  it('returns elapsed for one verified running session (full precision)', () => {
+    const snapshot = {
+      providerRunningVerified: true,
+      sessions: [
+        {
+          status: 'running',
+          started_at: '2026-06-28T08:30:00.000Z',
+        },
+      ],
+    };
+    assert.equal(calculateCurrentSessionElapsed(snapshot, clock), 1.5);
+  });
+
+  it('returns 0 when provider not verified', () => {
+    const snapshot = {
+      providerRunningVerified: false,
+      sessions: [
+        {
+          status: 'running',
+          started_at: '2026-06-28T08:00:00.000Z',
+        },
+      ],
+    };
+    assert.equal(calculateCurrentSessionElapsed(snapshot, clock), 0);
+  });
+
+  it('throws RemainingInvariantError when multiple running sessions', () => {
+    const snapshot = {
+      providerRunningVerified: true,
+      sessions: [
+        { status: 'running', started_at: '2026-06-28T09:00:00.000Z' },
+        { status: 'running', started_at: '2026-06-28T09:30:00.000Z' },
+      ],
+    };
+    assert.throws(
+      () => calculateCurrentSessionElapsed(snapshot, clock),
+      (err) => {
+        assert.ok(err instanceof RemainingInvariantError);
+        assert.equal(err.code, REMAINING_ERROR_MULTIPLE_RUNNING_SESSIONS);
+        assert.equal(err.details.runningSessionCount, 2);
+        return true;
+      },
+    );
+  });
+});
+
+describe('calculateRemaining', () => {
+  it('user with no session — full entitlement', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 10 }],
+        walletBalance: 0,
+        sessions: [],
+        providerRunningVerified: false,
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.remainingHours, 10);
+    assert.equal(result.settledSessionUsageHours, 0);
+    assert.equal(result.currentSessionElapsedHours, 0);
+  });
+
+  it('user with running session and settled history', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 10 }],
+        walletBalance: 0,
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T06:00:00.000Z',
+            ended_at: '2026-06-28T08:00:00.000Z',
+          },
+          {
+            status: 'running',
+            started_at: '2026-06-28T08:30:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.totalEntitlementHours, 10);
+    assert.equal(result.settledSessionUsageHours, 2);
+    assert.equal(result.currentSessionElapsedHours, 1.5);
+    assert.equal(result.remainingHours, 6.5);
+  });
+
+  it('multiple settled sessions', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 20 }],
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-27T10:00:00.000Z',
+            ended_at: '2026-06-27T12:00:00.000Z',
+          },
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T06:00:00.000Z',
+            ended_at: '2026-06-28T07:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.settledSessionUsageHours, 3);
+    assert.equal(result.remainingHours, 17);
+  });
+
+  it('clamps negative remaining to 0 (full precision)', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 1 }],
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T06:00:00.000Z',
+            ended_at: '2026-06-28T08:00:00.000Z',
+          },
+          {
+            status: 'running',
+            started_at: '2026-06-28T09:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.remainingHours, 0);
+  });
+
+  it('remaining exactly 0', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 2 }],
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T08:00:00.000Z',
+            ended_at: '2026-06-28T10:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.remainingHours, 0);
+  });
+
+  it('returns INVALID_STATE when multiple running sessions', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 10 }],
+        providerRunningVerified: true,
+        sessions: [
+          { status: 'running', started_at: '2026-06-28T09:00:00.000Z' },
+          { status: 'running', started_at: '2026-06-28T09:30:00.000Z' },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_INVALID_STATE);
+    assert.equal(result.code, REMAINING_ERROR_MULTIPLE_RUNNING_SESSIONS);
+    assert.equal(result.runningSessionCount, 2);
+  });
+
+  it('is deterministic for same inputs', () => {
+    const snapshot = {
+      entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 5 }],
+      sessions: [],
+    };
+    const a = calculateRemaining(snapshot, clock);
+    const b = calculateRemaining(snapshot, clock);
+    assert.deepEqual(a, b);
+  });
+});
+
+describe('isOutOfCredit', () => {
+  it('true when remaining is 0', () => {
+    assert.equal(
+      isOutOfCredit({
+        state: REMAINING_STATE_OK,
+        remainingHours: 0,
+        primaryPlanType: 'combo',
+        walletBalance: 1000,
+      }),
+      true,
+    );
+  });
+
+  it('true for hourly when wallet empty', () => {
+    assert.equal(
+      isOutOfCredit({
+        state: REMAINING_STATE_OK,
+        remainingHours: 1,
+        primaryPlanType: 'hourly',
+        walletBalance: 0,
+      }),
+      true,
+    );
+  });
+
+  it('false for combo with remaining', () => {
+    assert.equal(
+      isOutOfCredit({
+        state: REMAINING_STATE_OK,
+        remainingHours: 2,
+        primaryPlanType: 'combo',
+        walletBalance: 0,
+      }),
+      false,
+    );
+  });
+});
+
+describe('calculateSessionBillableSeconds', () => {
+  it('uses timestamps only', () => {
+    assert.equal(
+      calculateSessionBillableSeconds('2026-06-28T08:00:00.000Z', '2026-06-28T09:30:00.000Z'),
+      5400,
+    );
+  });
+});
+
+describe('clampRemainingHours', () => {
+  it('clamps negative values without rounding', () => {
+    assert.equal(clampRemainingHours(-0.123456789), 0);
+  });
+
+  it('preserves full precision for positive values', () => {
+    assert.equal(clampRemainingHours(3.3333333333), 3.3333333333);
+  });
+});

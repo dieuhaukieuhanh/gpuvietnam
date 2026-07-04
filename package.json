@@ -1,0 +1,32 @@
+{
+  "name": "gpuvietnam",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "node --test src/lib/gpu/remaining-time.test.mjs src/lib/gpu/session-lifecycle.test.mjs src/lib/gpu/provider-verify.test.mjs src/lib/gpu/billing-m5.test.mjs src/lib/gpu/billing-anchor.test.mjs src/lib/gpu/settlement-core.test.mjs src/lib/gpu/settlement.test.mjs src/lib/destroy-pipeline-core.test.mjs src/lib/destroy-pipeline.test.mjs src/lib/gpu/auto-stop-m8.test.mjs src/lib/gpu/api-m9.test.mjs src/lib/gpu/auto-renew-m10.test.mjs src/lib/scb-ui-m11.test.mjs src/lib/scb-ui-m12.test.mjs src/lib/infrastructure/reconciliation.test.mjs src/lib/scb-m14.test.mjs src/lib/machines-provisioning-sync.test.mjs",
+    "convert": "node scripts/convert-html.mjs",
+    "db:user-settings": "node scripts/run-user-settings-sql.mjs",
+    "db:user-settings:cli": "npx supabase db query --linked -f supabase/user-settings.sql"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@supabase/supabase-js": "^2.108.2",
+    "next": "14.2.35",
+    "react": "^18",
+    "react-dom": "^18",
+    "ssh2": "^1.17.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "typescript": "^5"
+  }
+}

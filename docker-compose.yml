@@ -1,0 +1,25 @@
+services:
+  comfyui:
+    build: .
+    image: dieuhaukieuhanh/gpuvietnam-comfyui:v1
+    ports:
+      - "8080:8080"
+    volumes:
+      - comfyui_models:/app/ComfyUI/models
+      - comfyui_output:/app/ComfyUI/output
+      - ./workflows:/app/ComfyUI/user/default/workflows
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - COMFYUI_PORT=8080
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  comfyui_models:
+  comfyui_output:
