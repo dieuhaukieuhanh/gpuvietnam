@@ -1,0 +1,263 @@
+{
+  "manifest_version": 1,
+  "schema_version_label": "SCB-3.4B-RC1",
+  "description": "Canonical SQL migration order for GPUVietnam. Each 'migration' entry is applied exactly once by scripts/run-migrations.mjs and recorded in public.schema_migrations. 'seed' entries are optional sample data (dev/staging, --include-seeds). 'operational' entries are one-shot admin/storage-bucket scripts applied manually. 'historical' entries are superseded or duplicated files retained for audit history — the runner NEVER applies them. Existing files are referenced by their current paths; no SQL file has been merged or rewritten.",
+  "applied_order": [
+    {
+      "id": "0000",
+      "file": "supabase/0000_schema_migrations.sql",
+      "category": "system",
+      "description": "Bootstrap: public.schema_migrations tracking table + RLS",
+      "idempotent": true,
+      "depends_on": []
+    },
+    {
+      "id": "0001",
+      "file": "supabase/schema.sql",
+      "category": "migration",
+      "description": "Base auth profile: public.users, public.otp_verifications, RLS policies",
+      "idempotent": true,
+      "depends_on": []
+    },
+    {
+      "id": "0002",
+      "file": "supabase/add-user-role.sql",
+      "category": "migration",
+      "description": "users.role column + idx_users_role (legacy-DB safety; schema.sql already declares role)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0003",
+      "file": "supabase/add-updated-at.sql",
+      "category": "migration",
+      "description": "users.updated_at column (legacy-DB safety; schema.sql already declares updated_at)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0004",
+      "file": "supabase/drop-auth-trigger.sql",
+      "category": "migration",
+      "description": "Drop on_auth_user_created trigger so /api/register owns public.users insert",
+      "idempotent": true,
+      "depends_on": []
+    },
+    {
+      "id": "0005",
+      "file": "supabase/subscriptions.sql",
+      "category": "migration",
+      "description": "public.subscriptions table (plan billing + entitlement CAS target for SCB 3.4B W5)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0006",
+      "file": "supabase/storage-upgrades.sql",
+      "category": "migration",
+      "description": "users.wallet_balance / ssd_plan_gb / backup_plan_gb + public.storage_upgrades (wallet_balance is the SCB 3.4B W3 debit target)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0007",
+      "file": "supabase/user-settings.sql",
+      "category": "migration",
+      "description": "public.user_settings + public.wallet_transactions tables + users.full_name (wallet_transactions is the SCB 3.4B W4 ledger insert target)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0008",
+      "file": "supabase/wallet-deposit-status.sql",
+      "category": "migration",
+      "description": "wallet_transactions deposit-status columns + pending-deposit index",
+      "idempotent": true,
+      "depends_on": ["0007"]
+    },
+    {
+      "id": "0009",
+      "file": "supabase/gpu-pricing-config.sql",
+      "category": "migration",
+      "description": "public.gpu_pricing_config singleton + updated_at trigger",
+      "idempotent": true,
+      "depends_on": []
+    },
+    {
+      "id": "0010",
+      "file": "supabase/models.sql",
+      "category": "migration",
+      "description": "public.models (checkpoint / LoRA) + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0011",
+      "file": "supabase/workflows.sql",
+      "category": "migration",
+      "description": "public.workflows + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0012",
+      "file": "supabase/storage.sql",
+      "category": "migration",
+      "description": "public.storage_files (SSD / backup) + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0013",
+      "file": "supabase/storage-pricing.sql",
+      "category": "migration",
+      "description": "public.storage_pricing + indexes",
+      "idempotent": true,
+      "depends_on": []
+    },
+    {
+      "id": "0014",
+      "file": "supabase/notifications.sql",
+      "category": "migration",
+      "description": "public.notifications + indexes + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0015",
+      "file": "supabase/plan-renew-requests.sql",
+      "category": "migration",
+      "description": "public.plan_renew_requests + indexes + RLS",
+      "idempotent": true,
+      "depends_on": ["0005"]
+    },
+    {
+      "id": "0016",
+      "file": "supabase/support-sessions.sql",
+      "category": "migration",
+      "description": "public.support_sessions + indexes + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0017",
+      "file": "supabase/admin-machine-logs.sql",
+      "category": "migration",
+      "description": "public.admin_machine_logs + indexes",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0018",
+      "file": "supabase/backup-logs.sql",
+      "category": "migration",
+      "description": "public.backup_logs + index + RLS",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0019",
+      "file": "supabase/machines.sql",
+      "category": "migration",
+      "description": "public.machines projection table + indexes (machine is a disposable projection of gpu_sessions)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0020",
+      "file": "supabase/user-plan-inventory.sql",
+      "category": "migration",
+      "description": "public.user_plan_inventory + indexes + RLS (SCB 3.4B W6 projection-sync target; referenced by machines_billing_inventory_id_fkey)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0021",
+      "file": "supabase/gpu-sessions.sql",
+      "category": "migration",
+      "description": "public.gpu_sessions — SCB 3.0 Single Source of Truth (machine_id FK to machines)",
+      "idempotent": true,
+      "depends_on": ["0019"]
+    },
+    {
+      "id": "0022",
+      "file": "supabase/machines-billing.sql",
+      "category": "migration",
+      "description": "machines + gpu_sessions billing-projection columns + idx_gpu_sessions_machine (adds machines.billing_inventory_id referenced by 0025 FK)",
+      "idempotent": true,
+      "depends_on": ["0019", "0021"]
+    },
+    {
+      "id": "0023",
+      "file": "supabase/machines-idle.sql",
+      "category": "migration",
+      "description": "machines idle-state columns",
+      "idempotent": true,
+      "depends_on": ["0019"]
+    },
+    {
+      "id": "0024",
+      "file": "supabase/hour-grants.sql",
+      "category": "migration",
+      "description": "public.manual_hour_grants + public.hour_grant_logs + RLS (SCB 3.4B W5 entitlement CAS target for grants)",
+      "idempotent": true,
+      "depends_on": ["0001"]
+    },
+    {
+      "id": "0025",
+      "file": "supabase/scb-schema.sql",
+      "category": "migration",
+      "description": "SCB 3.0 canonical migration: gpu_sessions SCB columns + lifecycle CHECK constraints (NOT VALID), settlement retry index, machines.gpu_session_id FK + billing_inventory_id FK to user_plan_inventory, COMMENTs",
+      "idempotent": true,
+      "depends_on": ["0021", "0022", "0020"]
+    },
+    {
+      "id": "0026",
+      "file": "supabase/scb-schema-m5-finalize.sql",
+      "category": "migration",
+      "description": "M5 finalization: pre-check no legacy status rows, narrow gpu_sessions_status_check to (pending,running,closed), VALIDATE all M2 NOT VALID constraints",
+      "idempotent": true,
+      "depends_on": ["0025"]
+    },
+    {
+      "id": "0027",
+      "file": "supabase/settle-session-transaction.sql",
+      "category": "migration",
+      "description": "SCB 3.4B settlement transaction RPC: wallet_transactions.idempotency_key column + partial unique index + public.settle_session_transaction(payload json) SECURITY DEFINER function (W2-W7 atomic)",
+      "idempotent": true,
+      "depends_on": ["0025", "0007", "0008", "0024", "0005", "0006", "0020"]
+    },
+    {
+      "id": "0028",
+      "file": "supabase/infrastructure-reconciliation.sql",
+      "category": "migration",
+      "description": "M13 reconciliation audit tables: public.reconciliation_runs + public.drift_items (drift_items references machines(id) and auth.users(id))",
+      "idempotent": true,
+      "depends_on": ["0019"]
+    },
+    {
+      "id": "0099",
+      "file": "supabase/0099_sc_schema_version.sql",
+      "category": "system",
+      "description": "Version marker: public.schema_version single-row table + public.sc_schema_verification readiness view; recomputes scb_3_4b_ready from the catalog",
+      "idempotent": true,
+      "depends_on": ["0027", "0028"]
+    }
+  ],
+  "seeds": [
+    { "id": "seed-models",        "file": "supabase/seed-models.sql",        "depends_on": ["0010"] },
+    { "id": "seed-workflows",     "file": "supabase/seed-workflows.sql",     "depends_on": ["0011"] },
+    { "id": "seed-storage",       "file": "supabase/seed-storage.sql",       "depends_on": ["0012"] },
+    { "id": "seed-gpu-sessions",  "file": "supabase/seed-gpu-sessions.sql",  "depends_on": ["0025"] }
+  ],
+  "operational": [
+    { "id": "storage-models",     "file": "supabase/storage-models.sql",     "description": "Storage bucket 'user-models' + storage policies (run once via SQL Editor)" }
+  ],
+  "historical": [
+    { "id": "scb-schema-apply-nodrop",       "file": "supabase/scb-schema-apply-nodrop.sql",       "superseded_by": "0025", "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history." },
+    { "id": "scb-schema-started-at-nullable","file": "supabase/scb-schema-started-at-nullable.sql","superseded_by": "0025", "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history." },
+    { "id": "fix-trigger",                   "file": "supabase/fix-trigger.sql",                   "superseded_by": "0004", "reason": "Duplicate of drop-auth-trigger.sql (both drop on_auth_user_created). 0004 is canonical." },
+    { "id": "admin-approve-payment",         "file": "supabase/admin-approve-payment.sql",        "superseded_by": null,   "reason": "One-shot operational snippet with placeholder SUBSCRIPTION_ID. Not a migration." },
+    { "id": "set-admin-role",                "file": "supabase/set-admin-role.sql",               "superseded_by": "0002", "reason": "Operational role backfill UPDATE; the role column is added idempotently by add-user-role.sql (0002)." }
+  ]
+}

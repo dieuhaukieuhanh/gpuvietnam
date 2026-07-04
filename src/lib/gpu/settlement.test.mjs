@@ -45,8 +45,6 @@ function createMockSupabase(initial, options = {}) {
   /** @type {Record<string, unknown>[]} */
   const walletTx = [];
 
-  const syncInventory = async () => plans;
-
   return {
     session,
     plans,
@@ -389,7 +387,6 @@ function createMockSupabase(initial, options = {}) {
         };
       },
     },
-    syncInventory,
   };
 }
 
@@ -412,7 +409,6 @@ describe('settleSession', () => {
     const result = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
-      { syncUserPlanInventory: mock.syncInventory },
     );
 
     assert.equal(result.state, 'OK');
@@ -444,7 +440,6 @@ describe('settleSession', () => {
     const result = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
-      { syncUserPlanInventory: mock.syncInventory },
     );
 
     assert.equal(result.state, 'IDEMPOTENT');
@@ -495,7 +490,6 @@ describe('settleSession', () => {
     const result = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
-      { syncUserPlanInventory: mock.syncInventory },
     );
 
     assert.equal(result.state, 'SKIPPED');
@@ -521,7 +515,6 @@ describe('settleSession', () => {
     const first = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
-      { syncUserPlanInventory: mock.syncInventory },
     );
     assert.equal(first.state, 'OK');
     assert.equal(mock.session.settlement_status, 'settled');
@@ -533,7 +526,6 @@ describe('settleSession', () => {
     const retry = await settleSession(
       mock.client,
       { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
-      { syncUserPlanInventory: mock.syncInventory },
     );
     assert.equal(retry.state, 'IDEMPOTENT');
     assert.equal(mock.walletTx.length, 1);

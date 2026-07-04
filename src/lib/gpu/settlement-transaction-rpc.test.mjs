@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   SETTLEMENT_RPC_ERROR,
@@ -8,6 +11,8 @@ import {
   translateSettlementRpcResult,
   executeSettlementTransaction,
 } from './settlement-transaction-rpc.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const SESSION_ID = '22222222-2222-2222-2222-222222222222';
@@ -378,5 +383,88 @@ describe('executeSettlementTransaction (end-to-end wrapper)', () => {
     });
 
     assert.equal(mock.rpcCalls[0].entitlement_lines[0].expected_hours_used, 7);
+  });
+});
+
+describe('settlement.js SCB 3.4 routing / CAS regression (source-string)', () => {
+  // SCB 3.4 moves the W2–W7 write sequence (including the entitlement CAS)
+  // into the server-side RPC `settle_session_transaction`. The JS-side CAS
+  // helper `incrementHoursUsedCas` was removed in SCB 3.7 (dead code cleanup);
+  // CAS now happens solely inside T, server-side, with the JS-read
+  // `expected_hours_used` as the guard value. These regressions verify the
+  // SCB 3.4 architecture holds.
+  const settleSource = readFileSync(join(__dirname, 'settlement.js'), 'utf8');
+  const rpcSource = readFileSync(join(__dirname, 'settlement-transaction-rpc.js'), 'utf8');
+
+  it('settlement.js invokes the server-side transaction RPC (SCB 3.4A §5)', () => {
+    assert.ok(
+      settleSource.includes('executeSettlementTransaction'),
+      'settlement.js must call executeSettlementTransaction (the RPC wrapper)',
+    );
+    assert.ok(
+      settleSource.includes("from './settlement-transaction-rpc.js'"),
+      'settlement.js imports the RPC wrapper module',
+    );
+  });
+
+  it('settlement.js no longer contains the old W2–W7 client-side write helpers', () => {
+    // SCB 3.4 retires the non-atomic JS write sequence. These helpers were
+    // the pre-3.4 W2–W7 implementation and must be gone from settlement.js.
+    assert.ok(!settleSource.includes('function commitSettlementLines'), 'commitSettlementLines removed');
+    assert.ok(!settleSource.includes('function chargeWalletForSession'), 'chargeWalletForSession removed');
+    assert.ok(!settleSource.includes('function deductHoursFromInventoryPlan'), 'deductHoursFromInventoryPlan removed');
+    assert.ok(!settleSource.includes('resolveSyncInventory'), 'resolveSyncInventory removed (projection sync is now server-side in T)');
+  });
+
+  it('OLD unguarded SELECT-hours_used + JS-add pattern is GONE for manual_hour_grants', () => {
+    assert.ok(
+      !/from\('manual_hour_grants'\)[\s\S]*?select\('hours_used'\)[\s\S]*?\.single\(\)/.test(settleSource),
+      'no unguarded SELECT hours_used .single() on manual_hour_grants remains',
+    );
+    assert.ok(
+      !/Number\(grant\?\.hours_used[\s\S]*?\+ hours\)/.test(settleSource),
+      'no JS-side `Number(grant?.hours_used ...) + hours` compute-then-overwrite remains',
+    );
+  });
+
+  it('OLD unguarded SELECT-hours_used + JS-add pattern is GONE for subscriptions', () => {
+    assert.ok(
+      !/from\('subscriptions'\)[\s\S]*?select\('hours_used'\)[\s\S]*?\.single\(\)/.test(settleSource),
+      'no unguarded SELECT hours_used .single() on subscriptions remains',
+    );
+    assert.ok(
+      !/Number\(subscription\?\.hours_used[\s\S]*?\+ hours\)/.test(settleSource),
+      'no JS-side `Number(subscription?.hours_used ...) + hours` compute-then-overwrite remains',
+    );
+  });
+
+  it('RPC wrapper routes grant_id → manual_hour_grants and subscription_id → subscriptions (SCB 3.4A §3)', () => {
+    // The routing now lives in resolveEntitlementTarget (settlement-transaction-rpc.js).
+    assert.ok(
+      /grantId[\s\S]*?table:\s*'manual_hour_grants'/.test(rpcSource),
+      'grant-backed lines route to manual_hour_grants',
+    );
+    assert.ok(
+      /subscriptionId[\s\S]*?table:\s*'subscriptions'/.test(rpcSource),
+      'subscription-backed lines route to subscriptions',
+    );
+  });
+
+  it('RPC payload carries expected_hours_used as the CAS guard value (SCB 3.4A §3/§4)', () => {
+    assert.ok(
+      rpcSource.includes('expected_hours_used'),
+      'entitlement lines carry expected_hours_used for the server-side CAS',
+    );
+    assert.ok(
+      settleSource.includes('expectedPreSettlementStatus'),
+      'settlement.js passes expected_pre_settlement_status to the RPC claim guard',
+    );
+  });
+
+  it('wallet charge is clamped to balance (preserves legacy Math.min(balance, charge))', () => {
+    assert.ok(
+      rpcSource.includes('Math.min'),
+      'RPC wrapper preserves the wallet-charge clamp (cannot drive balance negative)',
+    );
   });
 });

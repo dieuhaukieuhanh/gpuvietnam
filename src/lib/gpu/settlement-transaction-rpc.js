@@ -63,12 +63,12 @@ export function isSettlementRpcRetryable(code) {
 
 /**
  * Map an RPC `entitlement_lines` entry to its target table + id, using the
- * same plan-resolution rule as the legacy `commitSettlementLines`:
+ * SCB allocation plan-resolution rule:
  *   - manual_grant / gift (grant-backed) → manual_hour_grants.grant_id
  *   - combo (subscription-backed)         → subscriptions.subscription_id
  *   - wallet                              → not an entitlement line (wallet)
  * Returns null for lines that have no resolvable entitlement target
- * (mirrors `deductHoursFromInventoryPlan` skipping when no grant/subscription).
+ * (wallet lines and any line lacking grant/subscription/inventory resolution).
  *
  * @param {SettlementAllocationLine} line
  * @param {Record<string, unknown>[]} plans
@@ -84,7 +84,7 @@ function resolveEntitlementTarget(line, plans) {
     return { table: 'subscriptions', id: line.subscriptionId };
   }
   // Fall back to resolving via the inventory plan row (defence in depth —
-  // matches commitSettlementLines' planById / find-by-subscription-id path).
+  // planById / find-by-subscription-id resolution).
   const plan =
     line.inventoryId != null
       ? plans.find((row) => String(row.id) === String(line.inventoryId))
@@ -163,8 +163,7 @@ export async function readCasGuardValues(supabaseAdmin, userId, lines, plans) {
  * Wallet aggregation: one wallet line in the allocation maps to one
  * wallet_charge object (amount = sum of line.walletVnd, clamped to
  * walletBalance so the debit can never go negative — preserves the
- * legacy `Math.min(balance, walletCharge)` clamp from
- * `chargeWalletForSession`). description follows the legacy format
+ * `Math.min(balance, walletCharge)` clamp. description follows the format
  * `GPU session <sid> · <hours>h · <plan_name>`.
  *
  * Entitlement aggregation: one entitlement_line per non-wallet line that

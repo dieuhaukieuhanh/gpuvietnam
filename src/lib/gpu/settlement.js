@@ -14,17 +14,13 @@
  */
 
 import {
-  SETTLEMENT_MODULE_VERSION,
   SETTLEMENT_ERROR_CODE,
-  TERMINAL_SETTLEMENT_STATUSES,
-  SETTLEABLE_SETTLEMENT_STATUSES,
   calculateBillableSeconds,
   computeAvailableEntitlementSeconds,
   capChargeSeconds,
   allocateSettlementCharge,
   buildSettlementBreakdown,
   evaluateSettlementEligibility,
-  isSettlementIdempotentTerminal,
   orderPlansForSettlement,
 } from './settlement-core.js';
 import {
@@ -211,13 +207,9 @@ export async function skipSessionSettlement(supabaseAdmin, sessionId, reason = '
  *   userId: string;
  *   providerDestroyedVerified?: boolean;
  * }} input
- * @param {{ syncUserPlanInventory?: (client: unknown, userId: string) => Promise<unknown> }} [deps]
- *        Reserved for signature compatibility. Projection sync (W6) is now
- *        performed server-side inside T per SCB 3.4 §3, so the JS-side
- *        `syncUserPlanInventory` is no longer invoked from this path.
  * @returns {Promise<SettlementResult>}
  */
-export async function settleSession(supabaseAdmin, input, deps = {}) {
+export async function settleSession(supabaseAdmin, input) {
   const { sessionId, userId } = input;
   const session = await loadSessionForSettlement(supabaseAdmin, sessionId);
 
@@ -373,7 +365,7 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
     // single-retry-on-claim-failure behaviour under the new RPC contract).
     const latest = await loadSessionForSettlement(supabaseAdmin, sessionId);
     if (latest?.settlement_status === 'settled' || latest?.settlement_status === 'skipped') {
-      return settleSession(supabaseAdmin, input, deps);
+      return settleSession(supabaseAdmin, input);
     }
     return {
       state: 'ERROR',
@@ -387,7 +379,7 @@ export async function settleSession(supabaseAdmin, input, deps = {}) {
     // settled → IDEMPOTENT, else escalate (SCB 3.4A §9).
     const latest = await loadSessionForSettlement(supabaseAdmin, sessionId);
     if (latest?.settlement_status === 'settled') {
-      return settleSession(supabaseAdmin, input, deps);
+      return settleSession(supabaseAdmin, input);
     }
     return {
       state: 'ERROR',
