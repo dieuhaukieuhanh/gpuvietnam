@@ -24,7 +24,7 @@ export default async function handler(req, res) {
       billingToggles: config.billingToggles,
       section: config.section,
     });
-  } catch (err) {
+  } catch {
     const fallback = getDefaultGpuPricingConfig();
     return res.status(200).json({
       config: fallback,

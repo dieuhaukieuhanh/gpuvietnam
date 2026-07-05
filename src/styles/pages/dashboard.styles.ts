@@ -824,6 +824,112 @@ export const styles = `:root {
             color: var(--text-muted);
             margin-top: 2px;
         }
+        .wallet-service-section {
+            margin-bottom: 20px;
+        }
+        .wallet-page-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+            gap: 20px;
+            align-items: start;
+        }
+        .wallet-page-main {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+        .wallet-page-aside {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        @media (max-width: 960px) {
+            .wallet-page-layout {
+                grid-template-columns: 1fr;
+            }
+            .wallet-page-aside {
+                order: 2;
+            }
+        }
+        .wallet-service-section-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 0 0 12px;
+        }
+        .wallet-service-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+        .wallet-service-card {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--bg-card);
+            min-height: 100%;
+        }
+        .wallet-service-card-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .wallet-service-card-icon {
+            font-size: 24px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .wallet-service-card-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0 0 4px;
+        }
+        .wallet-service-card-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin: 0;
+            line-height: 1.45;
+        }
+        .wallet-service-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: auto;
+            padding-top: 4px;
+        }
+        .wallet-service-card-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 14px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .wallet-service-card-link:hover {
+            border-color: rgba(79, 142, 247, 0.45);
+            background: var(--bg-card-hover);
+        }
+        .wallet-service-card-link.primary {
+            border-color: rgba(79, 142, 247, 0.35);
+            background: rgba(79, 142, 247, 0.12);
+            color: var(--accent-blue);
+        }
+        .wallet-service-card-link.primary:hover {
+            background: rgba(79, 142, 247, 0.2);
+        }
         .wallet-dropdown-history {
             list-style: none;
             margin: 0;
@@ -2484,6 +2590,10 @@ export const styles = `:root {
         .storage-status.offline {
             background: rgba(239, 68, 68, 0.12);
             color: #f87171;
+        }
+        .storage-status.syncing {
+            background: rgba(251, 191, 36, 0.12);
+            color: #fbbf24;
         }
         .storage-status.backup {
             background: rgba(79, 142, 247, 0.15);

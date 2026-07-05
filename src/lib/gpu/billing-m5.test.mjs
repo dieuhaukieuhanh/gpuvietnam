@@ -83,6 +83,19 @@ describe('M5 legacy tick removal', () => {
   it('billing.js does not define applyBillingDeduction (M6)', () => {
     assert.ok(!readGpuSrc('billing.js').includes('applyBillingDeduction'));
   });
+
+  it('buildRemainingSnapshot loads plans/sessions/wallet when prefetch is omitted', () => {
+    const source = readGpuSrc('billing.js');
+    const fnStart = source.indexOf('async function buildRemainingSnapshot');
+    assert.ok(fnStart !== -1);
+    const fnEnd = source.indexOf('\n}\n\n\n/**', fnStart);
+    const body = source.slice(fnStart, fnEnd);
+    assert.ok(body.includes('fetchOrderedBillablePlans'), 'must load billable plans');
+    assert.ok(body.includes('fetchUserSessionsForRemaining'), 'must load sessions');
+    assert.ok(body.includes("from('users')"), 'must load wallet balance');
+    assert.ok(body.includes('prefetch.plans'), 'must honor prefetch plans');
+    assert.ok(body.includes('plans === undefined'), 'must skip load when prefetched');
+  });
 });
 
 describe('M8 auto-stop read-only', () => {

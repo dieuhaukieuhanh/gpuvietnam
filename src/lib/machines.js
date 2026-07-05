@@ -1,9 +1,11 @@
+import { buildEndpointFromMachine, buildExternalEndpoint, INTERNAL_CONTAINER_PORT, isEndpointResolved } from '@/lib/endpoint-utils';
 import { DEFAULT_GPU_PORT } from '@/lib/gpu/gpu-config';
 import {
   createProviderVerifyPortFromGpuService,
   verifyProviderState,
 } from '@/lib/gpu/provider-verify';
 import { runUnifiedDestroy } from '@/lib/destroy-pipeline';
+import { interruptPendingSessionForUser } from '@/lib/gpu/session-start';
 import { parseGpuInstanceEndpoint } from '@/lib/gpu/providers/vast/vast-mapper';
 import {
   shouldRepairBootingSubscriptionDrift,
@@ -35,13 +37,7 @@ export async function getActiveMachineForUser(supabaseAdmin, userId) {
  * @param {Record<string, unknown> | null | undefined} machine
  */
 export function extractEndpointFromMachine(machine) {
-  const ip = typeof machine?.ip_address === 'string' ? machine.ip_address : null;
-  const port = Number(machine?.port ?? DEFAULT_GPU_PORT);
-  if (!ip) {
-    return { ip: null, port, comfyUrl: null };
-  }
-  const comfyUrl = `http://${ip}:${port}`;
-  return { ip, port, comfyUrl };
+  return buildEndpointFromMachine(machine);
 }
 
 /**
@@ -50,6 +46,12 @@ export function extractEndpointFromMachine(machine) {
  */
 export function mapGpuInstanceToMachineRow(instance, context) {
   const endpoint = parseGpuInstanceEndpoint(instance, DEFAULT_GPU_PORT);
+  const port =
+    endpoint.port != null &&
+    endpoint.port > 0 &&
+    endpoint.port !== INTERNAL_CONTAINER_PORT
+      ? endpoint.port
+      : null;
   const statusCode = instance.status?.code ?? 'unknown';
 
   /** @type {'creating' | 'starting' | 'running' | 'error'} */
@@ -62,7 +64,7 @@ export function mapGpuInstanceToMachineRow(instance, context) {
     instance_id: instance.id,
     provider: instance.providerId ?? 'vast',
     ip_address: endpoint.ip,
-    port: endpoint.port,
+    port,
     status,
     gpu_type: context.gpuLine,
     gpu_line: context.gpuLine,
@@ -71,6 +73,31 @@ export function mapGpuInstanceToMachineRow(instance, context) {
     template: context.template ?? null,
     error_message: status === 'error' ? instance.status?.message ?? 'GPU failed' : null,
   };
+}
+
+/**
+ * Map provider parse output to external ip/port for live status + sync.
+ * DEFAULT_GPU_PORT is never exposed when machines.port is NULL.
+ *
+ * @param {{ ip?: string | null; port?: number | null }} parsed
+ * @param {Record<string, unknown>} machine
+ */
+function projectLiveEndpointFields(parsed, machine) {
+  if (isEndpointResolved(machine)) {
+    const endpoint = buildEndpointFromMachine(machine);
+    return { ip: endpoint.ip, port: endpoint.port };
+  }
+
+  const fromMachine = buildEndpointFromMachine(machine);
+  const ip = parsed.ip ?? fromMachine.ip;
+  const parsedPort =
+    parsed.port != null &&
+    parsed.port > 0 &&
+    parsed.port !== INTERNAL_CONTAINER_PORT
+      ? parsed.port
+      : null;
+
+  return buildExternalEndpoint(ip, parsedPort);
 }
 
 /**
@@ -91,6 +118,74 @@ export async function insertMachineRecord(supabaseAdmin, userId, row) {
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Compensate a failed start-machine/admin-start after Vast rent (Architecture Freeze v3.2 Phase 3).
+ * Idempotent. Never calls user-wide destroy — only the rented instanceId.
+ *
+ * Order: destroy Vast → subscription offline → pending session cleanup → mark machine destroyed.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {import('@/lib/gpu/gpu-service').GPUService} gpuService
+ * @param {{
+ *   userId: string;
+ *   subscriptionId: string;
+ *   instanceId: string;
+ *   machineId?: string | null;
+ *   correlationId: string;
+ *   reason?: string;
+ * }} input
+ */
+export async function rollbackProvisionAfterRentFailure(supabaseAdmin, gpuService, input) {
+  const {
+    userId,
+    subscriptionId,
+    instanceId,
+    machineId = null,
+    correlationId,
+    reason = 'provision_rollback',
+  } = input;
+
+  if (instanceId) {
+    try {
+      await gpuService.destroyInstance(String(instanceId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/404|not found|destroyed|does not exist/i.test(message)) {
+        console.warn('[rollbackProvisionAfterRentFailure] destroyInstance failed:', message);
+      }
+    }
+  }
+
+  try {
+    await updateSubscriptionServerStatus(supabaseAdmin, subscriptionId, 'offline');
+  } catch (error) {
+    console.warn('[rollbackProvisionAfterRentFailure] subscription rollback failed:', error);
+  }
+
+  try {
+    await interruptPendingSessionForUser(supabaseAdmin, userId);
+  } catch (error) {
+    console.warn('[rollbackProvisionAfterRentFailure] session rollback failed:', error);
+  }
+
+  if (machineId) {
+    try {
+      await markMachineDestroyedLocal(supabaseAdmin, { id: machineId });
+    } catch (error) {
+      console.warn('[rollbackProvisionAfterRentFailure] mark machine destroyed failed:', error);
+    }
+  }
+
+  console.warn('[rollbackProvisionAfterRentFailure]', {
+    correlationId,
+    instanceId,
+    userId,
+    subscriptionId,
+    machineId,
+    reason,
+  });
 }
 
 /**
@@ -130,29 +225,49 @@ export {
 /**
  * @param {import('@/lib/gpu/gpu-service').GPUService} gpuService
  * @param {Record<string, unknown>} machine
+ * @param {{ onPvTrace?: (checkpoint: string, payload: Record<string, unknown>) => void }} [options]
  */
-export async function resolveLiveMachineStatus(gpuService, machine) {
+export async function resolveLiveMachineStatus(gpuService, machine, options = {}) {
+  const onPvTrace = options.onPvTrace;
+  const trace = (checkpoint, payload) => {
+    if (typeof onPvTrace === 'function') onPvTrace(checkpoint, payload);
+  };
+
   const instanceId = String(machine.instance_id ?? '');
+  const machineEndpoint = extractEndpointFromMachine(machine);
   if (!instanceId) {
     return {
       status: 'error',
       message: 'Thiếu instance ID',
-      ...extractEndpointFromMachine(machine),
+      ip: machineEndpoint.ip,
+      port: machineEndpoint.port,
+      healthOk: false,
       instanceId: null,
     };
   }
 
   try {
+    trace('gpuService.getInstanceStatus()', { phase: 'enter', instance_id: instanceId });
     const instance = await gpuService.getInstanceStatus(instanceId);
-    const endpoint = parseGpuInstanceEndpoint(instance, Number(machine.port ?? DEFAULT_GPU_PORT));
+    const parsed = parseGpuInstanceEndpoint(instance, DEFAULT_GPU_PORT);
+    const { ip, port } = projectLiveEndpointFields(parsed, machine);
     const code = instance.status?.code ?? 'unknown';
+    trace('gpuService.getInstanceStatus()', {
+      phase: 'result',
+      instance_id: instanceId,
+      provider_code: code,
+      ip,
+      port,
+    });
 
     if (code === 'failed') {
       return {
         status: 'error',
         message: instance.status?.message ?? 'Khởi tạo máy thất bại',
         instanceId,
-        ...endpoint,
+        ip,
+        port,
+        healthOk: false,
       };
     }
 
@@ -161,13 +276,23 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
         status: 'creating',
         message: 'Đang khởi tạo máy...',
         instanceId,
-        ...endpoint,
+        ip,
+        port,
+        healthOk: false,
       };
     }
 
     let health = null;
     try {
+      trace('gpuService.healthCheck()', { phase: 'enter', instance_id: instanceId, ip, port });
       health = await gpuService.healthCheck(instanceId);
+      trace('gpuService.healthCheck()', {
+        phase: 'result',
+        instance_id: instanceId,
+        healthy: health?.healthy ?? null,
+        ip,
+        port,
+      });
     } catch (healthError) {
       const message = healthError instanceof Error ? healthError.message : String(healthError);
       if (/network|timeout|ECONN/i.test(message)) {
@@ -176,14 +301,18 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
             status: 'starting',
             message: 'Đang khởi động ComfyUI...',
             instanceId,
-            ...endpoint,
+            ip,
+            port,
+            healthOk: false,
           };
         }
         return {
           status: 'disconnected',
           message: 'Mất kết nối',
           instanceId,
-          ...endpoint,
+          ip,
+          port,
+          healthOk: false,
         };
       }
     }
@@ -193,7 +322,20 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
         status: 'running',
         message: 'ComfyUI sẵn sàng',
         instanceId,
-        ...endpoint,
+        ip,
+        port,
+        healthOk: true,
+      };
+    }
+
+    if (code === 'running' && ip && port != null) {
+      return {
+        status: 'starting',
+        message: 'Đang khởi động ComfyUI...',
+        instanceId,
+        ip,
+        port,
+        healthOk: false,
       };
     }
 
@@ -201,7 +343,9 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
       status: 'starting',
       message: 'Đang khởi động ComfyUI...',
       instanceId,
-      ...endpoint,
+      ip,
+      port,
+      healthOk: false,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -211,14 +355,18 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
           status: 'starting',
           message: 'Đang khởi động ComfyUI...',
           instanceId,
-          ...extractEndpointFromMachine(machine),
+          ip: machineEndpoint.ip,
+          port: machineEndpoint.port,
+          healthOk: false,
         };
       }
       return {
         status: 'disconnected',
         message: 'Mất kết nối',
         instanceId,
-        ...extractEndpointFromMachine(machine),
+        ip: machineEndpoint.ip,
+        port: machineEndpoint.port,
+        healthOk: false,
       };
     }
 
@@ -226,7 +374,9 @@ export async function resolveLiveMachineStatus(gpuService, machine) {
       status: 'error',
       message: message || 'Không lấy được trạng thái máy',
       instanceId,
-      ...extractEndpointFromMachine(machine),
+      ip: machineEndpoint.ip,
+      port: machineEndpoint.port,
+      healthOk: false,
     };
   }
 }
@@ -323,7 +473,7 @@ const STALE_BOOT_MS = 15 * 60 * 1000;
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {Record<string, unknown>} machine
  */
-async function markMachineDestroyedLocal(supabaseAdmin, machine) {
+export async function markMachineDestroyedLocal(supabaseAdmin, machine) {
   await supabaseAdmin
     .from('machines')
     .update({
@@ -334,7 +484,7 @@ async function markMachineDestroyedLocal(supabaseAdmin, machine) {
     .eq('id', machine.id);
 }
 
-async function fetchActiveSubscription(supabaseAdmin, userId) {
+export async function fetchActiveSubscription(supabaseAdmin, userId) {
   const { data, error } = await supabaseAdmin
     .from('subscriptions')
     .select('id, server_status, status, created_at')

@@ -10,6 +10,7 @@ import { buildRenewTransferNote } from '@/lib/plan-renew-request';
 import { computeExpiresAt, getPlanQuota } from '@/lib/plan-hours';
 import { getPlanPriceVnd } from '@/lib/plan-pricing';
 import { loadScbRemainingForUser } from '@/lib/gpu/remaining-consumer';
+import { profStart, profEnd, prof } from '@/lib/prof';
 
 export const PROACTIVE_RENEW_HOURS_THRESHOLD = 10;
 export const PROACTIVE_RENEW_BONUS_RATE = 0.05;
@@ -87,36 +88,116 @@ export function computeRenewQuote(planName, billing, hoursRemaining, options = {
 }
 
 /**
+ * Map dashboard/me subscription row for inventory sync prefetch (skip duplicate SELECT).
+ * @param {Record<string, unknown> | null | undefined} subscription
+ */
+export function subscriptionPrefetchForInventorySync(subscription) {
+  if (!subscription || subscription.status !== 'active') return null;
+  return {
+    id: subscription.id,
+    plan: subscription.plan,
+    billing: subscription.billing,
+    hours_total: subscription.hours_total,
+    hours_used: subscription.hours_used,
+    status: subscription.status,
+    expires_at: subscription.expires_at,
+  };
+}
+
+/**
+ * Map dashboard/me grant rows for inventory sync prefetch (skip duplicate SELECT).
+ * @param {Record<string, unknown>[] | null | undefined} grants
+ */
+export function grantsPrefetchForInventorySync(grants) {
+  if (!grants?.length) return [];
+  return grants.map((grant) => ({
+    id: grant.id,
+    gpu_plan: grant.gpu_plan,
+    hours_granted: grant.hours_granted,
+    hours_used: grant.hours_used,
+    expires_at: grant.expires_at,
+    status: grant.status,
+  }));
+}
+
+function shouldUpdateInventoryRow(prev, row) {
+  if (!prev?.id) return true;
+  return (
+    prev.plan_type !== row.plan_type ||
+    prev.plan_name !== row.plan_name ||
+    Number(prev.hours_total ?? 0) !== Number(row.hours_total ?? 0) ||
+    Number(prev.hours_remaining ?? 0) !== Number(row.hours_remaining ?? 0) ||
+    Number(prev.price_per_hour ?? 0) !== Number(row.price_per_hour ?? 0) ||
+    String(prev.valid_until ?? '') !== String(row.valid_until ?? '') ||
+    prev.status !== row.status ||
+    prev.source !== row.source ||
+    String(prev.grant_id ?? '') !== String(row.grant_id ?? '') ||
+    String(prev.billing ?? '') !== String(row.billing ?? '') ||
+    String(prev.subscription_id ?? '') !== String(row.subscription_id ?? '')
+  );
+}
+
+function sortInventoryRows(rows) {
+  return [...(rows ?? [])].sort((a, b) => {
+    const activeDiff = Number(Boolean(b.is_active)) - Number(Boolean(a.is_active));
+    if (activeDiff !== 0) return activeDiff;
+    return new Date(String(b.created_at ?? 0)).getTime() - new Date(String(a.created_at ?? 0)).getTime();
+  });
+}
+
+async function loadSubscriptionForInventorySync(supabaseAdmin, userId, prefetched) {
+  if (prefetched !== undefined) return prefetched;
+  const { data } = await supabaseAdmin
+    .from('subscriptions')
+    .select('id, plan, billing, hours_total, hours_used, status, expires_at')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data;
+}
+
+async function loadGrantsForInventorySync(supabaseAdmin, userId, prefetched) {
+  if (prefetched !== undefined) return prefetched ?? [];
+  const { data } = await supabaseAdmin
+    .from('manual_hour_grants')
+    .select('id, gpu_plan, hours_granted, hours_used, expires_at, status')
+    .eq('user_id', userId)
+    .eq('status', 'active');
+  return data ?? [];
+}
+
+async function loadInventoryRowsForSync(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin.from('user_plan_inventory').select('*').eq('user_id', userId);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {string} userId
+ * @param {{ subscription?: Record<string, unknown>|null, grants?: Record<string, unknown>[] }} [options]
  */
-export async function syncUserPlanInventory(supabaseAdmin, userId) {
-  const [{ data: subscription }, { data: grants }, { data: existing }] = await Promise.all([
-    supabaseAdmin
-      .from('subscriptions')
-      .select('id, plan, billing, hours_total, hours_used, status, expires_at')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabaseAdmin
-      .from('manual_hour_grants')
-      .select('id, gpu_plan, hours_granted, hours_used, expires_at, status')
-      .eq('user_id', userId)
-      .eq('status', 'active'),
-    supabaseAdmin.from('user_plan_inventory').select('*').eq('user_id', userId),
+export async function syncUserPlanInventory(supabaseAdmin, userId, options = {}) {
+  const [subscription, existing, grants] = await Promise.all([
+    prof('Load User Plan', () =>
+      loadSubscriptionForInventorySync(supabaseAdmin, userId, options.subscription),
+    ),
+    prof('Load Inventory', () => loadInventoryRowsForSync(supabaseAdmin, userId)),
+    prof('Load Usage', () => loadGrantsForInventorySync(supabaseAdmin, userId, options.grants)),
   ]);
 
+  const computeSpan = profStart('Compute');
   const existingByKey = new Map(
-    (existing ?? []).map((row) => [
+    existing.map((row) => [
       row.grant_id ? `gift:${row.grant_id}` : `sub:${row.subscription_id ?? 'main'}`,
       row,
     ]),
   );
 
   const upserts = [];
-  let hasActive = (existing ?? []).some((row) => row.is_active);
+  let hasActive = existing.some((row) => row.is_active);
 
   if (subscription) {
     const planKey = normalizePlanKey(subscription.plan);
@@ -157,7 +238,7 @@ export async function syncUserPlanInventory(supabaseAdmin, userId) {
     if (!hasActive && status === 'active') hasActive = true;
   }
 
-  for (const grant of grants ?? []) {
+  for (const grant of grants) {
     const hoursRemaining = Math.max(
       0,
       Number(grant.hours_granted ?? 0) - Number(grant.hours_used ?? 0),
@@ -192,44 +273,69 @@ export async function syncUserPlanInventory(supabaseAdmin, userId) {
       prev,
     });
   }
+  profEnd(computeSpan);
+
+  let mutated = false;
+  const writeSpan = profStart('DB Writes');
+  /** @type {Promise<unknown>[]} */
+  const writeOps = [];
 
   for (const item of upserts) {
     if (item.prev?.id) {
-      await supabaseAdmin
-        .from('user_plan_inventory')
-        .update({
-          ...item.row,
-          is_active: item.prev.is_active,
-        })
-        .eq('id', item.prev.id);
+      if (!shouldUpdateInventoryRow(item.prev, item.row)) continue;
+      mutated = true;
+      writeOps.push(
+        supabaseAdmin
+          .from('user_plan_inventory')
+          .update({
+            ...item.row,
+            is_active: item.prev.is_active,
+          })
+          .eq('id', item.prev.id),
+      );
     } else {
-      await supabaseAdmin.from('user_plan_inventory').insert(item.row);
+      mutated = true;
+      writeOps.push(supabaseAdmin.from('user_plan_inventory').insert(item.row));
     }
   }
 
   const activeIds = new Set(upserts.map((u) => u.key));
-  for (const row of existing ?? []) {
+  for (const row of existing) {
     const key = row.grant_id ? `gift:${row.grant_id}` : `sub:${row.subscription_id ?? 'main'}`;
     if (!activeIds.has(key)) {
-      await supabaseAdmin
-        .from('user_plan_inventory')
-        .update({ status: 'expired', is_active: false })
-        .eq('id', row.id);
+      if (row.status === 'expired' && !row.is_active) continue;
+      mutated = true;
+      writeOps.push(
+        supabaseAdmin
+          .from('user_plan_inventory')
+          .update({ status: 'expired', is_active: false })
+          .eq('id', row.id),
+      );
     }
   }
 
-  const { data: inventory, error } = await supabaseAdmin
-    .from('user_plan_inventory')
-    .select('*')
-    .eq('user_id', userId)
-    .order('is_active', { ascending: false })
-    .order('created_at', { ascending: false });
+  if (writeOps.length) await Promise.all(writeOps);
+  profEnd(writeSpan);
 
-  if (error) throw error;
+  const readSpan = profStart('DB Reads');
+  let inventory;
+  if (!mutated) {
+    inventory = sortInventoryRows(existing);
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from('user_plan_inventory')
+      .select('*')
+      .eq('user_id', userId)
+      .order('is_active', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    inventory = data ?? [];
+  }
 
-  if (inventory?.length && !inventory.some((row) => row.is_active)) {
+  if (inventory.length && !inventory.some((row) => row.is_active)) {
     const firstUsable = inventory.find(isRowUsable);
     if (firstUsable) {
+      mutated = true;
       await supabaseAdmin
         .from('user_plan_inventory')
         .update({ is_active: true })
@@ -237,8 +343,11 @@ export async function syncUserPlanInventory(supabaseAdmin, userId) {
       firstUsable.is_active = true;
     }
   }
+  profEnd(readSpan);
 
-  return inventory ?? [];
+  const returnSpan = profStart('Return');
+  profEnd(returnSpan);
+  return inventory;
 }
 
 export function mapInventoryRow(row) {

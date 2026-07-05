@@ -31,21 +31,64 @@ export type DashboardUser = {
 
 export type BillingType = 'hourly' | 'combo' | null;
 
-export type DashboardRemaining = {
+export type MachineSessionPhase =
+  | 'idle'
+  | 'opening'
+  | 'running'
+  | 'stopping'
+  | 'disconnected'
+  | 'error'
+  | 'loading';
+
+export type MachineSessionView = {
+  phase: MachineSessionPhase;
+  lifecycleStatus: string;
+  serverStatus: string;
+  workspace: { name: string | null; locked: boolean };
+  machine: {
+    id: string;
+    instanceId: string | null;
+    template: string | null;
+    status: string;
+  } | null;
+  actions: {
+    canStart: boolean;
+    canCancel: boolean;
+    canStop: boolean;
+    canOpenComfy: boolean;
+  };
+  message: string | null;
+  domainEvent: string | null;
+};
+
+export type BillingSessionView = {
+  phase: MachineSessionPhase;
+  sessionDurationSeconds: number;
+  billingStartedAt: string | null;
   remainingHours: number | null;
   totalEntitlementHours: number | null;
   currentSessionElapsedHours: number | null;
   settledSessionUsageHours: number | null;
   primaryPlanType: string | null;
   walletBalance: number | null;
-} | null;
+  planCardRemainingHours: number | null;
+  planCardTotalHours: number | null;
+  sessionStatus: string | null;
+  settlementStatus: string | null;
+  verifiedRunningAt: string | null;
+  verifiedDestroyedAt: string | null;
+  outOfHours: boolean;
+  lowCreditWarning: boolean;
+  billingStarted: boolean;
+};
 
 export function useDashboard() {
   const { session, loading: authLoading } = useAuth();
   const [user, setUser] = useState<DashboardUser | null>(null);
   const [subscription, setSubscription] = useState<DashboardSubscription | null>(null);
   const [billingType, setBillingType] = useState<BillingType>(null);
-  const [remaining, setRemaining] = useState<DashboardRemaining>(null);
+  const [billingView, setBillingView] = useState<BillingSessionView | null>(null);
+  const [machineSessionView, setMachineSessionView] = useState<MachineSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -54,7 +97,8 @@ export function useDashboard() {
       setUser(null);
       setSubscription(null);
       setBillingType(null);
-      setRemaining(null);
+      setBillingView(null);
+      setMachineSessionView(null);
       setLoading(false);
       return;
     }
@@ -76,7 +120,8 @@ export function useDashboard() {
       setUser(result.user);
       setSubscription(result.subscription);
       setBillingType(result.billingType ?? null);
-      setRemaining(result.remaining ?? null);
+      setBillingView(result.billingView ?? null);
+      setMachineSessionView(result.machineSessionView ?? null);
     } catch {
       setError('Không tải được dữ liệu dashboard.');
     } finally {
@@ -85,6 +130,14 @@ export function useDashboard() {
       }
     }
   }, [session?.access_token]);
+
+  const applyMachineSessionView = useCallback((view: MachineSessionView | null) => {
+    setMachineSessionView(view);
+  }, []);
+
+  const applyBillingSessionView = useCallback((view: BillingSessionView | null) => {
+    setBillingView(view);
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -113,5 +166,17 @@ export function useDashboard() {
     void tryAutoRenew();
   }, [authLoading, session?.access_token, tryAutoRenew]);
 
-  return { user, subscription, billingType, remaining, loading: authLoading || loading, error, refresh, tryAutoRenew };
+  return {
+    user,
+    subscription,
+    billingType,
+    billingView,
+    machineSessionView,
+    loading: authLoading || loading,
+    error,
+    refresh,
+    applyMachineSessionView,
+    applyBillingSessionView,
+    tryAutoRenew,
+  };
 }

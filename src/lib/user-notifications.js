@@ -310,8 +310,6 @@ export async function listUserNotifications(supabaseAdmin, userId, options = {})
  * @param {{ id?: number; all?: boolean }} payload
  */
 export async function markNotificationsRead(supabaseAdmin, userId, payload) {
-  const now = new Date().toISOString();
-
   if (payload.all) {
     const { error } = await supabaseAdmin
       .from('notifications')

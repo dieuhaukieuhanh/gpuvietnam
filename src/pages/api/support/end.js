@@ -1,4 +1,5 @@
-import { getAdminUserFromRequest, getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
+import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
+import { getAdminUserFromRequest } from '@/lib/admin-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { endSupportSession, mapSupportSession } from '@/lib/support-sessions';
 

@@ -1,32 +1,41 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 
-import { formatGpuUserMessage, getGpuService, provisionGpuInstance, repairUserBillingState, resolveGpuLineFromPlan, createProvisioningPendingSession } from '@/lib/gpu';
+import {
+  getGpuService,
+  repairUserBillingState,
+  resolveGpuLineFromPlan,
+  snapshotToMachineRecord,
+  resolveMachineSessionView,
+  persistStartRequested,
+} from '@/lib/gpu';
+import {
+  isMachineBooting,
+  isRecentBootMachine,
+  shouldRepairBootingSubscriptionDrift,
+  shouldRetryProvisioningForBoot,
+} from '@/lib/machines-provisioning-sync';
 
 import { getGpuLabel, getPlanNameFromKey } from '@/lib/gpu-pricing';
 
-import { buildWorkstationContainerEnv, resolveEnvName } from '@/lib/workstation-env';
+import { buildWorkstationContainerEnv, isGpuComfyWorkstation, resolveEnvName } from '@/lib/workstation-env';
+import { WORKSTATIONS } from '@/lib/workstations';
+
+import { buildConsumerEndpoint } from '@/lib/endpoint-utils';
+
+import { createCorrelationId } from '@/lib/scb-correlation';
 
 import {
-
-  extractEndpointFromMachine,
-
   getActiveMachineForUser,
-
-  insertMachineRecord,
-
-  mapGpuInstanceToMachineRow,
-
   resolveLiveMachineStatus,
-
   syncMachineFromLiveStatus,
-
   updateSubscriptionServerStatus,
-
   destroyUserMachine,
-
 } from '@/lib/machines';
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+
+import { completeUserStartProvision } from '@/lib/gpu/user-start-provision';
+import { resolveBillingViewForCommand } from '@/lib/gpu/billing-session-view';
 
 import { activateInventoryPlan } from '@/lib/user-plan-inventory';
 
@@ -35,65 +44,39 @@ import { fetchUserActivePlans, findActivePlanSelection, normalizePlanKey } from 
 
 
 function buildMachineResponse(machine, liveStatus) {
-
-  const endpoint = extractEndpointFromMachine(machine);
+  const healthOk = liveStatus?.healthOk === true;
+  const endpoint = buildConsumerEndpoint(machine, healthOk);
 
   return {
-
     instanceId: machine?.instance_id ?? liveStatus?.instanceId ?? null,
-
     machineId: machine?.instance_id ?? liveStatus?.instanceId ?? null,
-
-    ip: liveStatus?.ip ?? endpoint.ip,
-
-    port: liveStatus?.port ?? endpoint.port,
-
+    ip: endpoint.ip,
+    port: endpoint.port,
     status: liveStatus?.status ?? machine?.status ?? 'creating',
-
-    comfyUrl: liveStatus?.comfyUrl ?? endpoint.comfyUrl,
-
+    comfyUrl: endpoint.comfyUrl,
+    template: machine?.template ? String(machine.template) : null,
     message: liveStatus?.message ?? null,
-
   };
-
 }
 
+function buildMachineSessionView(subscription, machine, userId, options = {}) {
+  const record = snapshotToMachineRecord(subscription, machine, userId);
+  return resolveMachineSessionView(record, {
+    envName: subscription?.env_name ?? null,
+    ...options,
+  });
+}
 
+async function billingViewForStart(supabaseAdmin, userId, gpuService, machineSessionView, machine) {
+  return resolveBillingViewForCommand(supabaseAdmin, userId, {
+    machineSessionView,
+    machine: machine ?? null,
+    gpuService,
+  });
+}
 
-/**
-
- * @param {Record<string, unknown> | null | undefined} machine
-
- * @param {Awaited<ReturnType<typeof resolveLiveMachineStatus>> | null | undefined} liveStatus
-
- */
-
-function shouldRetryProvisioning(machine, liveStatus) {
-
-  if (!machine) return true;
-
-  if (!machine.instance_id) return true;
-
-  if (machine.status === 'error') return true;
-
-  if (liveStatus?.status === 'error') return true;
-
-
-
-  const createdAt = machine.created_at ? new Date(String(machine.created_at)).getTime() : 0;
-
-  const ageMs = createdAt > 0 ? Date.now() - createdAt : 0;
-
-  if (ageMs > 15 * 60 * 1000 && liveStatus?.status !== 'running') {
-
-    return true;
-
-  }
-
-
-
-  return false;
-
+function machineLifecycleContext(subscription) {
+  return { subscriptionActive: subscription?.status === 'active' };
 }
 
 
@@ -108,11 +91,31 @@ export default async function handler(req, res) {
 
 
 
+  const correlationId = createCorrelationId();
+
+  let rentedInstanceId = null;
+
+  let insertedMachineId = null;
+
+  let provisioningSubscriptionId = null;
+
+  let userId = null;
+
+  /** @type {import('@/lib/gpu/gpu-service').GPUService | null} */
+
+  let gpuService = null;
+
+  const supabaseAdmin = getSupabaseAdmin();
+
+
+
   try {
 
     const user = await getAuthUserFromRequest(req);
 
     if (!user) return unauthorized(res);
+
+    userId = user.id;
 
 
 
@@ -130,9 +133,7 @@ export default async function handler(req, res) {
 
 
 
-    const { planId, type, plan, inventoryId } = req.body ?? {};
-
-    const supabaseAdmin = getSupabaseAdmin();
+    const { planId, type, plan, inventoryId, envName: requestedEnvNameRaw } = req.body ?? {};
 
     const { plans } = await fetchUserActivePlans(supabaseAdmin, user.id);
 
@@ -166,11 +167,11 @@ export default async function handler(req, res) {
 
 
 
-    const { data: subscription, error: subError } = await supabaseAdmin
+    const { data: subscriptionRow, error: subError } = await supabaseAdmin
 
       .from('subscriptions')
 
-      .select('id, status, server_status, env_name')
+      .select('id, status, server_status, env_name, billing')
 
       .eq('user_id', user.id)
 
@@ -186,13 +187,44 @@ export default async function handler(req, res) {
 
     if (subError) throw subError;
 
-    if (!subscription) {
+    if (!subscriptionRow) {
 
       return res.status(400).json({ error: 'Không tìm thấy gói chính để khởi động máy.' });
 
     }
 
+    let subscription = subscriptionRow;
 
+    const requestedEnvName =
+      typeof requestedEnvNameRaw === 'string' && requestedEnvNameRaw.trim()
+        ? requestedEnvNameRaw.trim()
+        : null;
+    if (requestedEnvName) {
+      const workstation = WORKSTATIONS.find((item) => item.name === requestedEnvName);
+      if (!workstation || !isGpuComfyWorkstation(workstation)) {
+        return res.status(400).json({
+          error:
+            'Môi trường không hợp lệ. Hiện chỉ hỗ trợ 3 môi trường ComfyUI: Character & Art, Commerce & Product, Video AI.',
+        });
+      }
+      if (workstation.name !== subscription.env_name) {
+        const { data: envUpdated, error: envUpdateError } = await supabaseAdmin
+          .from('subscriptions')
+          .update({
+            env_name: workstation.name,
+            env_icon: workstation.icon,
+            env_desc: workstation.desc,
+          })
+          .eq('id', subscription.id)
+          .select('id, status, server_status, env_name, billing')
+          .single();
+        if (envUpdateError) throw envUpdateError;
+        subscription = { ...subscription, ...envUpdated };
+        console.info('[user/start-machine] Synced subscription env before boot:', workstation.name);
+      }
+    }
+
+    const targetEnvName = resolveEnvName(requestedEnvName ?? subscription.env_name);
 
     console.info('📦 Subscription loaded:');
 
@@ -204,47 +236,200 @@ export default async function handler(req, res) {
 
 
 
-    const gpuService = getGpuService();
+    gpuService = getGpuService();
 
     await repairUserBillingState(supabaseAdmin, user.id);
 
-    const existingMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
+    let existingMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
 
 
+
+    if (existingMachine && subscription.server_status === 'offline') {
+      if (shouldRepairBootingSubscriptionDrift(existingMachine, subscription.server_status)) {
+        await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'provisioning');
+        subscription = { ...subscription, server_status: 'provisioning' };
+      } else if (!isMachineBooting(existingMachine) || !isRecentBootMachine(existingMachine)) {
+        console.warn('[user/start-machine] Stale leaked machine while offline — destroying before boot');
+        await destroyUserMachine(supabaseAdmin, gpuService, user.id, {
+          interrupted: true,
+          skipBackup: true,
+          skipBilling: String(existingMachine.status ?? '') !== 'running',
+          reason: 'retry_provision',
+        });
+        existingMachine = null;
+      }
+    }
 
     if (subscription.server_status === 'online' && existingMachine) {
 
       const liveStatus = await resolveLiveMachineStatus(gpuService, existingMachine);
 
-      await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
+      if (liveStatus.status === 'running') {
 
-      return res.status(200).json({
+        const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
 
-        success: true,
+        const machineSessionView = buildMachineSessionView(
+            subscription,
+            syncedMachine,
+            user.id,
+            { comfyUrl: buildMachineResponse(syncedMachine, liveStatus).comfyUrl },
+          );
+        const billingView = await billingViewForStart(
+          supabaseAdmin,
+          user.id,
+          gpuService,
+          machineSessionView,
+          syncedMachine,
+        );
 
-        alreadyOnline: true,
+        return res.status(200).json({
 
-        message: 'Máy đang chạy.',
+          success: true,
 
-        selectedPlan: selected,
+          alreadyOnline: true,
 
-        machine: buildMachineResponse(existingMachine, liveStatus),
+          message: 'Máy đang chạy.',
+
+          selectedPlan: selected,
+
+          machine: buildMachineResponse(syncedMachine, liveStatus),
+
+          machineSessionView,
+          billingView,
+
+        });
+
+      }
+
+      if (liveStatus.status === 'starting' || liveStatus.status === 'creating') {
+        const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
+
+        if (
+          shouldRetryProvisioningForBoot(existingMachine, liveStatus, targetEnvName)
+        ) {
+          console.warn('[user/start-machine] Boot env mismatch or stale — retrying Vast rent', {
+            machineTemplate: existingMachine.template ?? null,
+            targetEnvName,
+          });
+          await destroyUserMachine(supabaseAdmin, gpuService, user.id, {
+            interrupted: true,
+            skipBackup: true,
+            skipBilling: String(existingMachine.status ?? '') !== 'running',
+            reason: 'retry_provision',
+          });
+          existingMachine = null;
+          await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
+          subscription = { ...subscription, server_status: 'offline' };
+        } else {
+          const machineSessionView = buildMachineSessionView(subscription, syncedMachine, user.id);
+          const billingView = await billingViewForStart(
+            supabaseAdmin,
+            user.id,
+            gpuService,
+            machineSessionView,
+            syncedMachine,
+          );
+          return res.status(200).json({
+            success: true,
+            message: 'Đang khởi động máy GPU...',
+            selectedPlan: selected,
+            machine: buildMachineResponse(syncedMachine, liveStatus),
+            machineSessionView,
+            billingView,
+          });
+        }
+      }
+
+      console.warn('[user/start-machine] Stale online projection — cleaning up before re-provision', {
+
+        liveStatus: liveStatus.status,
+
+        message: liveStatus.message ?? null,
+
+        machineId: existingMachine.id ?? null,
+
+        driftAction: null,
 
       });
+
+      if (existingMachine) {
+
+        await destroyUserMachine(supabaseAdmin, gpuService, user.id, {
+
+          interrupted: true,
+
+          skipBackup: true,
+
+          skipBilling: String(existingMachine.status ?? '') !== 'running',
+
+          reason: 'retry_provision',
+
+        });
+
+        existingMachine = null;
+
+      }
+
+      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
+
+      subscription = { ...subscription, server_status: 'offline' };
 
     }
 
 
 
+    if (subscription.server_status === 'provisioning' && !existingMachine) {
+      console.info('[user/start-machine] Boot already in progress (no machine row yet) — retry background provision');
+      void completeUserStartProvision(supabaseAdmin, {
+        userId: user.id,
+        subscriptionId: subscription.id,
+        subscription,
+        selected,
+        planKey: normalizePlanKey(selected.plan),
+        planName: getPlanNameFromKey(normalizePlanKey(selected.plan)) ?? selected.plan,
+        gpuLine: resolveGpuLineFromPlan(normalizePlanKey(selected.plan)),
+        envName: targetEnvName,
+        workstationContainerEnv: buildWorkstationContainerEnv(targetEnvName),
+        lifecycleCtx: machineLifecycleContext(subscription),
+        correlationId,
+      }).catch((err) => {
+        console.error('[user/start-machine] background provision retry error:', err);
+      });
+      const machineSessionView = buildMachineSessionView(subscription, null, user.id);
+      const billingView = await billingViewForStart(
+        supabaseAdmin,
+        user.id,
+        gpuService,
+        machineSessionView,
+        null,
+      );
+      return res.status(200).json({
+        success: true,
+        alreadyStarting: true,
+        message: 'Đang khởi tạo máy GPU. Vui lòng đợi...',
+        selectedPlan: selected,
+        machineSessionView,
+        billingView,
+      });
+    }
+
     if (subscription.server_status === 'provisioning' && existingMachine) {
 
       const liveStatus = await resolveLiveMachineStatus(gpuService, existingMachine);
 
-      await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
+      const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
 
 
 
-      if (!shouldRetryProvisioning(existingMachine, liveStatus)) {
+      if (!shouldRetryProvisioningForBoot(existingMachine, liveStatus, targetEnvName)) {
+        const machineSessionView = buildMachineSessionView(subscription, syncedMachine, user.id);
+        const billingView = await billingViewForStart(
+          supabaseAdmin,
+          user.id,
+          gpuService,
+          machineSessionView,
+          syncedMachine,
+        );
 
         return res.status(200).json({
 
@@ -254,7 +439,10 @@ export default async function handler(req, res) {
 
           selectedPlan: selected,
 
-          machine: buildMachineResponse(existingMachine, liveStatus),
+          machine: buildMachineResponse(syncedMachine, liveStatus),
+
+          machineSessionView,
+          billingView,
 
         });
 
@@ -262,7 +450,10 @@ export default async function handler(req, res) {
 
 
 
-      console.warn('[user/start-machine] Stale provisioning detected, retrying Vast rent');
+      console.warn('[user/start-machine] Stale provisioning or env mismatch — retrying Vast rent', {
+        machineTemplate: existingMachine.template ?? null,
+        targetEnvName,
+      });
 
       await destroyUserMachine(supabaseAdmin, gpuService, user.id, {
 
@@ -280,21 +471,13 @@ export default async function handler(req, res) {
 
 
 
-    if (subscription.server_status === 'provisioning' && !existingMachine) {
-
-      console.info('[user/start-machine] Resuming provisioning (no machine row yet)');
-
-    }
-
-
-
     const planKey = normalizePlanKey(selected.plan);
 
     const planName = getPlanNameFromKey(planKey) ?? selected.plan;
 
     const gpuLine = resolveGpuLineFromPlan(planKey);
 
-    const envName = resolveEnvName(subscription.env_name);
+    const envName = targetEnvName;
 
     const workstationContainerEnv = buildWorkstationContainerEnv(envName);
 
@@ -312,165 +495,108 @@ export default async function handler(req, res) {
 
 
 
-    const { data: updated, error: updateError } = await supabaseAdmin
+    const lifecycleCtx = machineLifecycleContext(subscription);
+    const lifecycleRecord = snapshotToMachineRecord(subscription, existingMachine, user.id);
 
-      .from('subscriptions')
-
-      .update({
-
-        server_status: 'provisioning',
-
-        plan: planName,
-
-        gpu_label: getGpuLabel(planKey),
-
-      })
-
-      .eq('id', subscription.id)
-
-      .select('id, server_status, plan, gpu_label')
-
-      .single();
-
-
-
-    if (updateError) throw updateError;
-
-
-
-    let instance;
-
-    try {
-
-      console.info('=====================================');
-
-      console.info('🖥️ Creating Vast Instance...');
-
-      console.info('=====================================');
-
-
-
-      instance = await provisionGpuInstance(gpuService, {
-
-        gpuLine,
-
-        label: `gpuvietnam-${user.id.slice(0, 8)}`,
-
-        env: workstationContainerEnv,
-
-      });
-
-
-
-      console.info('✅ Vast instance provisioned:');
-
-      console.info('instance:', JSON.stringify(instance, null, 2));
-
-    } catch (gpuError) {
-
-      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
-
-      return res.status(503).json({
-
-        error: formatGpuUserMessage(gpuError),
-
-      });
-
-    }
-
-
-
-    if (!instance.id) {
-
-      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
-
-      return res.status(503).json({
-
-        error: 'Vast.ai không trả về mã instance. Kiểm tra VAST_AI_KEY và thử lại.',
-
-      });
-
-    }
-
-
-
-    const machineRow = mapGpuInstanceToMachineRow(instance, {
-
-      gpuLine,
-
-      region: instance.region,
-
-      subscriptionId: subscription.id,
-
-      template: envName,
-
-    });
-
-
-
-    await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'provisioning');
-
-
-
-    const machine = await insertMachineRecord(supabaseAdmin, user.id, machineRow);
-
-
-
-    console.info('📦 Machine record inserted:');
-
-    console.info('machine:', JSON.stringify(machine, null, 2));
-
-    try {
-      await createProvisioningPendingSession(supabaseAdmin, {
+    const startTransition = await persistStartRequested(
+      supabaseAdmin,
+      subscription.id,
+      lifecycleRecord,
+      lifecycleCtx,
+      {
         userId: user.id,
-        machine,
-        subscription,
-        template: envName,
-        plan: planName,
-        billing: subscription.billing ?? selected.billing ?? 'combo1',
-        gpuConfig: getGpuLabel(planKey),
+        subscriptionId: subscription.id,
+        envName,
+      },
+    );
+
+    if (startTransition.state === 'ERROR') {
+      return res.status(409).json({ error: startTransition.message });
+    }
+
+    if (startTransition.state === 'IGNORED') {
+      const bootMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
+      const machineSessionView = buildMachineSessionView(
+        { ...subscription, server_status: 'provisioning' },
+        bootMachine,
+        user.id,
+      );
+      const billingView = await billingViewForStart(
+        supabaseAdmin,
+        user.id,
+        gpuService,
+        machineSessionView,
+        bootMachine,
+      );
+      return res.status(200).json({
+        success: true,
+        alreadyStarting: true,
+        message: 'Đang khởi động máy GPU...',
+        selectedPlan: selected,
+        machine: bootMachine ? buildMachineResponse(bootMachine, { status: bootMachine.status ?? 'creating' }) : null,
+        machineSessionView,
+        billingView,
       });
-    } catch (sessionError) {
-      console.warn('[user/start-machine] createProvisioningPendingSession failed:', sessionError);
     }
 
+    subscription = {
+      ...subscription,
+      server_status: startTransition.machine?.serverStatus ?? 'provisioning',
+      plan: planName,
+      gpu_label: getGpuLabel(planKey),
+    };
 
+    provisioningSubscriptionId = subscription.id;
 
-    const liveStatus = await resolveLiveMachineStatus(gpuService, machine);
+    await supabaseAdmin
+      .from('subscriptions')
+      .update({ plan: planName, gpu_label: getGpuLabel(planKey) })
+      .eq('id', subscription.id);
 
-    await syncMachineFromLiveStatus(supabaseAdmin, machine, liveStatus);
-
-
-
-    console.info('🖥️ resolveLiveMachineStatus result:');
-
-    console.info('liveStatus:', JSON.stringify(liveStatus, null, 2));
-
-    console.info('liveStatus.status:', liveStatus.status);
-
-
-
-    if (liveStatus.status === 'running') {
-      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'online');
-    }
-
-    // Runtime workstation switching disabled (Restart-only architecture).
-    // Container applies workspace at boot via setup-workstation.sh + buildWorkstationContainerEnv().
-
-    return res.status(200).json({
-
-      success: true,
-
-      message: `Đang khởi động máy với gói ${planName}.`,
-
-      selectedPlan: selected,
-
-      subscription: updated,
-
-      machine: buildMachineResponse(machine, liveStatus),
-
+    const openingView = buildMachineSessionView(subscription, null, user.id, {
+      envName,
     });
 
+    const billingView = await billingViewForStart(
+      supabaseAdmin,
+      user.id,
+      gpuService,
+      openingView,
+      null,
+    );
+
+    res.status(200).json({
+      success: true,
+      accepted: true,
+      message: 'Đang khởi tạo máy GPU...',
+      selectedPlan: selected,
+      subscription: {
+        id: subscription.id,
+        server_status: subscription.server_status,
+        plan: planName,
+        gpu_label: getGpuLabel(planKey),
+      },
+      machineSessionView: openingView,
+      billingView,
+    });
+
+    void completeUserStartProvision(supabaseAdmin, {
+      userId: user.id,
+      subscriptionId: subscription.id,
+      subscription,
+      selected,
+      planKey,
+      planName,
+      gpuLine,
+      envName,
+      workstationContainerEnv,
+      lifecycleCtx,
+      correlationId,
+    }).catch((err) => {
+      console.error('[user/start-machine] background provision error:', err);
+    });
+
+    return;
   } catch (err) {
 
     console.error('❌ FULL ERROR');
@@ -480,6 +606,50 @@ export default async function handler(req, res) {
     console.error('stack:', err instanceof Error ? err.stack : '(no stack)');
 
     console.error('[user/start-machine]', err);
+
+
+
+    if (rentedInstanceId && userId && gpuService && provisioningSubscriptionId) {
+
+      try {
+
+        await rollbackProvisionAfterRentFailure(supabaseAdmin, gpuService, {
+
+          userId,
+
+          subscriptionId: provisioningSubscriptionId,
+
+          instanceId: rentedInstanceId,
+
+          machineId: insertedMachineId,
+
+          correlationId,
+
+          reason: 'start_machine_post_rent_failed',
+
+        });
+
+      } catch (rollbackError) {
+
+        console.warn('[user/start-machine] provision rollback failed:', rollbackError);
+
+      }
+
+    } else if (provisioningSubscriptionId) {
+
+      try {
+
+        await updateSubscriptionServerStatus(supabaseAdmin, provisioningSubscriptionId, 'offline');
+
+      } catch (rollbackError) {
+
+        console.warn('[user/start-machine] provisioning rollback failed:', rollbackError);
+
+      }
+
+    }
+
+
 
     return res.status(500).json({ error: err.message || 'Không khởi động được máy.' });
 

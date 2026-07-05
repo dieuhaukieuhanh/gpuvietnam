@@ -24,8 +24,10 @@ export type StorageFileRecord = {
   updated_at: string;
 };
 
+export type MachineLiveState = 'syncing' | 'running' | 'offline';
+
 type StoragePanelProps = {
-  isMachineRunning?: boolean;
+  machineState?: MachineLiveState;
   runtimeDisk?: {
     used_gb: number;
     total_gb: number;
@@ -490,9 +492,10 @@ function StorageTransferModal({
 }
 
 export default function StoragePanel({
-  isMachineRunning = false,
+  machineState = 'syncing',
   runtimeDisk = null,
 }: StoragePanelProps) {
+  const isMachineRunning = machineState === 'running';
   const { isMobile } = useIsMobile();
   const router = useRouter();
   const ssdSectionRef = useRef<HTMLElement>(null);
@@ -1037,30 +1040,28 @@ export default function StoragePanel({
           >
             <div className="storage-card-header">
               <h3>⚡ SSD — Dùng ngay</h3>
-              {isMachineRunning ? (
+              {machineState === 'running' && (
                 <span className="storage-status online">Máy đang chạy</span>
-              ) : (
+              )}
+              {machineState === 'syncing' && (
+                <span className="storage-status syncing">Đang đồng bộ trạng thái</span>
+              )}
+              {machineState === 'offline' && (
                 <span className="storage-status offline">Máy tắt</span>
               )}
             </div>
 
-            {!isMachineRunning && (
+            {machineState === 'offline' && (
               <p className="storage-offline-notice">Máy đang tắt — không thể truy cập SSD</p>
             )}
 
             <div className={!isMachineRunning ? 'storage-card-body-dimmed' : undefined}>
               {isMachineRunning && runtimeDisk ? (
-                <>
-                  <ProgressBar
-                    used={runtimeDisk.used_gb * 1024 ** 3}
-                    total={runtimeDisk.total_gb * 1024 ** 3}
-                    variant="ssd"
-                  />
-                  <p className="storage-runtime-note">
-                    SSD máy GPU (Vast): {runtimeDisk.used_gb}GB / {runtimeDisk.total_gb}GB ·{' '}
-                    {runtimeDisk.percent}%
-                  </p>
-                </>
+                <ProgressBar
+                  used={runtimeDisk.used_gb * 1024 ** 3}
+                  total={runtimeDisk.total_gb * 1024 ** 3}
+                  variant="ssd"
+                />
               ) : (
                 <ProgressBar used={ssdUsed} total={ssdTotalBytes} variant="ssd" />
               )}

@@ -2,7 +2,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
 import DashboardShell from '@/components/dashboard/DashboardShell';
-import StoragePanel from '@/components/dashboard/StoragePanel';
+import StoragePanel, { type MachineLiveState } from '@/components/dashboard/StoragePanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
 import { routes } from '@/lib/routes';
@@ -14,19 +14,26 @@ type RuntimeDisk = {
   percent: number;
 };
 
-const STATUS_POLL_MS = 30_000;
+const STATUS_POLL_RUNNING_MS = 30_000;
+const STATUS_POLL_BOOT_MS = 10_000;
+
+function resolveMachineLiveState(status: string | undefined): MachineLiveState {
+  if (status === 'running') return 'running';
+  if (status === 'creating' || status === 'starting') return 'syncing';
+  return 'offline';
+}
 
 export default function DashboardStoragePage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading, session } = useAuth();
-  const { user, subscription } = useDashboard();
+  const { user } = useDashboard();
   const [runtimeDisk, setRuntimeDisk] = useState<RuntimeDisk | null>(null);
+  const [machineState, setMachineState] = useState<MachineLiveState>('syncing');
 
-  const isMachineRunning = subscription?.server_status === 'online';
-
-  const fetchRuntimeDisk = useCallback(async () => {
+  const fetchMachineLive = useCallback(async () => {
     const token = session?.access_token;
-    if (!token || !isMachineRunning) {
+    if (!token) {
+      setMachineState('syncing');
       setRuntimeDisk(null);
       return;
     }
@@ -36,15 +43,20 @@ export default function DashboardStoragePage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (!res.ok || data.status !== 'running') {
+      if (!res.ok) {
+        setMachineState('offline');
         setRuntimeDisk(null);
         return;
       }
-      setRuntimeDisk(data.metrics?.disk ?? null);
+
+      const nextState = resolveMachineLiveState(data.status);
+      setMachineState(nextState);
+      setRuntimeDisk(nextState === 'running' ? (data.metrics?.disk ?? null) : null);
     } catch {
+      setMachineState('offline');
       setRuntimeDisk(null);
     }
-  }, [session?.access_token, isMachineRunning]);
+  }, [session?.access_token]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -52,15 +64,17 @@ export default function DashboardStoragePage() {
   }, [authUser, authLoading, router]);
 
   useEffect(() => {
-    if (!isMachineRunning) {
+    if (!session?.access_token) {
+      setMachineState('syncing');
       setRuntimeDisk(null);
       return undefined;
     }
 
-    void fetchRuntimeDisk();
-    const id = window.setInterval(() => void fetchRuntimeDisk(), STATUS_POLL_MS);
+    void fetchMachineLive();
+    const pollMs = machineState === 'running' ? STATUS_POLL_RUNNING_MS : STATUS_POLL_BOOT_MS;
+    const id = window.setInterval(() => void fetchMachineLive(), pollMs);
     return () => window.clearInterval(id);
-  }, [isMachineRunning, fetchRuntimeDisk]);
+  }, [session?.access_token, machineState, fetchMachineLive]);
 
   if (authLoading || !authUser) return null;
 
@@ -76,7 +90,7 @@ export default function DashboardStoragePage() {
         title="Bộ nhớ"
         mainClassName="main-content main-content--storage"
       >
-        <StoragePanel isMachineRunning={isMachineRunning} runtimeDisk={runtimeDisk} />
+        <StoragePanel machineState={machineState} runtimeDisk={runtimeDisk} />
       </DashboardShell>
     </>
   );

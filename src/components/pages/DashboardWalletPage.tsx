@@ -10,6 +10,33 @@ import { getPlanConfig } from '@/lib/gpu-pricing';
 import { styles as dashboardStyles } from '@/styles/pages/dashboard.styles';
 import { styles } from '@/styles/pages/dashboard-cai-dat.styles';
 
+const WALLET_SERVICE_CARDS = [
+  {
+    key: 'hours-renew',
+    icon: '⏱️',
+    title: 'Nạp giờ & Tái tục',
+    desc: 'Gia hạn gói đang dùng hoặc mua thêm giờ linh hoạt.',
+    actions: [
+      { label: 'Tái tục gói', href: routes.dashboardGoiCuaToi, primary: true },
+      { label: 'Mua thêm giờ', href: routes.checkout2 },
+    ],
+  },
+  {
+    key: 'combo',
+    icon: '📦',
+    title: 'Mua gói Combo ưu đãi',
+    desc: 'Combo 1 & Combo 2 — kích hoạt ngay sau thanh toán.',
+    actions: [{ label: 'Chọn gói', href: routes.checkoutPlan, primary: true }],
+  },
+  {
+    key: 'storage',
+    icon: '💾',
+    title: 'Nâng cấp bộ nhớ',
+    desc: 'Tăng dung lượng SSD và Backup lưu trữ trên nền tảng.',
+    actions: [{ label: 'Nâng cấp', href: routes.dashboardStorage, primary: true }],
+  },
+] as const;
+
 type WalletTransaction = {
   id: string;
   type: string;
@@ -68,6 +95,7 @@ export default function DashboardWalletPage() {
     }>;
   } | null>(null);
   const [txLoading, setTxLoading] = useState(true);
+  const [walletError, setWalletError] = useState('');
 
   useEffect(() => {
     if (authLoading) return;
@@ -77,6 +105,7 @@ export default function DashboardWalletPage() {
   const loadWallet = useCallback(async () => {
     if (!session?.access_token) return;
     setTxLoading(true);
+    setWalletError('');
     try {
       const [walletRes, grantsRes] = await Promise.all([
         fetch('/api/user/wallet?limit=100', {
@@ -90,6 +119,8 @@ export default function DashboardWalletPage() {
       if (walletRes.ok) {
         setBalance(data.balance ?? 0);
         setTransactions(data.transactions ?? []);
+      } else {
+        setWalletError(data.error ?? 'Không tải được lịch sử giao dịch.');
       }
       const grantsData = await grantsRes.json();
       if (grantsRes.ok) {
@@ -109,15 +140,24 @@ export default function DashboardWalletPage() {
   return (
     <>
       <Head>
-        <title>GPUVietnam – Ví</title>
+        <title>GPUVietnam – Ví nạp trước</title>
         <style dangerouslySetInnerHTML={{ __html: dashboardStyles + styles }} />
       </Head>
-      <DashboardShell user={user} activeTab="wallet" title="Ví Nạp Trước" mainClassName="main-content settings-main">
-        <Link href={routes.dashboardCaiDat} className="settings-back-link">
-          ← Quay lại Cài đặt
+      <DashboardShell user={user} activeTab="wallet" title="Ví nạp trước" mainClassName="main-content settings-main">
+        <Link href={routes.dashboard} className="settings-back-link">
+          ← Quay lại Trung tâm
         </Link>
-        <h1 className="page-title">💰 Ví Nạp Trước</h1>
-        <p className="page-subtitle">Lịch sử giao dịch và số dư hiện tại</p>
+        <h1 className="page-title">💰 Ví nạp trước</h1>
+        <p className="page-subtitle">Số dư khả dụng và mua thêm dịch vụ trên nền tảng</p>
+
+        {error && (
+          <div className="alert-card warning" style={{ display: 'flex', marginBottom: 16 }}>
+            <span className="alert-icon">⚠️</span>
+            <div className="alert-content">
+              <div className="alert-desc">{error}</div>
+            </div>
+          </div>
+        )}
 
         {hourGrants && hourGrants.totalHoursRemaining > 0 && (
           <>
@@ -182,41 +222,72 @@ export default function DashboardWalletPage() {
           </>
         )}
 
-        <div className="card">
-          <div className="wallet-card" style={{ marginBottom: 0 }}>
-            <div className="wallet-info">
-              <div className="wallet-balance">{formatVnd(balance)}</div>
-              <div className="wallet-hint">Số dư khả dụng</div>
+        <div className="wallet-page-layout">
+          <div className="wallet-page-main">
+            <div className="card">
+              <div className="wallet-card" style={{ marginBottom: 0 }}>
+                <div className="wallet-info">
+                  <div className="wallet-balance">{formatVnd(balance)}</div>
+                  <div className="wallet-hint">Số dư khả dụng</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">📜 LỊCH SỬ GIAO DỊCH</div>
+              {loading || txLoading ? (
+                <p className="settings-loading">Đang tải...</p>
+              ) : walletError ? (
+                <p style={{ color: '#f87171' }}>{walletError}</p>
+              ) : transactions.length === 0 ? (
+                <p className="settings-loading">Chưa có giao dịch nào.</p>
+              ) : (
+                <ul className="wallet-history-list wallet-history-full">
+                  {transactions.map((tx) => (
+                    <li key={tx.id}>
+                      <div>
+                        <strong>{tx.description ?? tx.type}</strong>
+                        <span className="text-muted" style={{ display: 'block', fontSize: 11 }}>
+                          {formatDate(tx.created_at)} · {tx.status}
+                        </span>
+                      </div>
+                      <span className={tx.type === 'topup' ? 'text-green' : ''}>
+                        {tx.type === 'payment' ? '-' : '+'}
+                        {formatVnd(Number(tx.amount))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
-        </div>
 
-        <div className="card">
-          <div className="card-header">📜 LỊCH SỬ GIAO DỊCH</div>
-          {loading || txLoading ? (
-            <p className="settings-loading">Đang tải...</p>
-          ) : error ? (
-            <p style={{ color: '#f87171' }}>{error}</p>
-          ) : transactions.length === 0 ? (
-            <p className="settings-loading">Chưa có giao dịch nào.</p>
-          ) : (
-            <ul className="wallet-history-list wallet-history-full">
-              {transactions.map((tx) => (
-                <li key={tx.id}>
-                  <div>
-                    <strong>{tx.description ?? tx.type}</strong>
-                    <span className="text-muted" style={{ display: 'block', fontSize: 11 }}>
-                      {formatDate(tx.created_at)} · {tx.status}
-                    </span>
-                  </div>
-                  <span className={tx.type === 'topup' ? 'text-green' : ''}>
-                    {tx.type === 'payment' ? '-' : '+'}
-                    {formatVnd(Number(tx.amount))}
+          <aside className="wallet-page-aside" aria-label="Mua thêm dịch vụ">
+            {WALLET_SERVICE_CARDS.map((card) => (
+              <article key={card.key} className="wallet-service-card">
+                <div className="wallet-service-card-head">
+                  <span className="wallet-service-card-icon" aria-hidden>
+                    {card.icon}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
+                  <div>
+                    <h3 className="wallet-service-card-title">{card.title}</h3>
+                    <p className="wallet-service-card-desc">{card.desc}</p>
+                  </div>
+                </div>
+                <div className="wallet-service-card-actions">
+                  {card.actions.map((action) => (
+                    <Link
+                      key={action.href}
+                      href={action.href}
+                      className={`wallet-service-card-link${'primary' in action && action.primary ? ' primary' : ''}`}
+                    >
+                      {action.label}
+                    </Link>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </aside>
         </div>
       </DashboardShell>
     </>

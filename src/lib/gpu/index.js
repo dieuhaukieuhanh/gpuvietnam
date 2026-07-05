@@ -1,18 +1,4 @@
 import { createGpuService } from './gpu-service.js';
-import { VastProvider } from './providers/vast/vast-provider.js';
-
-/** @type {import('./gpu-service.js').GPUService | null} */
-let defaultGpuService = null;
-
-/**
- * Singleton GPUService wired to VastProvider (current production backend).
- */
-export function getGpuService() {
-  if (!defaultGpuService) {
-    defaultGpuService = createGpuService(new VastProvider());
-  }
-  return defaultGpuService;
-}
 
 /**
  * @param {import('./providers/gpu-provider.interface').GPUProvider} provider
@@ -21,9 +7,17 @@ export function createGpuServiceWithProvider(provider) {
   return createGpuService(provider);
 }
 
-export { GPUService, createGpuService } from './gpu-service.js';
+export { GPUService, createGpuService, getGpuService } from './gpu-service.js';
 export { VastProvider } from './providers/vast/vast-provider.js';
+export { VastProviderAdapter } from './providers/vast/vast-provider-adapter.js';
 export { VastClient } from './providers/vast/vast-client.js';
+export {
+  bootstrapProviderRegistry,
+  getDefaultProviderId,
+  getProviderAdapter,
+  listRegisteredProviders,
+  resolveDefaultProviderAdapter,
+} from './provider-abstraction/index.js';
 export {
   GPUError,
   GPUConfigurationError,
@@ -155,6 +149,47 @@ export {
   isTerminalStatus,
   isScbStatus,
 } from './session-lifecycle.js';
+export {
+  MACHINE_LIFECYCLE_STATUS,
+  MACHINE_COMMAND,
+  MACHINE_DOMAIN_EVENT,
+  MACHINE_ERROR_CODE,
+  MACHINE_STATE_MACHINE_VERSION,
+  MACHINE_GUARDS,
+  deriveLifecycleStatus,
+  snapshotToMachineRecord,
+  deriveSessionPhase,
+  isMachineRowBooting,
+  executeCommand as executeMachineCommand,
+  requestStartMachine,
+  requestStopMachine,
+  requestCancelMachine,
+  completeDestroyMachine,
+  reportProviderStatus,
+  applyDriftRepair,
+  detectDriftRepair,
+  findTransitions as findMachineTransitions,
+  getTransitionMap as getMachineTransitionMap,
+} from './machine-lifecycle.js';
+export {
+  resolveMachineSessionView,
+} from './machine-session-view.js';
+export {
+  buildBillingSessionView,
+  resolveBillingSessionView,
+  resolveBillingViewForCommand,
+  resolveStatusBillingPhase,
+} from './billing-session-view.js';
+export {
+  persistMachineSubscriptionStatus,
+  runMachineTransition,
+  runMachineTransitionAndPersist,
+  persistStartRequested,
+  persistStopRequested,
+  persistDestroyCompleted,
+  persistProviderRunning,
+  persistDriftRepair,
+} from './machine-lifecycle-persist.js';
 export {
   PROVIDER_VERIFY_MODULE_VERSION,
   NORMALIZED_PROVIDER_STATE,

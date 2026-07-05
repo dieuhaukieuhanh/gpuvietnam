@@ -1,4 +1,8 @@
-import { DEFAULT_GPU_PORT } from './gpu-config.js';
+import {
+  buildConsumerEndpoint,
+  isEndpointReadyForTraffic,
+  requireComfyUrlFromResolvedEndpoint,
+} from '../endpoint-utils.js';
 import { ComfyClient } from './providers/vast/comfy-client.js';
 import { fetchStorageInfo } from './storage.js';
 import { fetchCurrentWorkflow } from './workflow.js';
@@ -29,20 +33,15 @@ function setCached(key, value) {
   cache.set(key, { at: Date.now(), value });
 }
 
-function buildEndpoint(ip, port) {
-  return `http://${ip}:${port ?? DEFAULT_GPU_PORT}`;
-}
-
 /**
- * @param {string} ip
- * @param {number | string} [port]
+ * @param {string} comfyUrl
  */
-export async function fetchGpuMetrics(ip, port) {
-  const key = cacheKey('gpu', ip, port);
+async function fetchGpuMetricsFromUrl(comfyUrl) {
+  const key = cacheKey('gpu', comfyUrl, '');
   const cached = getCached(key);
   if (cached) return cached;
 
-  const comfy = new ComfyClient(buildEndpoint(ip, port));
+  const comfy = new ComfyClient(comfyUrl);
   const stats = await comfy.request('/system_stats');
   const devices = Array.isArray(stats?.devices) ? stats.devices : [];
   const cudaDevice = devices.find((device) => device?.type === 'cuda') ?? devices[0];
@@ -102,15 +101,22 @@ function countHistoryOutputs(history, sessionStartedAt) {
 
 /**
  * @param {string} ip
- * @param {number | string} [port]
+ * @param {number | string} port
+ */
+export async function fetchGpuMetrics(ip, port) {
+  return fetchGpuMetricsFromUrl(requireComfyUrlFromResolvedEndpoint(ip, port));
+}
+
+/**
+ * @param {string} comfyUrl
  * @param {string | null | undefined} [sessionStartedAt]
  */
-export async function fetchOutputCount(ip, port, sessionStartedAt) {
-  const key = cacheKey('output', ip, port, sessionStartedAt ?? 'all');
+async function fetchOutputCountFromUrl(comfyUrl, sessionStartedAt) {
+  const key = cacheKey('output', comfyUrl, sessionStartedAt ?? 'all');
   const cached = getCached(key);
   if (cached) return cached;
 
-  const comfy = new ComfyClient(buildEndpoint(ip, port));
+  const comfy = new ComfyClient(comfyUrl);
   const history = await comfy.request('/history');
   const result = { output_count: countHistoryOutputs(history, sessionStartedAt) };
 
@@ -120,15 +126,26 @@ export async function fetchOutputCount(ip, port, sessionStartedAt) {
 
 /**
  * @param {string} ip
- * @param {number | string} [port]
+ * @param {number | string} port
+ * @param {string | null | undefined} [sessionStartedAt]
+ */
+export async function fetchOutputCount(ip, port, sessionStartedAt) {
+  return fetchOutputCountFromUrl(
+    requireComfyUrlFromResolvedEndpoint(ip, port),
+    sessionStartedAt,
+  );
+}
+
+/**
+ * @param {string} comfyUrl
  * @param {number} [limit]
  */
-export async function fetchRecentOutputImages(ip, port, limit = 6) {
-  const key = cacheKey('recent-images', ip, port, String(limit));
+async function fetchRecentOutputImagesFromUrl(comfyUrl, limit = 6) {
+  const key = cacheKey('recent-images', comfyUrl, String(limit));
   const cached = getCached(key);
   if (cached) return cached;
 
-  const endpoint = buildEndpoint(ip, port);
+  const endpoint = comfyUrl;
   const comfy = new ComfyClient(endpoint);
   const history = await comfy.request('/history');
 
@@ -177,22 +194,46 @@ export async function fetchRecentOutputImages(ip, port, limit = 6) {
 }
 
 /**
+ * @param {string} ip
+ * @param {number | string} port
+ * @param {number} [limit]
+ */
+export async function fetchRecentOutputImages(ip, port, limit = 6) {
+  return fetchRecentOutputImagesFromUrl(
+    requireComfyUrlFromResolvedEndpoint(ip, port),
+    limit,
+  );
+}
+
+/**
  * @param {{
- *   ip: string;
- *   port?: number | string;
+ *   machine: Record<string, unknown>;
+ *   healthOk?: boolean;
  *   instanceId?: string | null;
  *   sessionStartedAt?: string | null;
  * }} params
  */
 export async function fetchLiveMetrics(params) {
-  const { ip, port, instanceId, sessionStartedAt } = params;
-  if (!ip) return null;
+  const { machine, healthOk = false, instanceId, sessionStartedAt } = params;
+
+  if (!machine || !isEndpointReadyForTraffic(machine, healthOk)) {
+    return null;
+  }
+
+  const { ip, port, comfyUrl } = buildConsumerEndpoint(machine, healthOk);
+  if (!ip || port == null || !comfyUrl) {
+    return null;
+  }
 
   const [gpuMetrics, outputCount, storageInfo, workflowInfo] = await Promise.all([
-    fetchGpuMetrics(ip, port).catch(() => null),
-    fetchOutputCount(ip, port, sessionStartedAt).catch(() => ({ output_count: 0 })),
+    fetchGpuMetricsFromUrl(comfyUrl).catch(() => null),
+    fetchOutputCountFromUrl(comfyUrl, sessionStartedAt).catch(() => ({ output_count: 0 })),
     fetchStorageInfo(ip, port, { instanceId }).catch(() => null),
-    fetchCurrentWorkflow(ip, port).catch(() => ({ model: null, loras: [], current_model: null })),
+    fetchCurrentWorkflow(comfyUrl).catch(() => ({
+      model: null,
+      loras: [],
+      current_model: null,
+    })),
   ]);
 
   return {

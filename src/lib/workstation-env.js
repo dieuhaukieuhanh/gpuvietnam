@@ -35,6 +35,19 @@ export function isGpuComfyWorkstation(workstation) {
 }
 
 /**
+ * @param {string | null | undefined} envName
+ * @returns {{ name: string; icon: string }}
+ */
+export function workspaceDisplayFromEnvName(envName) {
+  const resolvedName = resolveEnvName(envName);
+  const workstation = WORKSTATIONS.find((item) => item.name === resolvedName);
+  return {
+    name: resolvedName,
+    icon: workstation?.icon ?? '👤',
+  };
+}
+
+/**
  * Workspace env for the current machine session (Restart-only architecture).
  * `machines.template` = workspace applied at last successful Start Machine (container boot).
  * `subscriptions.env_name` = workspace selected for the next Start Machine only.

@@ -1,4 +1,3 @@
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { buildDepositTransferNote } from '@/lib/wallet-deposit';
 import { fetchPendingPlanRenewRequests } from '@/lib/plan-renew-request';
 

@@ -1,4 +1,4 @@
-import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
+import { getAuthUserFromRequest } from '@/lib/api-auth';
 import { isReturningGpuCustomer } from '@/lib/customer-eligibility';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 

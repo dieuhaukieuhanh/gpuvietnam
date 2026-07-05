@@ -1,4 +1,4 @@
-import { createGPUStatus } from '../../domain/gpu-status';
+import { createGPUStatus } from '../../domain/gpu-status.js';
 import { DEFAULT_GPU_PORT } from '../../gpu-config.js';
 
 /** @typedef {import('../../domain/gpu-instance').GPUInstance} GPUInstance */
@@ -52,13 +52,16 @@ export function mapGpuLineToVastSearch(gpuLine) {
 /**
  * @param {Record<string, unknown>} raw
  * @param {GPULine} gpuLine
- * @param {{ port?: number }} [options]
+ * @param {{ port?: number; instanceIdHint?: string; resolvedEndpoint?: import('./vast-endpoint-resolver.js').ResolvedEndpointPayload | null }} [options]
  * @returns {GPUInstance}
  */
 export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
   const record = normalizeVastInstanceRecord(raw, options.instanceIdHint);
   const id = String(record.id ?? record.instance_id ?? record.new_contract ?? '');
-  const actualStatus = String(record.actual_status ?? record.status ?? 'unknown').toLowerCase();
+  const actualStatus = String(
+    record.actual_status ?? record.cur_state ?? record.status ?? 'unknown',
+  ).toLowerCase();
+  const statusMsg = typeof record.status_msg === 'string' ? record.status_msg.toLowerCase() : '';
 
   /** @type {import('../../domain/gpu-status').GPUStatusCode} */
   let code = 'unknown';
@@ -66,15 +69,12 @@ export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
   else if (actualStatus.includes('loading') || actualStatus.includes('starting')) code = 'starting';
   else if (actualStatus.includes('exited') || actualStatus.includes('stopped')) code = 'stopped';
   else if (actualStatus.includes('failed')) code = 'failed';
+  else if (statusMsg.includes('successfully loaded')) code = 'starting';
 
-  const defaultPort = options.port ?? DEFAULT_GPU_PORT;
-  const publicIp =
-    record.public_ipaddr ??
-    record.public_ip ??
-    (typeof record.ssh_host === 'string' ? record.ssh_host : undefined);
-  const port = resolveVastComfyPort(record, defaultPort);
-  const endpointUrl =
-    typeof publicIp === 'string' && publicIp.length > 0 ? `http://${publicIp}:${port}` : undefined;
+  const internalPort = options.port ?? DEFAULT_GPU_PORT;
+  const resolved = options.resolvedEndpoint ?? null;
+  const endpointUrl = resolved?.url;
+  const externalPort = resolved?.externalPort ?? null;
 
   return {
     id,
@@ -90,7 +90,12 @@ export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
     createdAt: record.start_date
       ? new Date(Number(record.start_date) * 1000).toISOString()
       : undefined,
-    metadata: { vast: record, port },
+    metadata: {
+      vast: record,
+      port: externalPort,
+      internalPort,
+      resolvedSource: resolved?.source ?? null,
+    },
   };
 }
 
@@ -118,7 +123,7 @@ export function resolveVastComfyPort(record, defaultPort) {
     }
   }
 
-  return defaultPort;
+  return null;
 }
 
 /**
@@ -149,15 +154,17 @@ export function parseGpuInstanceEndpoint(instance, defaultPort = DEFAULT_GPU_POR
         : typeof vast?.ssh_host === 'string'
           ? vast.ssh_host
           : null;
-  const port = Number(
-    instance.metadata?.port ??
-      (vast && typeof vast === 'object'
-        ? resolveVastComfyPort(/** @type {Record<string, unknown>} */ (vast), defaultPort)
-        : defaultPort),
-  );
+  const externalPort = Number(instance.metadata?.port);
+  const mappedPort =
+    vast && typeof vast === 'object'
+      ? resolveVastComfyPort(/** @type {Record<string, unknown>} */ (vast), defaultPort)
+      : null;
+  const port = Number.isFinite(externalPort) && externalPort > 0
+    ? externalPort
+    : mappedPort;
 
-  if (!ip) {
-    return { ip: null, port, comfyUrl: null };
+  if (!ip || !Number.isFinite(port) || port <= 0) {
+    return { ip: ip ?? null, port: null, comfyUrl: null };
   }
 
   const comfyUrl = `http://${ip}:${port}`;

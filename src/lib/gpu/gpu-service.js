@@ -1,4 +1,5 @@
 import { isRetryableGpuError, mapProviderError } from './gpu-errors.js';
+import { createDefaultLegacyGpuProvider } from './provider-abstraction/index.js';
 
 const DEFAULT_RETRIES = 2;
 const RETRY_DELAY_MS = 400;
@@ -127,4 +128,19 @@ export class GPUService {
  */
 export function createGpuService(provider) {
   return new GPUService(provider);
+}
+
+/** @type {GPUService | null} */
+let defaultGpuService = null;
+
+/**
+ * Singleton GPUService wired to VastProvider (current production backend).
+ * Lives here (not index.js) so modules such as auto-stop.js can import it
+ * without a circular dependency through @/lib/gpu.
+ */
+export function getGpuService() {
+  if (!defaultGpuService) {
+    defaultGpuService = createGpuService(createDefaultLegacyGpuProvider());
+  }
+  return defaultGpuService;
 }

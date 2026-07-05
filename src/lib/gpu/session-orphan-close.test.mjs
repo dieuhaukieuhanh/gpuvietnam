@@ -79,7 +79,7 @@ const orphanRow = (id, machine_id = 'mach_old') => ({
 
 describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
   it('orphan running session becomes closed (lifecycle persist)', async () => {
-    const { supabaseAdmin, updates, tables } = makeClient({
+    const { supabaseAdmin, updates } = makeClient({
       sessions: [orphanRow('sess_orphan')],
       machines: [], // no active machine -> session is orphan
     });
@@ -136,7 +136,7 @@ describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
   });
 
   it('no billing invoked — patch contains only lifecycle/usage-zero fields', async () => {
-    const { supabaseAdmin, updates, tables } = makeClient({
+    const { supabaseAdmin, updates } = makeClient({
       sessions: [orphanRow('sess_o')],
       machines: [],
     });

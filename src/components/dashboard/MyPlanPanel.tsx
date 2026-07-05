@@ -229,7 +229,7 @@ function PlanCard({
 }
 
 export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
-  const { plans: pricingPlans } = useGpuPricingConfig();
+  useGpuPricingConfig();
   const [plansData, setPlansData] = useState<PlansResponse | null>(null);
   const [hasUsedTrial, setHasUsedTrial] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -350,7 +350,7 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
       const billing = resolveBilling(plan);
       return getPlanPrice(plan.planName, billing);
     },
-    [pricingPlans],
+    [],
   );
 
   if (loading) {

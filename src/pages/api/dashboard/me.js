@@ -1,13 +1,16 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
-import { getGpuService, repairUserBillingState, readRemainingForMachine } from '@/lib/gpu';
-import { mapRemainingStatusFields } from '@/lib/gpu/api-scb';
-import { REMAINING_STATE_OK } from '@/lib/gpu/remaining-time';
-import {
-  getActiveMachineForUser,
-  syncSubscriptionWithMachineState,
-} from '@/lib/machines';
+import { repairUserBillingState, getGpuService } from '@/lib/gpu';
+import { createCorrelationId } from '@/lib/scb-correlation';
+import { getActiveMachineForUser } from '@/lib/machines';
+import { toSyncShape } from '@/lib/machines-drift';
+import { runReadPathProjectionFirst, subscriptionPrefetchFromDashboardRow } from '@/lib/machines-drift-projection';
+import { snapshotToMachineRecord, resolveMachineSessionView } from '@/lib/gpu/machine-session-view';
+import { resolveBillingSessionView } from '@/lib/gpu/billing-session-view';
+import { logArchitectureFreezeStartup } from '@/lib/scb-read-path';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { syncUserPlanInventory } from '@/lib/user-plan-inventory';
+import { syncUserPlanInventory, subscriptionPrefetchForInventorySync, grantsPrefetchForInventorySync } from '@/lib/user-plan-inventory';
+import { billablePlansFromInventoryRows, fetchOrderedBillablePlansForUser } from '@/lib/gpu/billing';
+import { withProf, profStart, profEnd, renderProfTree } from '@/lib/prof';
 
 
 
@@ -16,6 +19,10 @@ const ACTIVE_STATUSES = ['active', 'provisioning', 'pending_payment'];
 
 
 export default async function handler(req, res) {
+
+  return withProf('Dashboard request', async () => {
+
+  logArchitectureFreezeStartup();
 
   if (req.method !== 'GET') {
 
@@ -27,7 +34,9 @@ export default async function handler(req, res) {
 
   try {
 
+    const authSpan = profStart('Load auth user');
     const user = await getAuthUserFromRequest(req);
+    profEnd(authSpan);
 
     if (!user) return unauthorized(res);
 
@@ -37,6 +46,7 @@ export default async function handler(req, res) {
 
 
 
+    const batchSpan = profStart('Supabase parallel batch (profile/subscription/grants)');
     const [{ data: profile }, { data: activeSubscription }, { data: expiredSubscription }, { count: trialCount }, { data: hourGrantsRaw }] =
 
       await Promise.all([
@@ -106,6 +116,8 @@ export default async function handler(req, res) {
           .order('created_at', { ascending: false }),
 
       ]);
+
+    profEnd(batchSpan);
 
 
 
@@ -198,15 +210,30 @@ export default async function handler(req, res) {
 
 
     const subscription = activeSubscription ?? null;
+    let driftSync = null;
 
     if (subscription) {
+      const repairSpan = profStart('repairUserBillingState');
       const repair = await repairUserBillingState(supabaseAdmin, user.id);
+      profEnd(repairSpan);
       if (repair.closed > 0 || repair.clearedBootBilling > 0) {
+        const invSpan = profStart('syncUserPlanInventory');
         await syncUserPlanInventory(supabaseAdmin, user.id);
+        profEnd(invSpan);
       }
-      await syncSubscriptionWithMachineState(supabaseAdmin, getGpuService(), user.id);
+      const correlationId = createCorrelationId();
+      const syncSpan = profStart('runReadPathProjectionFirst (call)');
+      driftSync = toSyncShape(
+        await runReadPathProjectionFirst(supabaseAdmin, user.id, {
+          correlationId,
+          source: 'dashboard_me',
+          subscription: subscriptionPrefetchFromDashboardRow(subscription),
+        }),
+      );
+      profEnd(syncSpan);
     }
 
+    const refreshSpan = profStart('Refresh subscription');
     const { data: refreshedSubscription } = subscription
       ? await supabaseAdmin
           .from('subscriptions')
@@ -214,8 +241,15 @@ export default async function handler(req, res) {
           .eq('id', subscription.id)
           .maybeSingle()
       : { data: null };
+    profEnd(refreshSpan);
 
-    const syncedSubscription = refreshedSubscription ?? subscription;
+    const syncedSubscription = (() => {
+      const base = refreshedSubscription ?? subscription;
+      if (driftSync?.changed && driftSync.subscription) {
+        return base ? { ...base, ...driftSync.subscription } : driftSync.subscription;
+      }
+      return base;
+    })();
 
 
 
@@ -231,11 +265,59 @@ export default async function handler(req, res) {
 
           : null;
 
-    const activeMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
-    const remainingRead = activeMachine
-      ? await readRemainingForMachine(supabaseAdmin, user.id, activeMachine)
-      : { remaining: null, walletBalance: null };
-    const remainingFields = mapRemainingStatusFields(remainingRead);
+    const machineSpan = profStart('getActiveMachineForUser (call)');
+    let activeMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
+    if (driftSync?.changed) {
+      activeMachine = driftSync.machine ?? null;
+    }
+    profEnd(machineSpan);
+    let inventoryRows = null;
+    let billablePlans = undefined;
+    if (syncedSubscription) {
+      if (!activeMachine) {
+        const invSpan = profStart('syncUserPlanInventory (idle)');
+        inventoryRows = await syncUserPlanInventory(supabaseAdmin, user.id, {
+          subscription: subscriptionPrefetchForInventorySync(syncedSubscription),
+          grants: grantsPrefetchForInventorySync(hourGrantsRaw),
+        });
+        profEnd(invSpan);
+        billablePlans = billablePlansFromInventoryRows(inventoryRows);
+      } else {
+        const plansSpan = profStart('fetchOrderedBillablePlansForUser');
+        billablePlans = await fetchOrderedBillablePlansForUser(supabaseAdmin, user.id);
+        profEnd(plansSpan);
+      }
+    }
+
+    const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
+    const machineSessionView = resolveMachineSessionView(machineRecord, {
+      envName: syncedSubscription?.env_name,
+    });
+
+    const billingView = await resolveBillingSessionView(supabaseAdmin, user.id, {
+      machine: activeMachine,
+      machineSessionPhase: machineSessionView?.phase ?? 'idle',
+      walletBalance: Number(profile?.wallet_balance ?? 0),
+      gpuService: getGpuService(),
+      billablePlans: billablePlans,
+      tryOpenBillableSession: Boolean(
+        activeMachine &&
+          String(activeMachine.status ?? '') === 'running' &&
+          machineSessionView?.phase === 'running',
+      ),
+    });
+
+    const remaining =
+      billingView.remainingHours != null
+        ? {
+            remainingHours: billingView.remainingHours,
+            totalEntitlementHours: billingView.totalEntitlementHours,
+            currentSessionElapsedHours: billingView.currentSessionElapsedHours,
+            settledSessionUsageHours: billingView.settledSessionUsageHours,
+            primaryPlanType: billingView.primaryPlanType,
+            walletBalance: billingView.walletBalance,
+          }
+        : null;
 
     return res.status(200).json({
 
@@ -281,13 +363,11 @@ export default async function handler(req, res) {
 
       },
 
-      remaining: remainingRead.remaining?.state === REMAINING_STATE_OK
-        ? {
-            ...remainingFields,
-            primaryPlanType: remainingRead.remaining.primaryPlanType,
-            walletBalance: remainingRead.walletBalance,
-          }
-        : null,
+      remaining,
+
+      machineSessionView,
+
+      billingView,
 
     });
 
@@ -295,7 +375,13 @@ export default async function handler(req, res) {
 
     return res.status(500).json({ error: err.message || 'Không tải được dashboard.' });
 
+  } finally {
+
+    console.log('[prof]\n' + renderProfTree());
+
   }
+
+  });
 
 }
 

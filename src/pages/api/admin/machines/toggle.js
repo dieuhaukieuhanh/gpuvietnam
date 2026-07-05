@@ -8,13 +8,15 @@ import {
 } from '@/lib/gpu';
 import { getGpuLabel, getPlanNameFromKey } from '@/lib/gpu-pricing';
 import { buildWorkstationContainerEnv, resolveEnvName } from '@/lib/workstation-env';
+import { buildConsumerEndpoint } from '@/lib/endpoint-utils';
+import { createCorrelationId } from '@/lib/scb-correlation';
 import { destroyMachineWithBackup, notifyAfterMachineDestroy } from '@/lib/machine-destroy';
 import {
-  extractEndpointFromMachine,
   getActiveMachineForUser,
   insertMachineRecord,
   mapGpuInstanceToMachineRow,
   resolveLiveMachineStatus,
+  rollbackProvisionAfterRentFailure,
   syncMachineFromLiveStatus,
   updateSubscriptionServerStatus,
 } from '@/lib/machines';
@@ -31,13 +33,14 @@ function resolveAdminId(adminCtx) {
 }
 
 function buildMachineResponse(machine, liveStatus) {
-  const endpoint = extractEndpointFromMachine(machine);
+  const healthOk = liveStatus?.healthOk === true;
+  const endpoint = buildConsumerEndpoint(machine, healthOk);
   return {
     instanceId: machine?.instance_id ?? liveStatus?.instanceId ?? null,
-    ip: liveStatus?.ip ?? endpoint.ip,
-    port: liveStatus?.port ?? endpoint.port,
+    ip: endpoint.ip,
+    port: endpoint.port,
     status: liveStatus?.status ?? machine?.status ?? 'creating',
-    comfyUrl: liveStatus?.comfyUrl ?? endpoint.comfyUrl,
+    comfyUrl: endpoint.comfyUrl,
     message: liveStatus?.message ?? null,
   };
 }
@@ -76,14 +79,14 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
 
   if (subscription.server_status === 'online' && existingMachine) {
     const liveStatus = await resolveLiveMachineStatus(gpuService, existingMachine);
-    await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
+    const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
     return {
       status: 200,
       body: {
         success: true,
         alreadyOnline: true,
         message: 'Máy khách hàng đang chạy.',
-        machine: buildMachineResponse(existingMachine, liveStatus),
+        machine: buildMachineResponse(syncedMachine, liveStatus),
       },
       machine: existingMachine,
     };
@@ -91,13 +94,13 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
 
   if (subscription.server_status === 'provisioning' && existingMachine) {
     const liveStatus = await resolveLiveMachineStatus(gpuService, existingMachine);
-    await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
+    const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, existingMachine, liveStatus);
     return {
       status: 200,
       body: {
         success: true,
         message: 'Máy khách hàng đang được khởi động.',
-        machine: buildMachineResponse(existingMachine, liveStatus),
+        machine: buildMachineResponse(syncedMachine, liveStatus),
       },
       machine: existingMachine,
     };
@@ -121,6 +124,10 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
 
   if (updateError) throw updateError;
 
+  const correlationId = createCorrelationId();
+  let rentedInstanceId = null;
+  let insertedMachineId = null;
+
   let instance;
   try {
     instance = await provisionGpuInstance(gpuService, {
@@ -136,33 +143,48 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
     };
   }
 
-  const machineRow = mapGpuInstanceToMachineRow(instance, {
-    gpuLine,
-    region: instance.region,
-    subscriptionId: subscription.id,
-    template: envName,
-  });
+  rentedInstanceId = String(instance.id);
 
-  const machine = await insertMachineRecord(supabaseAdmin, userId, machineRow);
-  const liveStatus = await resolveLiveMachineStatus(gpuService, machine);
-  await syncMachineFromLiveStatus(supabaseAdmin, machine, liveStatus);
+  try {
+    const machineRow = mapGpuInstanceToMachineRow(instance, {
+      gpuLine,
+      region: instance.region,
+      subscriptionId: subscription.id,
+      template: envName,
+    });
 
-  if (liveStatus.status === 'running') {
-    await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'online');
+    const machine = await insertMachineRecord(supabaseAdmin, userId, machineRow);
+    insertedMachineId = machine.id;
+    const liveStatus = await resolveLiveMachineStatus(gpuService, machine);
+    const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, machine, liveStatus);
+
+    if (liveStatus.status === 'running') {
+      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'online');
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        message: `Đang khởi động máy với gói ${planName}.`,
+        selectedPlan: selected,
+        subscription: updated,
+        machine: buildMachineResponse(syncedMachine, liveStatus),
+      },
+      machine: syncedMachine,
+      planName,
+    };
+  } catch (error) {
+    await rollbackProvisionAfterRentFailure(supabaseAdmin, gpuService, {
+      userId,
+      subscriptionId: subscription.id,
+      instanceId: rentedInstanceId,
+      machineId: insertedMachineId,
+      correlationId,
+      reason: 'admin_start_post_rent_failed',
+    });
+    throw error;
   }
-
-  return {
-    status: 200,
-    body: {
-      success: true,
-      message: `Đang khởi động máy với gói ${planName}.`,
-      selectedPlan: selected,
-      subscription: updated,
-      machine: buildMachineResponse(machine, liveStatus),
-    },
-    machine,
-    planName,
-  };
 }
 
 /**

@@ -33,6 +33,7 @@ export { runDestroyPipeline } from './destroy-pipeline-run.js';
  *   skipBilling?: boolean;
  *   reason?: string;
  *   skipBackup?: boolean;
+ *   skipMetrics?: boolean;
  *   notifyBackupStart?: boolean;
  * }} [options]
  */
@@ -54,6 +55,7 @@ export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, optio
       reason: options.reason ?? (options.interrupted ? 'out_of_credit' : 'user_stop'),
       skipBackup: options.skipBackup,
       skipBilling: options.skipBilling,
+      skipMetrics: options.skipMetrics,
       notifyBackupStart: options.notifyBackupStart,
     },
   );

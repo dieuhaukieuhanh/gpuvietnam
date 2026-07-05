@@ -1,29 +1,17 @@
-import { getPlanNameFromKey } from '@/lib/gpu-pricing';
-
-import { DEFAULT_GPU_PORT } from '@/lib/gpu/gpu-config';
+import { buildConsumerEndpoint, isEndpointReadyForTraffic } from '@/lib/endpoint-utils';
 
 import { ComfyClient } from '@/lib/gpu/providers/vast/comfy-client';
-
-import { syncUserPlanInventory, parseInventoryId } from '@/lib/user-plan-inventory';
 
 import {
   calculateRemaining,
 } from './remaining-time.js';
 import { mapRemainingResultToBillingCredit } from './billing-projection.js';
-import { calculateBillableSeconds, skipSessionSettlement } from './settlement.js';
-import { resolveBillingAnchorFromRecords } from './billing-anchor-core.js';
+import { skipSessionSettlement } from './settlement.js';
+import { resolveBillingAnchorFromRecords, parseValidSessionStartedMs } from './billing-anchor-core.js';
+import { closeOrphanRunningSessionsLifecycle } from './session-orphan-close.js';
+import { profStart, profEnd } from '@/lib/prof';
 
 export { mapRemainingResultToBillingCredit };
-
-function roundHours(value) {
-
-  return Math.round(Number(value) * 100) / 100;
-
-}
-
-
-
-const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running'];
 
 export { resolveBillingAnchorFromRecords } from './billing-anchor-core.js';
 
@@ -34,52 +22,6 @@ export { resolveBillingAnchorFromRecords } from './billing-anchor-core.js';
  * @param {Date} endedAt
 
  * @param {Record<string, unknown> | null | undefined} machine
-
- */
-
-function computeBillableDurationSeconds(startedAt, endedAt, machine) {
-
-  let effectiveStart = startedAt;
-
-  if (machine?.created_at) {
-
-    const machineCreated = new Date(String(machine.created_at));
-
-    if (Number.isFinite(machineCreated.getTime()) && machineCreated > effectiveStart) {
-
-      effectiveStart = machineCreated;
-
-    }
-
-  }
-
-
-
-  const rawSeconds = Math.max(0, Math.floor((endedAt.getTime() - effectiveStart.getTime()) / 1000));
-
-  if (!machine?.created_at) return rawSeconds;
-
-
-
-  const machineCreated = new Date(String(machine.created_at));
-
-  const maxSeconds = Math.max(
-
-    0,
-
-    Math.floor((endedAt.getTime() - machineCreated.getTime()) / 1000) + 60,
-
-  );
-
-  return Math.min(rawSeconds, maxSeconds);
-
-}
-
-
-
-/**
-
- * @param {Record<string, unknown>} row
 
  */
 
@@ -168,59 +110,19 @@ export async function fetchOrderedBillablePlansForUser(supabaseAdmin, userId) {
 
   if (error) throw error;
 
+  return billablePlansFromInventoryRows(rows);
+}
+
+/**
+ * Derive billable plan rows from inventory without a DB round-trip.
+ * @param {Record<string, unknown>[] | null | undefined} rows
+ */
+export function billablePlansFromInventoryRows(rows) {
   return (rows ?? []).filter(isInventoryRowUsable).sort(compareBillablePlanPriority);
 }
 
 async function fetchOrderedBillablePlans(supabaseAdmin, userId) {
   return fetchOrderedBillablePlansForUser(supabaseAdmin, userId);
-}
-
-
-
-/**
-
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
-
- * @param {string} userId
-
- * @param {Record<string, unknown>[]} plans
-
- */
-
-async function pickPlanWithCredit(supabaseAdmin, userId, plans) {
-
-  for (const plan of plans) {
-
-    if (plan.plan_type === 'hourly') {
-
-      const { data: userRow } = await supabaseAdmin
-
-        .from('users')
-
-        .select('wallet_balance')
-
-        .eq('id', userId)
-
-        .maybeSingle();
-
-      const pricePerHour = Number(plan.price_per_hour ?? 0);
-
-      const balance = Number(userRow?.wallet_balance ?? 0);
-
-      if (pricePerHour > 0 && balance > 0) return plan;
-
-      if (pricePerHour <= 0) return plan;
-
-      continue;
-
-    }
-
-    if (Number(plan.hours_remaining ?? 0) > 0) return plan;
-
-  }
-
-  return null;
-
 }
 
 
@@ -310,70 +212,14 @@ async function closeSessionWithoutCharge(supabaseAdmin, sessionId, reason = 'orp
 
  * @param {string} userId
 
- * @param {{ exceptSessionId?: string | null }} [options]
-
  */
 
-export async function closeOrphanRunningSessions(supabaseAdmin, userId, options = {}) {
-
-  const [{ data: runningSessions }, { data: activeMachines }] = await Promise.all([
-
-    supabaseAdmin
-
-      .from('gpu_sessions')
-
-      .select('id')
-
-      .eq('user_id', userId)
-
-      .eq('status', 'running'),
-
-    supabaseAdmin
-
-      .from('machines')
-
-      .select('gpu_session_id')
-
-      .eq('user_id', userId)
-
-      .in('status', ACTIVE_MACHINE_STATUSES),
-
-  ]);
-
-
-
-  const linkedSessionIds = new Set(
-
-    (activeMachines ?? [])
-
-      .map((row) => (row.gpu_session_id ? String(row.gpu_session_id) : null))
-
-      .filter(Boolean),
-
-  );
-
-
-
-  let closed = 0;
-
-  for (const session of runningSessions ?? []) {
-
-    const sessionId = String(session.id);
-
-    if (options.exceptSessionId && sessionId === options.exceptSessionId) continue;
-
-    if (linkedSessionIds.has(sessionId)) continue;
-
-    await closeSessionWithoutCharge(supabaseAdmin, sessionId);
-
-    closed += 1;
-
-  }
-
-
-
-  return { closed };
-
+export async function closeOrphanRunningSessions(supabaseAdmin, userId) {
+  // SCB 3.2 — delegate to lifecycle close. The legacy body only patched
+  // duration_seconds and left status='running', so orphan rows with corrupt
+  // started_at (e.g. epoch sentinel) poisoned M2 Remaining → false out-of-credit
+  // auto-stop destroyed live Vast instances.
+  return closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId);
 }
 
 
@@ -438,26 +284,6 @@ export async function settleMachineBillingWithoutCharge(supabaseAdmin, machine) 
 
 
 
-function extractEndpointFromMachine(machine) {
-
-  const ip = typeof machine?.ip_address === 'string' ? machine.ip_address : null;
-
-  const port = Number(machine?.port ?? DEFAULT_GPU_PORT);
-
-  if (!ip) {
-
-    return { ip: null, port, comfyUrl: null };
-
-  }
-
-  const comfyUrl = `http://${ip}:${port}`;
-
-  return { ip, port, comfyUrl };
-
-}
-
-
-
 /**
 
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
@@ -504,42 +330,13 @@ export async function findMachineForBilling(supabaseAdmin, userId, instanceId) {
 
  */
 
-async function loadRunningBillingSession(supabaseAdmin, sessionId) {
-
-  const { data, error } = await supabaseAdmin
-
-    .from('gpu_sessions')
-
-    .select('id, started_at, status, duration_seconds')
-
-    .eq('id', sessionId)
-
-    .maybeSingle();
-
-
-
-  if (error) throw error;
-
-  return data;
-
-}
-
-
-/**
-
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
-
- * @param {string} userId
-
- */
-
 async function fetchUserSessionsForRemaining(supabaseAdmin, userId) {
 
   const { data, error } = await supabaseAdmin
 
     .from('gpu_sessions')
 
-    .select('status, started_at, ended_at, settlement_status')
+    .select('status, started_at, verified_running_at, ended_at, settlement_status')
 
     .eq('user_id', userId);
 
@@ -565,19 +362,52 @@ async function fetchUserSessionsForRemaining(supabaseAdmin, userId) {
 
  */
 
-async function buildRemainingSnapshot(supabaseAdmin, userId, machine, anchor) {
+async function buildRemainingSnapshot(supabaseAdmin, userId, machine, anchor, prefetch = {}) {
+  const loadSpan = profStart('Load Remaining snapshot data');
+  const loaders = [];
 
-  const [plans, sessions, userResult] = await Promise.all([
+  /** @type {Record<string, unknown>[]} */
+  let plans = prefetch.plans;
+  /** @type {Record<string, unknown>[]} */
+  let sessions = prefetch.sessions;
+  /** @type {number|null|undefined} */
+  let walletBalance = prefetch.walletBalance;
 
-    fetchOrderedBillablePlans(supabaseAdmin, userId),
+  if (plans === undefined) {
+    loaders.push(
+      fetchOrderedBillablePlans(supabaseAdmin, userId).then((rows) => {
+        plans = rows;
+      }),
+    );
+  }
+  if (sessions === undefined) {
+    loaders.push(
+      fetchUserSessionsForRemaining(supabaseAdmin, userId).then((rows) => {
+        sessions = rows;
+      }),
+    );
+  }
+  if (walletBalance === undefined) {
+    loaders.push(
+      supabaseAdmin
+        .from('users')
+        .select('wallet_balance')
+        .eq('id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          walletBalance = data?.wallet_balance ?? 0;
+        }),
+    );
+  }
 
-    fetchUserSessionsForRemaining(supabaseAdmin, userId),
+  if (loaders.length > 0) {
+    await Promise.all(loaders);
+  }
+  profEnd(loadSpan);
 
-    supabaseAdmin.from('users').select('wallet_balance').eq('id', userId).maybeSingle(),
-
-  ]);
-
-
+  const resolvedPlans = plans ?? [];
+  const resolvedSessions = sessions ?? [];
+  const resolvedWalletBalance = walletBalance ?? 0;
 
   const machineRunning = machine && String(machine.status ?? '') === 'running';
 
@@ -587,23 +417,20 @@ async function buildRemainingSnapshot(supabaseAdmin, userId, machine, anchor) {
 
   );
 
-
+  const computeSpan = profStart('Compute Remaining');
+  const snapshot = {
+    entitlementPlans: resolvedPlans,
+    walletBalance: resolvedWalletBalance,
+    sessions: resolvedSessions,
+    providerRunningVerified,
+  };
+  profEnd(computeSpan);
 
   return {
 
-    snapshot: {
+    snapshot,
 
-      entitlementPlans: plans,
-
-      walletBalance: userResult.data?.wallet_balance ?? 0,
-
-      sessions,
-
-      providerRunningVerified,
-
-    },
-
-    walletBalance: userResult.data?.wallet_balance ?? null,
+    walletBalance: walletBalance ?? null,
 
   };
 
@@ -749,6 +576,38 @@ export async function linkMachineToBillingSession(supabaseAdmin, machine, sessio
 
  */
 
+async function repairCorruptRunningSessionAnchor(supabaseAdmin, linkedSession) {
+  if (!linkedSession || String(linkedSession.status ?? '') !== 'running') {
+    return linkedSession;
+  }
+
+  const startedOk = parseValidSessionStartedMs(linkedSession.started_at) != null;
+  const verifiedOk = parseValidSessionStartedMs(linkedSession.verified_running_at) != null;
+  if (startedOk && verifiedOk) return linkedSession;
+
+  const repairAt =
+    parseValidSessionStartedMs(linkedSession.created_at) ?? new Date().toISOString();
+  /** @type {Record<string, unknown>} */
+  const patch = {};
+  if (!startedOk) patch.started_at = repairAt;
+  if (!verifiedOk) patch.verified_running_at = repairAt;
+  if (Object.keys(patch).length === 0) return linkedSession;
+
+  const { data, error } = await supabaseAdmin
+    .from('gpu_sessions')
+    .update(patch)
+    .eq('id', String(linkedSession.id))
+    .select('id, machine_id, started_at, verified_running_at, status, created_at')
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[billing] repairCorruptRunningSessionAnchor failed (non-fatal):', error);
+    return { ...linkedSession, ...patch };
+  }
+
+  return data ?? { ...linkedSession, ...patch };
+}
+
 async function resolveBillingAnchor(supabaseAdmin, userId, machine) {
 
   let linkedSession = null;
@@ -759,7 +618,7 @@ async function resolveBillingAnchor(supabaseAdmin, userId, machine) {
 
       .from('gpu_sessions')
 
-      .select('id, machine_id, started_at, status')
+      .select('id, machine_id, started_at, verified_running_at, status, created_at')
 
       .eq('id', String(machine.gpu_session_id))
 
@@ -779,7 +638,7 @@ async function resolveBillingAnchor(supabaseAdmin, userId, machine) {
 
       .from('gpu_sessions')
 
-      .select('id, machine_id, started_at, status')
+      .select('id, machine_id, started_at, verified_running_at, status, created_at')
 
       .eq('machine_id', String(machine.id))
 
@@ -795,6 +654,10 @@ async function resolveBillingAnchor(supabaseAdmin, userId, machine) {
 
     linkedSession = data;
 
+  }
+
+  if (linkedSession) {
+    linkedSession = await repairCorruptRunningSessionAnchor(supabaseAdmin, linkedSession);
   }
 
   const resolved = resolveBillingAnchorFromRecords(machine, linkedSession);
@@ -817,11 +680,17 @@ async function resolveBillingAnchor(supabaseAdmin, userId, machine) {
 
 async function persistBillingAnchorIfDrifted(supabaseAdmin, machine, anchor) {
 
-  if (!anchor.startedAt || !anchor.sessionId) return;
+  if (!anchor.startedAt) return;
+
+  const sessionId =
+    anchor.sessionId ??
+    (machine.gpu_session_id ? String(machine.gpu_session_id) : null);
+  if (!sessionId) return;
 
   const current = machine.billing_started_at ? String(machine.billing_started_at) : null;
+  const currentSessionId = machine.gpu_session_id ? String(machine.gpu_session_id) : null;
 
-  if (current === anchor.startedAt) return;
+  if (current === anchor.startedAt && currentSessionId === sessionId) return;
 
   const inventoryId =
 
@@ -833,7 +702,7 @@ async function persistBillingAnchorIfDrifted(supabaseAdmin, machine, anchor) {
 
     machine,
 
-    anchor.sessionId,
+    sessionId,
 
     anchor.startedAt,
 
@@ -853,7 +722,15 @@ async function persistBillingAnchorIfDrifted(supabaseAdmin, machine, anchor) {
 
 export async function collectSessionMetrics(machine) {
 
-  const { comfyUrl } = extractEndpointFromMachine(machine);
+  const __prof = profStart('collectSessionMetrics');
+  try {
+
+  const healthOk = String(machine?.status ?? '') === 'running';
+  if (!isEndpointReadyForTraffic(machine, healthOk)) {
+    return { vramAvg: null, outputCount: 0 };
+  }
+
+  const { comfyUrl } = buildConsumerEndpoint(machine, healthOk);
 
   if (!comfyUrl) {
 
@@ -928,6 +805,8 @@ export async function collectSessionMetrics(machine) {
 
 
   return { vramAvg, outputCount };
+
+  } finally { profEnd(__prof); }
 
 }
 
@@ -1166,35 +1045,54 @@ export async function readRemainingForMachine(supabaseAdmin, userId, machine) {
 
  */
 
-export async function readRemainingForUser(supabaseAdmin, userId) {
+export async function readRemainingForUser(supabaseAdmin, userId, options = {}) {
 
-  const { data: machine } = await supabaseAdmin
+  const sessionSpan = profStart('Load Active Session');
+  let machine;
+  if (options.knownRunningMachine === null) {
+    machine = null;
+  } else if (options.machine !== undefined) {
+    machine = options.machine;
+  } else {
+    const { data, error } = await supabaseAdmin
+      .from('machines')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'running')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    machine = data;
+  }
 
-    .from('machines')
+  let anchor = { startedAt: null, sessionId: null };
+  if (machine) {
+    anchor = await resolveBillingAnchor(supabaseAdmin, userId, machine);
+  }
+  profEnd(sessionSpan);
 
-    .select('*')
+  const billingSpan = profStart('Load Billing');
+  const sessions = await fetchUserSessionsForRemaining(supabaseAdmin, userId);
+  let walletBalance = options.walletBalance;
+  if (walletBalance === undefined) {
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('wallet_balance')
+      .eq('id', userId)
+      .maybeSingle();
+    walletBalance = data?.wallet_balance ?? 0;
+  }
+  profEnd(billingSpan);
 
-    .eq('user_id', userId)
+  const grantsSpan = profStart('Load Grants');
+  const plans =
+    options.billablePlans !== undefined
+      ? options.billablePlans
+      : await fetchOrderedBillablePlans(supabaseAdmin, userId);
+  profEnd(grantsSpan);
 
-    .eq('status', 'running')
-
-    .order('created_at', { ascending: false })
-
-    .limit(1)
-
-    .maybeSingle();
-
-
-
-  const anchor = machine
-
-    ? await resolveBillingAnchor(supabaseAdmin, userId, machine)
-
-    : { startedAt: null, sessionId: null };
-
-
-
-  const { snapshot, walletBalance } = await buildRemainingSnapshot(
+  const { snapshot, walletBalance: resolvedWallet } = await buildRemainingSnapshot(
 
     supabaseAdmin,
 
@@ -1204,21 +1102,27 @@ export async function readRemainingForUser(supabaseAdmin, userId) {
 
     anchor,
 
+    { plans, sessions, walletBalance },
+
   );
 
 
 
-  return {
+  const returnSpan = profStart('Return');
+  const result = {
 
     remaining: calculateRemaining(snapshot),
 
-    walletBalance,
+    walletBalance: resolvedWallet,
 
     machine: machine ?? null,
 
     billingStarted: Boolean(anchor.startedAt),
 
   };
+  profEnd(returnSpan);
+
+  return result;
 
 }
 

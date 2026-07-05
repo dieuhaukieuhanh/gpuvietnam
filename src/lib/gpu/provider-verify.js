@@ -125,7 +125,7 @@ export const PROVIDER_VERIFY_ERROR_CODE = Object.freeze({
 
 /** @param {string} [now] @returns {string} */
 function verifyNow(now) {
-  return now ?? '1970-01-01T00:00:00.000Z';
+  return now ?? new Date().toISOString();
 }
 
 /**
@@ -195,7 +195,7 @@ export function evaluateRunningVerify(snapshot) {
         retryable: true,
       };
     }
-    if (snapshot.healthHealthy === true || snapshot.healthHealthy === undefined) {
+    if (snapshot.healthHealthy === true) {
       return {
         state: PROVIDER_VERIFY_STATE.OK,
         outcome: PROVIDER_VERIFY_OUTCOME.VERIFIED_RUNNING,
@@ -203,6 +203,21 @@ export function evaluateRunningVerify(snapshot) {
         verifiedAt: snapshot.checkedAt,
       };
     }
+
+    return {
+      state: PROVIDER_VERIFY_STATE.FAILED,
+      outcome: PROVIDER_VERIFY_OUTCOME.VERIFY_FAILED,
+      snapshot,
+      code:
+        snapshot.healthHealthy === false
+          ? PROVIDER_VERIFY_ERROR_CODE.HEALTH_CHECK_FAILED
+          : PROVIDER_VERIFY_ERROR_CODE.INSTANCE_NOT_READY,
+      message:
+        snapshot.healthHealthy === false
+          ? 'Instance running but health check not healthy'
+          : 'ComfyUI health check required before billable session',
+      retryable: true,
+    };
   }
 
   if (

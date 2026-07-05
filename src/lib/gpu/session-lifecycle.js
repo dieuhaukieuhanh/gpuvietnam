@@ -206,7 +206,7 @@ function currentStatus(session) {
 
 /** @param {SessionContext} context */
 function ctxNow(context) {
-  return context.now ?? '1970-01-01T00:00:00.000Z';
+  return context.now ?? new Date().toISOString();
 }
 
 /** @param {SessionRecord} session @throws {SessionInvariantViolationError} */

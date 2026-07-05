@@ -5,6 +5,8 @@
  * @see docs/SESSION_CENTRIC_BILLING_ARCHITECTURE.md §3
  */
 
+import { parseValidSessionStartedMs } from './billing-anchor-core.js';
+
 /** @typedef {{ nowMs: () => number, now: () => Date }} RemainingClock */
 
 /** @typedef {'gift'|'combo'|'hourly'|string} EntitlementPlanType */
@@ -22,6 +24,7 @@
  * @typedef {Object} SessionSnapshot
  * @property {string} [status]
  * @property {string|null} [started_at]
+ * @property {string|null} [verified_running_at]
  * @property {string|null} [ended_at]
  * @property {string|null} [settlement_status]
  */
@@ -217,10 +220,9 @@ export function calculateTotalEntitlement(snapshot, clock = systemClock()) {
  * Uses ended_at − started_at only.
  *
  * @param {RemainingSnapshot|{ sessions?: SessionSnapshot[] }} snapshot
- * @param {RemainingClock} [_clock]
  * @returns {number}
  */
-export function calculateSettledUsage(snapshot, _clock = systemClock()) {
+export function calculateSettledUsage(snapshot) {
   const sessions = snapshot.sessions ?? [];
   let totalSeconds = 0;
 
@@ -248,7 +250,10 @@ export function calculateCurrentSessionElapsed(snapshot, clock = systemClock()) 
   if (running.length === 0) return 0;
   if (!snapshot.providerRunningVerified) return 0;
 
-  const startedMs = parseTimestampMs(running[0].started_at);
+  const session = running[0];
+  const startedMs =
+    parseValidSessionStartedMs(session.started_at) ??
+    parseValidSessionStartedMs(session.verified_running_at);
   if (startedMs == null) return 0;
 
   const elapsedMs = Math.max(0, clock.nowMs() - startedMs);

@@ -11,11 +11,7 @@ type WorkflowRow = {
   created_at: string;
 };
 
-type DashboardRecentWorkflowsCardProps = {
-  accessToken: string | undefined;
-};
-
-export default function DashboardRecentWorkflowsCard({ accessToken }: DashboardRecentWorkflowsCardProps) {
+export default function DashboardRecentWorkflowsCard() {
   const [loading, setLoading] = useState(true);
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
 
@@ -45,7 +41,7 @@ export default function DashboardRecentWorkflowsCard({ accessToken }: DashboardR
     } finally {
       setLoading(false);
     }
-  }, [accessToken]);
+  }, []);
 
   useEffect(() => {
     void load();

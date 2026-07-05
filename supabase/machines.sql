@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.machines (
   instance_id text NOT NULL,
   provider text NOT NULL DEFAULT 'vast',
   ip_address text,
-  port integer NOT NULL DEFAULT 8080,
+  port integer,
   status text NOT NULL DEFAULT 'creating'
     CHECK (status IN ('creating', 'starting', 'running', 'closing', 'destroyed', 'error')),
   closing_started_at timestamptz,
@@ -67,6 +67,9 @@ COMMENT ON COLUMN public.machines.instance_id IS
   'GPU Provider instance identifier (Machine Domain SoT). '
   'Session resolves provider instance via gpu_sessions.machine_id -> machines.instance_id. '
   'Live existence is confirmed by Provider Adapter verify (DEC-008).';
+COMMENT ON COLUMN public.machines.port IS
+  'External HostPort only. NULL = Pending. Must not store internal container port 8080. '
+  'Canonical writer: syncMachineFromLiveStatus when provider resolves v1 HostPort.';
 COMMENT ON COLUMN public.machines.status IS
   'Machine projection lifecycle: creating, starting, running, destroyed, error. '
   'Legacy value closing is retained in the CHECK during M2 for backward compatibility; '

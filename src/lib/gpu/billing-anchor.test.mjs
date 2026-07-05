@@ -57,6 +57,34 @@ describe('resolveBillingAnchorFromRecords', () => {
     assert.equal(anchor.sessionId, SESSION_ID);
   });
 
+  it('rejects epoch lifecycle sentinel on machine billing_started_at', () => {
+    const anchor = resolveBillingAnchorFromRecords(
+      runningMachine({ billing_started_at: '1970-01-01T00:00:00.000Z' }),
+      runningSession(),
+    );
+    assert.equal(anchor.startedAt, '2026-07-03T10:00:05.000Z');
+  });
+
+  it('returns null when only epoch lifecycle sentinel anchors exist', () => {
+    const anchor = resolveBillingAnchorFromRecords(
+      runningMachine({ billing_started_at: '1970-01-01T00:00:00.000Z' }),
+      runningSession({ started_at: '1970-01-01T00:00:00.000Z' }),
+    );
+    assert.equal(anchor.startedAt, null);
+  });
+
+  it('falls back to verified_running_at when started_at is corrupt', () => {
+    const anchor = resolveBillingAnchorFromRecords(
+      runningMachine({ billing_started_at: '1970-01-01T00:00:00.000Z' }),
+      runningSession({
+        started_at: '1970-01-01T00:00:00.000Z',
+        verified_running_at: '2026-07-03T10:00:05.000Z',
+      }),
+    );
+    assert.equal(anchor.startedAt, '2026-07-03T10:00:05.000Z');
+    assert.equal(anchor.sessionId, SESSION_ID);
+  });
+
   it('accepts linked session via machine_id FK when timestamps would fail', () => {
     const anchor = resolveBillingAnchorFromRecords(
       runningMachine({ created_at: '2026-07-03T12:00:00.000Z' }),
@@ -115,14 +143,14 @@ describe('FK fallback — read-path resilience for projection drift', () => {
     );
   });
 
-  it('status.js passes machineId to loadActiveSessionRow for session-field fallback', () => {
+  it('status projection passes machineId to loadActiveSessionRow for session-field fallback', () => {
     const source = readFileSync(
-      path.join(__dirname, '..', '..', 'pages', 'api', 'machines', 'status.js'),
+      path.join(__dirname, '..', 'machines-status-projection.js'),
       'utf8',
     );
     assert.ok(
       source.includes('activeMachine?.id ? String(activeMachine.id) : null'),
-      'status.js must pass machine.id to loadActiveSessionRow for FK fallback',
+      'machines-status-projection must pass machine.id to loadActiveSessionRow for FK fallback',
     );
   });
 
@@ -143,6 +171,18 @@ describe('FK fallback — read-path resilience for projection drift', () => {
     assert.ok(
       source.includes("W4 writer-side FK reuse"),
       'openBillableSession must document the W4 FK fallback intent',
+    );
+  });
+
+  it('openBillableSession skips activation until projection traffic-ready', () => {
+    const source = readFileSync(path.join(__dirname, 'session-start.js'), 'utf8');
+    assert.ok(
+      source.includes('isProjectionTrafficReady'),
+      'openBillableSession must gate on projection traffic-ready before verify',
+    );
+    assert.ok(
+      source.includes("reason: 'traffic_not_ready'"),
+      'openBillableSession must return traffic_not_ready skip reason',
     );
   });
 

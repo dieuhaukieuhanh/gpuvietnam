@@ -236,12 +236,52 @@
       "depends_on": ["0019"]
     },
     {
+      "id": "0030",
+      "file": "supabase/machine-operations.sql",
+      "category": "migration",
+      "description": "SCB 2.1 Phase 2: public.machine_operations durable repair queue (references machines, gpu_sessions, auth.users)",
+      "idempotent": true,
+      "depends_on": ["0028"]
+    },
+    {
+      "id": "0031",
+      "file": "supabase/machine-operations-hardening.sql",
+      "category": "migration",
+      "description": "SCB 2.1 Phase 2.5: machine_operations retry/DLQ/metrics columns + dead_letter state",
+      "idempotent": true,
+      "depends_on": ["0030"]
+    },
+    {
+      "id": "0032",
+      "file": "supabase/projection-read-path.sql",
+      "category": "migration",
+      "description": "SCB 2.1 AF v2: machines projection_verified_at/message + projection_verify queue operation",
+      "idempotent": true,
+      "depends_on": ["0031"]
+    },
+    {
+      "id": "0033",
+      "file": "supabase/machines-endpoint-v32.sql",
+      "category": "migration",
+      "description": "Architecture Freeze v3.2: machines.port nullable, drop DEFAULT 8080, Pending/HostPort COMMENT",
+      "idempotent": true,
+      "depends_on": ["0032"]
+    },
+    {
+      "id": "0034",
+      "file": "supabase/machines-endpoint-v32-data.sql",
+      "category": "migration",
+      "description": "Architecture Freeze v3.2: legacy port=8080 → Pending (creating/starting) + enqueue projection_verify (running)",
+      "idempotent": true,
+      "depends_on": ["0033"]
+    },
+    {
       "id": "0099",
       "file": "supabase/0099_sc_schema_version.sql",
       "category": "system",
       "description": "Version marker: public.schema_version single-row table + public.sc_schema_verification readiness view; recomputes scb_3_4b_ready from the catalog",
       "idempotent": true,
-      "depends_on": ["0027", "0028"]
+      "depends_on": ["0027", "0028", "0030", "0031", "0032", "0033", "0034"]
     }
   ],
   "seeds": [

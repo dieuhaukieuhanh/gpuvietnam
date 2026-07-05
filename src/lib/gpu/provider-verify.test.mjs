@@ -80,6 +80,26 @@ describe('evaluateRunningVerify (pure)', () => {
     assert.equal(result.state, PROVIDER_VERIFY_STATE.FAILED);
     assert.equal(result.code, PROVIDER_VERIFY_ERROR_CODE.INSTANCE_NOT_READY);
   });
+
+  it('fails when running without Comfy health (undefined)', () => {
+    const snapshot = buildProviderStateSnapshot('i1', instanceWithStatus('running'), {
+      checkedAt: NOW,
+    });
+    const result = evaluateRunningVerify(snapshot);
+    assert.equal(result.state, PROVIDER_VERIFY_STATE.FAILED);
+    assert.equal(result.code, PROVIDER_VERIFY_ERROR_CODE.INSTANCE_NOT_READY);
+    assert.equal(result.retryable, true);
+  });
+
+  it('fails when running but health check unhealthy', () => {
+    const snapshot = buildProviderStateSnapshot('i1', instanceWithStatus('running'), {
+      health: createGPUStatus('running', { healthy: false }),
+      checkedAt: NOW,
+    });
+    const result = evaluateRunningVerify(snapshot);
+    assert.equal(result.state, PROVIDER_VERIFY_STATE.FAILED);
+    assert.equal(result.code, PROVIDER_VERIFY_ERROR_CODE.HEALTH_CHECK_FAILED);
+  });
 });
 
 describe('evaluateDestroyedVerify (pure)', () => {

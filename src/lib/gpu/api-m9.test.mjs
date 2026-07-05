@@ -95,11 +95,13 @@ describe('M9 API legacy caller removal', () => {
     });
   }
 
-  it('status API uses openBillableSession', () => {
+  it('status API delegates to projection handler with billing fields', () => {
     const source = readApiSrc('machines/status.js');
-    assert.ok(source.includes('openBillableSession'));
-    assert.ok(source.includes('readRemainingForMachine'));
-    assert.ok(source.includes('mapSessionStatusFields'));
+    const projection = readFileSync(path.join(__dirname, '../machines-status-projection.js'), 'utf8');
+    assert.ok(source.includes('handleMachinesStatusProjectionFirst'));
+    assert.ok(projection.includes('readRemainingForMachine'));
+    assert.ok(projection.includes('mapSessionStatusFields'));
+    assert.ok(projection.includes('buildBillingSessionView'));
   });
 
   it('destroy APIs use mapDestroyApiResponse', () => {
@@ -111,18 +113,48 @@ describe('M9 API legacy caller removal', () => {
     const source = readApiSrc('user/cancel-start-machine.js');
     assert.ok(source.includes('interruptPendingSessionForUser'));
     assert.ok(source.includes('destroyMachineWithBackup'));
+    assert.ok(source.includes('billingView'));
   });
 
-  it('start-machine creates provisioning pending session', () => {
+  it('stop-machine returns machineSessionView and billingView', () => {
+    const source = readApiSrc('user/stop-machine.js');
+    assert.ok(source.includes('machineSessionView'));
+    assert.ok(source.includes('billingView'));
+    assert.ok(source.includes('resolveBillingViewForCommand'));
+  });
+
+  it('start-machine returns billingView on all success paths', () => {
     const source = readApiSrc('user/start-machine.js');
-    assert.ok(source.includes('createProvisioningPendingSession'));
+    assert.ok(source.includes('billingViewForStart'));
+    assert.ok(source.includes('billingView'));
+  });
+
+  it('start-machine accepts boot via lifecycle SM and background provision', () => {
+    const source = readApiSrc('user/start-machine.js');
+    const provision = readFileSync(path.join(__dirname, 'user-start-provision.js'), 'utf8');
     assert.ok(source.includes('repairUserBillingState'));
+    assert.ok(source.includes('persistStartRequested'));
+    assert.ok(source.includes('machineSessionView'));
+    assert.ok(source.includes('billingViewForStart'));
+    assert.ok(source.includes('completeUserStartProvision'));
+    assert.ok(provision.includes('createProvisioningPendingSession'));
+    assert.ok(provision.includes('persistProviderRunning'));
+    assert.ok(provision.includes("liveStatus.status === 'running'"));
+    assert.ok(!source.includes('syncSubscriptionWithMachineState'));
   });
 
   it('dashboard/me reads remaining via M2 module', () => {
     const source = readApiSrc('dashboard/me.js');
-    assert.ok(source.includes('readRemainingForMachine'));
-    assert.ok(source.includes('mapRemainingStatusFields'));
+    assert.ok(source.includes('resolveBillingSessionView'));
+    assert.ok(source.includes('billingView'));
+  });
+
+  it('status API exposes billingView projection', () => {
+    const source = readApiSrc('machines/status.js');
+    const projection = readFileSync(path.join(__dirname, '../machines-status-projection.js'), 'utf8');
+    assert.ok(source.includes('handleMachinesStatusProjectionFirst'));
+    assert.ok(projection.includes('billingView'));
+    assert.ok(projection.includes('buildBillingSessionView'));
   });
 });
 

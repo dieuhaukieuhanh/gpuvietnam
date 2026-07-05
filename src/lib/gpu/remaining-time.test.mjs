@@ -252,6 +252,40 @@ describe('calculateRemaining', () => {
     assert.equal(result.remainingHours, 0);
   });
 
+  it('ignores corrupt epoch started_at for current session elapsed (SCB M2 guard)', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 20 }],
+        providerRunningVerified: true,
+        sessions: [{ status: 'running', started_at: '1970-01-01T00:00:00.000Z' }],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.currentSessionElapsedHours, 0);
+    assert.equal(result.remainingHours, 20);
+  });
+
+  it('uses verified_running_at when started_at is corrupt', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 20 }],
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'running',
+            started_at: '1970-01-01T00:00:00.000Z',
+            verified_running_at: '2026-06-28T08:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.currentSessionElapsedHours, 2);
+    assert.equal(result.remainingHours, 18);
+  });
+
   it('remaining exactly 0', () => {
     const result = calculateRemaining(
       {

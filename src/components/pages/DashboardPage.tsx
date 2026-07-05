@@ -11,7 +11,7 @@ import { styles } from '@/styles/pages/dashboard.styles';
 export default function DashboardPage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useAuth();
-  const { user, subscription, loading, error, refresh, remaining } = useDashboard();
+  const { user, subscription, loading, error, refresh, billingView, machineSessionView, applyMachineSessionView, applyBillingSessionView } = useDashboard();
   const [showPending, setShowPending] = useState(false);
   const [showActivated, setShowActivated] = useState(false);
 
@@ -83,10 +83,13 @@ export default function DashboardPage() {
         <DashboardOverview
           user={user}
           subscription={subscription}
-          dashboardRemaining={remaining}
+          billingView={billingView}
+          machineSessionView={machineSessionView}
           loading={loading}
           error={error}
           onRefresh={refresh}
+          onMachineSessionView={applyMachineSessionView}
+          onBillingSessionView={applyBillingSessionView}
         />
       </DashboardShell>
     </>

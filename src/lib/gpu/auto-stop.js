@@ -1,10 +1,10 @@
+import { buildConsumerEndpoint, isEndpointReadyForTraffic } from '@/lib/endpoint-utils';
 import { readRemainingForMachine } from './billing.js';
 import { getGpuService } from './gpu-service.js';
 import { ComfyClient } from './providers/vast/comfy-client.js';
 import { runUnifiedDestroy } from '@/lib/destroy-pipeline';
 import { notifyAfterMachineDestroy } from '@/lib/machine-destroy';
 import {
-  extractEndpointFromMachine,
   updateMachineRecord,
 } from '@/lib/machines';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
@@ -41,14 +41,19 @@ export function computeIdleMinutes(idleStartedAt) {
 }
 
 /**
- * @param {string} ip
- * @param {number | string} port
+ * @param {Record<string, unknown>} machine
+ * @param {boolean} [healthOk]
  */
-export async function fetchComfyQueueStats(ip, port) {
-  const { comfyUrl } = extractEndpointFromMachine({ ip_address: ip, port });
+export async function fetchComfyQueueStats(machine, healthOk = false) {
+  if (!isEndpointReadyForTraffic(machine, healthOk)) {
+    return { running: 0, pending: 0 };
+  }
+
+  const { comfyUrl } = buildConsumerEndpoint(machine, healthOk);
   if (!comfyUrl) {
     return { running: 0, pending: 0 };
   }
+
   const comfy = new ComfyClient(comfyUrl);
   return comfy.getQueue();
 }
@@ -116,9 +121,21 @@ async function applyQueueIdleState(supabaseAdmin, machine, queue) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {Record<string, unknown>} machine
  */
-export async function syncMachineIdleState(supabaseAdmin, machine) {
-  const endpoint = extractEndpointFromMachine(machine);
-  if (!endpoint.ip) {
+export async function syncMachineIdleState(supabaseAdmin, machine, options = {}) {
+  const healthOk = options.healthOk === true;
+  if (!isEndpointReadyForTraffic(machine, healthOk)) {
+    return {
+      idleMinutes: null,
+      lastActivity: null,
+      queueRunning: 0,
+      queuePending: 0,
+      minutesUntilAutoStop: null,
+      idleWarningActive: false,
+    };
+  }
+
+  const { ip } = buildConsumerEndpoint(machine, healthOk);
+  if (!ip) {
     return {
       idleMinutes: null,
       lastActivity: null,
@@ -131,7 +148,7 @@ export async function syncMachineIdleState(supabaseAdmin, machine) {
 
   let queue = { running: 0, pending: 0 };
   try {
-    queue = await fetchComfyQueueStats(endpoint.ip, endpoint.port);
+    queue = await fetchComfyQueueStats(machine, healthOk);
   } catch (error) {
     console.warn('[auto-stop] queue fetch failed:', error);
     const idleMinutes = computeIdleMinutes(machine.idle_started_at);
@@ -252,17 +269,17 @@ export async function checkAutoStop(supabaseAdmin, machineId, deps = {}) {
     );
   }
 
-  const endpoint = extractEndpointFromMachine(machine);
-  let queueReachable = Boolean(endpoint.ip);
+  const healthOk = String(machine.status ?? '') === 'running';
+  let queueReachable = isEndpointReadyForTraffic(machine, healthOk);
   let queue = { running: 0, pending: 0 };
   let hasActiveJobs = false;
   let idleMinutes = null;
   let currentMachine = machine;
 
-  if (endpoint.ip) {
+  if (queueReachable) {
     const fetchQueue = deps.fetchQueue ?? fetchComfyQueueStats;
     try {
-      queue = await fetchQueue(endpoint.ip, endpoint.port);
+      queue = await fetchQueue(machine, healthOk);
       queueReachable = true;
       const state = await applyQueueIdleState(db, machine, queue);
       currentMachine = state.machine;
@@ -275,12 +292,13 @@ export async function checkAutoStop(supabaseAdmin, machineId, deps = {}) {
     }
   }
 
+  const { ip } = buildConsumerEndpoint(machine, healthOk);
   const decision = decideAutoStopAction({
     machineStatus: String(machine.status ?? ''),
     machineHasBilling: Boolean(machine.billing_started_at),
     remaining,
     walletBalance,
-    hasEndpoint: Boolean(endpoint.ip),
+    hasEndpoint: Boolean(ip),
     queueReachable,
     hasActiveJobs,
     idleMinutes,

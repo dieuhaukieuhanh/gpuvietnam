@@ -1,0 +1,324 @@
+2026-07-05T05:23:25.519Z
+{
+  "samples": [
+    {
+      "dashboardTotal": 1769,
+      "httpWallMs": 1769
+    },
+    {
+      "dashboardTotal": 642,
+      "httpWallMs": 642
+    },
+    {
+      "dashboardTotal": 569,
+      "httpWallMs": 569
+    },
+    {
+      "dashboardTotal": 612,
+      "httpWallMs": 612
+    },
+    {
+      "dashboardTotal": 535,
+      "httpWallMs": 535
+    }
+  ]
+}
+
+2026-07-05T05:25:21.750Z
+{
+  "samples": [
+    {
+      "dashboardTotal": 2423,
+      "httpWallMs": 2423
+    },
+    {
+      "dashboardTotal": 2510,
+      "httpWallMs": 2510
+    },
+    {
+      "dashboardTotal": 1895,
+      "httpWallMs": 1895
+    },
+    {
+      "dashboardTotal": 1988,
+      "httpWallMs": 1988
+    },
+    {
+      "dashboardTotal": 1967,
+      "httpWallMs": 1967
+    }
+  ]
+}
+
+2026-07-05T05:32:41.605Z
+{
+  "samples": [
+    {
+      "dashboardTotal": 2069,
+      "Load auth user": 209,
+      "Supabase parallel batch (prof...": 271,
+      "repairUserBillingState": 223,
+      "runReadPathProjectionFirst (call)": 514,
+      "Load Machine": 105,
+      "getActiveMachineForUser": 88,
+      "Load Subscription": 0,
+      "Detect Projection": 1,
+      "Drift Queue Enqueue": 228,
+      "Projection Verify Queue Enqueue": 179,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 105,
+      "getActiveMachineForUser (call)": 88,
+      "syncUserPlanInventory (idle)": 371,
+      "readRemainingForUser": 283,
+      "GET /api/dashboard/me 200 in": 2587,
+      "httpWallMs": 2597
+    },
+    {
+      "dashboardTotal": 2087,
+      "Load auth user": 125,
+      "Supabase parallel batch (prof...": 222,
+      "repairUserBillingState": 187,
+      "runReadPathProjectionFirst (call)": 461,
+      "Load Machine": 108,
+      "getActiveMachineForUser": 82,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 181,
+      "Projection Verify Queue Enqueue": 172,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 87,
+      "getActiveMachineForUser (call)": 82,
+      "syncUserPlanInventory (idle)": 491,
+      "readRemainingForUser": 432,
+      "GET /api/dashboard/me 200 in": 2093,
+      "httpWallMs": 2099
+    },
+    {
+      "dashboardTotal": 1860,
+      "Load auth user": 85,
+      "Supabase parallel batch (prof...": 298,
+      "repairUserBillingState": 182,
+      "runReadPathProjectionFirst (call)": 454,
+      "Load Machine": 97,
+      "getActiveMachineForUser": 88,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 179,
+      "Projection Verify Queue Enqueue": 178,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 89,
+      "getActiveMachineForUser (call)": 88,
+      "syncUserPlanInventory (idle)": 383,
+      "readRemainingForUser": 280,
+      "GET /api/dashboard/me 200 in": 1862,
+      "httpWallMs": 1865
+    },
+    {
+      "dashboardTotal": 1836,
+      "Load auth user": 88,
+      "Supabase parallel batch (prof...": 222,
+      "repairUserBillingState": 204,
+      "runReadPathProjectionFirst (call)": 456,
+      "Load Machine": 99,
+      "getActiveMachineForUser": 92,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 178,
+      "Projection Verify Queue Enqueue": 178,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 99,
+      "getActiveMachineForUser (call)": 92,
+      "syncUserPlanInventory (idle)": 391,
+      "readRemainingForUser": 283,
+      "GET /api/dashboard/me 200 in": 1840,
+      "httpWallMs": 1842
+    },
+    {
+      "dashboardTotal": 1833,
+      "Load auth user": 88,
+      "Supabase parallel batch (prof...": 228,
+      "repairUserBillingState": 177,
+      "runReadPathProjectionFirst (call)": 467,
+      "Load Machine": 107,
+      "getActiveMachineForUser": 81,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 182,
+      "Projection Verify Queue Enqueue": 178,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 92,
+      "getActiveMachineForUser (call)": 81,
+      "syncUserPlanInventory (idle)": 399,
+      "readRemainingForUser": 300,
+      "GET /api/dashboard/me 200 in": 1837,
+      "httpWallMs": 1840
+    }
+  ]
+}
+
+2026-07-05T05:42:53.476Z
+{
+  "samples": [
+    {
+      "dashboardTotal": 2056,
+      "Load auth user": 247,
+      "Supabase parallel batch (prof...": 460,
+      "repairUserBillingState": 225,
+      "runReadPathProjectionFirst (call)": 663,
+      "Load Machine": 121,
+      "getActiveMachineForUser": 106,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 309,
+      "Projection Verify Queue Enqueue": 233,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 120,
+      "getActiveMachineForUser (call)": 106,
+      "syncUserPlanInventory (idle)": 112,
+      "Load User Plan": 0,
+      "Load Inventory": 110,
+      "Load Usage": 0,
+      "Compute": 1,
+      "DB Writes": 0,
+      "DB Reads": 0,
+      "readRemainingForUser": 119,
+      "Load Active Session": 0,
+      "Load Billing": 119,
+      "Load Grants": 0,
+      "Compute Remaining": 0,
+      "GET /api/dashboard/me 200 in": 2489,
+      "httpWallMs": 2493
+    },
+    {
+      "dashboardTotal": 1958,
+      "Load auth user": 215,
+      "Supabase parallel batch (prof...": 235,
+      "repairUserBillingState": 221,
+      "runReadPathProjectionFirst (call)": 726,
+      "Load Machine": 226,
+      "getActiveMachineForUser": 107,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 280,
+      "Projection Verify Queue Enqueue": 220,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 110,
+      "getActiveMachineForUser (call)": 107,
+      "syncUserPlanInventory (idle)": 113,
+      "Load User Plan": 0,
+      "Load Inventory": 113,
+      "Load Usage": 0,
+      "Compute": 0,
+      "DB Writes": 0,
+      "DB Reads": 0,
+      "readRemainingForUser": 231,
+      "Load Active Session": 0,
+      "Load Billing": 231,
+      "Load Grants": 0,
+      "Compute Remaining": 0,
+      "GET /api/dashboard/me 200 in": 1962,
+      "httpWallMs": 1964
+    },
+    {
+      "dashboardTotal": 1819,
+      "Load auth user": 143,
+      "Supabase parallel batch (prof...": 163,
+      "repairUserBillingState": 213,
+      "runReadPathProjectionFirst (call)": 572,
+      "Load Machine": 120,
+      "getActiveMachineForUser": 108,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 229,
+      "Projection Verify Queue Enqueue": 223,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 108,
+      "getActiveMachineForUser (call)": 108,
+      "syncUserPlanInventory (idle)": 108,
+      "Load User Plan": 0,
+      "Load Inventory": 108,
+      "Load Usage": 0,
+      "Compute": 0,
+      "DB Writes": 0,
+      "DB Reads": 0,
+      "readRemainingForUser": 402,
+      "Load Active Session": 0,
+      "Load Billing": 402,
+      "Load Grants": 0,
+      "Compute Remaining": 0,
+      "GET /api/dashboard/me 200 in": 1822,
+      "httpWallMs": 1825
+    },
+    {
+      "dashboardTotal": 1681,
+      "Load auth user": 116,
+      "Supabase parallel batch (prof...": 273,
+      "repairUserBillingState": 218,
+      "runReadPathProjectionFirst (call)": 598,
+      "Load Machine": 121,
+      "getActiveMachineForUser": 107,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 229,
+      "Projection Verify Queue Enqueue": 247,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 115,
+      "getActiveMachineForUser (call)": 107,
+      "syncUserPlanInventory (idle)": 122,
+      "Load User Plan": 0,
+      "Load Inventory": 122,
+      "Load Usage": 0,
+      "Compute": 0,
+      "DB Writes": 0,
+      "DB Reads": 0,
+      "readRemainingForUser": 131,
+      "Load Active Session": 0,
+      "Load Billing": 131,
+      "Load Grants": 0,
+      "Compute Remaining": 0,
+      "GET /api/dashboard/me 200 in": 1685,
+      "httpWallMs": 1689
+    },
+    {
+      "dashboardTotal": 1731,
+      "Load auth user": 123,
+      "Supabase parallel batch (prof...": 319,
+      "repairUserBillingState": 218,
+      "runReadPathProjectionFirst (call)": 594,
+      "Load Machine": 110,
+      "getActiveMachineForUser": 114,
+      "Load Subscription": 0,
+      "Detect Projection": 0,
+      "Drift Queue Enqueue": 238,
+      "Projection Verify Queue Enqueue": 246,
+      "Projection Mapping": 0,
+      "Return": 0,
+      "Refresh subscription": 114,
+      "getActiveMachineForUser (call)": 114,
+      "syncUserPlanInventory (idle)": 110,
+      "Load User Plan": 0,
+      "Load Inventory": 110,
+      "Load Usage": 0,
+      "Compute": 0,
+      "DB Writes": 0,
+      "DB Reads": 0,
+      "readRemainingForUser": 138,
+      "Load Active Session": 0,
+      "Load Billing": 138,
+      "Load Grants": 0,
+      "Compute Remaining": 0,
+      "GET /api/dashboard/me 200 in": 1736,
+      "httpWallMs": 1740
+    }
+  ]
+}
+

@@ -7,11 +7,12 @@ import {
 
 /**
  * Smooth session elapsed display — presentation only.
- * Anchors to API sessionDurationSeconds / billingStartedAt; resyncs on poll updates.
+ * Anchors to API sessionDurationSeconds / billingStartedAt / verifiedRunningAt.
  */
 export function useSessionElapsedSeconds(
   sessionDurationSeconds: number,
   billingStartedAt: string | null,
+  verifiedRunningAt: string | null,
   active: boolean,
 ): number {
   const [elapsed, setElapsed] = useState(0);
@@ -25,12 +26,12 @@ export function useSessionElapsedSeconds(
     }
 
     const anchor = resolveSessionElapsedAnchor(
-      { sessionDurationSeconds, billingStartedAt },
+      { sessionDurationSeconds, billingStartedAt, verifiedRunningAt },
       Date.now(),
     );
     anchorRef.current = anchor;
     setElapsed(computeSessionElapsedSeconds(anchor));
-  }, [active, sessionDurationSeconds, billingStartedAt]);
+  }, [active, sessionDurationSeconds, billingStartedAt, verifiedRunningAt]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -42,7 +43,7 @@ export function useSessionElapsedSeconds(
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [active, sessionDurationSeconds, billingStartedAt]);
+  }, [active, sessionDurationSeconds, billingStartedAt, verifiedRunningAt]);
 
   return elapsed;
 }

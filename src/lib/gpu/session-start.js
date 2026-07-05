@@ -15,6 +15,7 @@ import {
   linkMachineToBillingSession,
   fetchOrderedBillablePlansForUser,
 } from './billing.js';
+import { isMachineBillingAnchorValid, parseValidSessionStartedMs } from './billing-anchor-core.js';
 import {
   createPendingSession,
   activateRunningSession,
@@ -24,6 +25,7 @@ import {
   activateSessionRow,
   ACTIVATE_OUTCOME,
 } from './session-activate.js';
+import { isProjectionTrafficReady } from '../scb-read-path.js';
 import {
   verifyInstanceRunning,
   createProviderVerifyPortFromGpuService,
@@ -215,7 +217,8 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
       if (
         linkedSession?.status === 'running' &&
         linkedSession.started_at &&
-        sessionBelongsToMachine(linkedSession, machine)
+        sessionBelongsToMachine(linkedSession, machine) &&
+        isMachineBillingAnchorValid(String(linkedSession.started_at), machine)
       ) {
         scbObs('RETURN alreadyStarted', {
           machineId: machine.id,
@@ -236,8 +239,19 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     }
   }
 
+  if (!isProjectionTrafficReady(machine)) {
+    scbObs('RETURN skip', {
+      reason: 'traffic_not_ready',
+      machineId: machine.id,
+      projection_verified_at: machine.projection_verified_at ?? null,
+      projection_message: machine.projection_message ?? null,
+    });
+    return { skipped: true, reason: 'traffic_not_ready' };
+  }
+
   const verifyPort = createProviderVerifyPortFromGpuService(gpuService);
-  const verifyResult = await verifyInstanceRunning(String(instanceId), verifyPort);
+  const nowIso = new Date().toISOString();
+  const verifyResult = await verifyInstanceRunning(String(instanceId), verifyPort, { now: nowIso });
   const verifyStatus = verifyResult.state;
   scbObs('after verifyInstanceRunning', {
     machineId: machine.id,
@@ -260,7 +274,10 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     };
   }
 
-  const verifiedAt = verifyResult.verifiedAt ?? new Date().toISOString();
+  const verifiedAt =
+    parseValidSessionStartedMs(verifyResult.verifiedAt) != null
+      ? String(verifyResult.verifiedAt)
+      : nowIso;
   const bootstrap = await loadBootstrapContext(supabaseAdmin, userId, machine);
   scbObs('after loadBootstrapContext', {
     machineId: machine.id,
@@ -299,7 +316,11 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
       linkedStartedAt: linked?.started_at ?? null,
     });
 
-    if (linked?.status === 'running' && linked.started_at) {
+    if (
+      linked?.status === 'running' &&
+      linked.started_at &&
+      isMachineBillingAnchorValid(String(linked.started_at), machine)
+    ) {
       try {
         await linkMachineToBillingSession(
           supabaseAdmin,
@@ -372,7 +393,11 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     });
     if (fkError) throw fkError;
 
-    if (fkLinked?.started_at) {
+    if (
+      fkLinked?.status === 'running' &&
+      fkLinked.started_at &&
+      isMachineBillingAnchorValid(String(fkLinked.started_at), machine)
+    ) {
       try {
         await linkMachineToBillingSession(
           supabaseAdmin,
@@ -497,6 +522,9 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
       sessionId,
       machineUpdateError: machineUpdateError ? String(machineUpdateError.message) : null,
     });
+    // Legacy DBs may still have machines.gpu_session_id as bigint — non-fatal;
+    // authoritative link is gpu_sessions.machine_id; linkMachineToBillingSession
+    // self-heals billing_started_at later with column-type fallbacks.
   } else {
     sessionRecord = mapGpuSessionRowToRecord(pendingRow);
     scbObs('sessionRecord from pendingRow', {

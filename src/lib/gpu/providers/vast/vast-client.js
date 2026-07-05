@@ -10,8 +10,10 @@ import {
   MAX_OFFERS_PER_REGION,
   MAX_PRICE_PREMIUM,
 } from '../../gpu-config.js';
+import { profStart, profEnd } from '../../../prof.js';
 
 const VAST_API_BASE = 'https://console.vast.ai/api/v0';
+const VAST_V1_API_BASE = 'https://console.vast.ai/api/v1';
 
 const NO_GPU_MESSAGE = 'Không tìm thấy GPU phù hợp. Vui lòng thử lại sau.';
 
@@ -610,13 +612,15 @@ export class VastClient {
    * @param {'GET'|'POST'|'PUT'|'DELETE'} method
    * @param {string} path
    * @param {Record<string, unknown> | undefined} [body]
+   * @param {{ baseUrl?: string }} [options]
    */
-  async request(method, path, body) {
+  async request(method, path, body, options = {}) {
     if (!this.apiKey) {
       throw new GPUConfigurationError('VAST_AI_KEY is not configured');
     }
 
-    const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    const baseUrl = options.baseUrl ?? this.baseUrl;
+    const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
     const headers = {
       Accept: 'application/json',
       Authorization: `Bearer ${this.apiKey}`,
@@ -630,6 +634,7 @@ export class VastClient {
     }
 
     let response;
+    const __prof = profStart(`Vast ${method} ${path}`);
     try {
       response = await fetch(url, init);
     } catch (error) {
@@ -637,6 +642,8 @@ export class VastClient {
         cause: error,
         retryable: true,
       });
+    } finally {
+      profEnd(__prof);
     }
 
     const text = await response.text();
@@ -665,16 +672,24 @@ export class VastClient {
   }
 
   /**
-   * @param {{ gpuLine: import('../../domain/gpu-instance').GPULine; region?: string; plan?: string; image?: string; label?: string; env?: Record<string, string>; diskSize?: number; port?: number }} params
+   * @param {import('../../domain/gpu-instance').GPULine} gpuLine
+   * @returns {Promise<Record<string, unknown>[]>}
    */
-  async createInstance(params) {
-    const searchBody = buildOfferSearchBody(params.gpuLine);
+  async searchOffers(gpuLine) {
+    const searchBody = buildOfferSearchBody(gpuLine);
     const offersResponse = await this.request('POST', '/bundles/', searchBody);
-    const offerList = Array.isArray(offersResponse?.offers)
+    return Array.isArray(offersResponse?.offers)
       ? offersResponse.offers
       : Array.isArray(offersResponse)
         ? offersResponse
         : [];
+  }
+
+  /**
+   * @param {{ gpuLine: import('../../domain/gpu-instance').GPULine; region?: string; plan?: string; image?: string; label?: string; env?: Record<string, string>; diskSize?: number; port?: number }} params
+   */
+  async createInstance(params) {
+    const offerList = await this.searchOffers(params.gpuLine);
 
     console.info(
       `[vast/createInstance] Fetched ${offerList.length} raw offers for ${params.gpuLine}`,
@@ -852,6 +867,38 @@ export class VastClient {
   /** @param {string} instanceId */
   async destroyInstance(instanceId) {
     return this.request('DELETE', `/instances/${instanceId}/`);
+  }
+
+  /**
+   * v1 instances list filtered to a single contract id (HostPort discovery).
+   * @param {string | number} instanceId
+   * @returns {Promise<Record<string, unknown> | null>}
+   */
+  async listInstanceV1(instanceId) {
+    const numericId = Number(instanceId);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      throw new GPUProviderError(`Invalid Vast instance id: ${instanceId}`, { retryable: false });
+    }
+
+    const selectFilters = JSON.stringify({ id: { eq: numericId } });
+    const selectCols = JSON.stringify(['id', 'public_ipaddr', 'ports', 'actual_status', 'cur_state']);
+    const query = new URLSearchParams({
+      select_filters: selectFilters,
+      select_cols: selectCols,
+      limit: '1',
+    });
+
+    const payload = await this.request('GET', `/instances/?${query.toString()}`, undefined, {
+      baseUrl: VAST_V1_API_BASE,
+    });
+
+    const instances = payload?.instances;
+    if (Array.isArray(instances) && instances.length > 0) {
+      const first = instances[0];
+      return first && typeof first === 'object' ? /** @type {Record<string, unknown>} */ (first) : null;
+    }
+
+    return null;
   }
 
   /** @param {string} instanceId */

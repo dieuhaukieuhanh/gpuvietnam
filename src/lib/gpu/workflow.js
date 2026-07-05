@@ -1,13 +1,8 @@
-import { DEFAULT_GPU_PORT } from './gpu-config.js';
 import { ComfyClient } from './providers/vast/comfy-client.js';
 
 const CACHE_TTL_MS = 15_000;
 /** @type {Map<string, { at: number; value: unknown }>} */
 const cache = new Map();
-
-function buildEndpoint(ip, port) {
-  return `http://${ip}:${port ?? DEFAULT_GPU_PORT}`;
-}
 
 function humanizeAssetName(name) {
   return String(name)
@@ -65,17 +60,16 @@ export function parseWorkflowModels(workflow) {
 }
 
 /**
- * @param {string} ip
- * @param {number | string} [port]
+ * @param {string} comfyUrl EndpointReady URL from buildConsumerEndpoint
  */
-export async function fetchCurrentWorkflow(ip, port) {
-  const cacheKey = `workflow:${ip}:${port}`;
+export async function fetchCurrentWorkflow(comfyUrl) {
+  const cacheKey = `workflow:${comfyUrl}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.at <= CACHE_TTL_MS) {
     return cached.value;
   }
 
-  const comfy = new ComfyClient(buildEndpoint(ip, port));
+  const comfy = new ComfyClient(comfyUrl);
   let workflow = null;
 
   try {

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import PlanSelectorModal, { type ActivePlan } from '@/components/dashboard/PlanSelectorModal';
 import DashboardCurrentSessionCard from '@/components/dashboard/DashboardCurrentSessionCard';
 import DashboardRealtimePerfCard from '@/components/dashboard/DashboardRealtimePerfCard';
@@ -21,86 +21,23 @@ import {
   useUserPlans,
   type UserInventoryPlan,
 } from '@/hooks/useUserPlans';
-import type { DashboardRemaining, DashboardSubscription, DashboardUser } from '@/hooks/useDashboard';
+import type {
+  BillingSessionView,
+  DashboardSubscription,
+  DashboardUser,
+  MachineSessionView,
+} from '@/hooks/useDashboard';
 import { formatCurrency } from '@/lib/gpu-pricing';
 import { routes } from '@/lib/routes';
 import {
-  mapDestroyApiToScbView,
-  mapMachineStatusApiToScbView,
-  pickPlanCardRemainingHours,
-  pickPlanCardTotalHours,
-  pickSessionRemainingHours,
-} from '@/lib/scb-ui-view-model';
-import { GPU_COMFY_WORKSTATION_IDS } from '@/lib/workstation-env';
+  autostopToastMessage,
+  resolveServerCardPhase,
+  serverCardStatusBadgeClass,
+  serverCardStatusLabel,
+} from '@/lib/scb-dashboard-machine-view';
+import { useMachineInfraMetrics } from '@/hooks/useMachineInfraMetrics';
+import { GPU_COMFY_WORKSTATION_IDS, resolveEnvName, workspaceDisplayFromEnvName } from '@/lib/workstation-env';
 import { WORKSTATIONS, type Workstation } from '@/lib/workstations';
-
-type ScbDbgPhase = 'loading' | 'idle' | 'opening' | 'running' | 'stopping' | 'unknown';
-
-function scbDbg(label: string, payload: unknown): void {
-  console.log('[SCB-DBG][dashboard]', label, payload);
-}
-
-function phaseFromDisplayState(
-  state: MachineUiState | null,
-  loaded: boolean,
-): ScbDbgPhase {
-  if (!loaded) return 'loading';
-  if (state === 'creating' || state === 'starting') return 'opening';
-  if (state === 'stopping') return 'stopping';
-  if (state === 'running') return 'running';
-  if (state === 'offline') return 'idle';
-  return 'unknown';
-}
-
-type MachineUiState =
-  | 'offline'
-  | 'creating'
-  | 'starting'
-  | 'running'
-  | 'stopping'
-  | 'error'
-  | 'disconnected';
-
-type MachineLiveMetrics = {
-  vram?: { used_gb: number; total_gb: number; percent: number } | null;
-  gpu_usage_percent?: number | null;
-  temperature?: number | null;
-  disk?: { used_gb: number; total_gb: number; percent: number } | null;
-  current_model?: string | null;
-  loras?: string[];
-  output_count?: number;
-};
-
-type MachineStatusResponse = {
-  status: MachineUiState | 'offline';
-  machineId?: string | null;
-  instanceId?: string | null;
-  ip?: string | null;
-  port?: number | null;
-  comfyUrl?: string | null;
-  message?: string | null;
-  sessionDurationSeconds?: number;
-  billingStartedAt?: string | null;
-  remainingHours?: number | null;
-  totalEntitlementHours?: number | null;
-  sessionStatus?: string | null;
-  settlementStatus?: string | null;
-  verifiedRunningAt?: string | null;
-  verifiedDestroyedAt?: string | null;
-  verifyStatus?: string | null;
-  planType?: string | null;
-  outOfHours?: boolean;
-  lowCreditWarning?: boolean;
-  idleMinutes?: number | null;
-  lastActivity?: string | null;
-  minutesUntilAutoStop?: number | null;
-  idleWarningActive?: boolean;
-  walletBalance?: number | null;
-  metrics?: MachineLiveMetrics | null;
-};
-
-const STATUS_POLL_BOOT_MS = 10_000;
-const STATUS_POLL_RUNNING_MS = 30_000;
 
 function roundHours(value: number): number {
   return Math.round(value * 100) / 100;
@@ -141,65 +78,28 @@ function inventoryPlanToActivePlan(plan: UserInventoryPlan): ActivePlan {
   };
 }
 
-function getMachineUiState(
-  subscription: DashboardSubscription,
-  isStoppingMachine: boolean,
-  apiStatus: MachineStatusResponse | null,
-): MachineUiState {
-  if (isStoppingMachine || subscription.server_status === 'stopping') return 'stopping';
-
-  const hasMachine = Boolean(apiStatus?.machineId ?? apiStatus?.instanceId);
-
-  // Chỉ coi là đang mở phiên khi API xác nhận có máy đang boot/chạy.
-  if (!hasMachine) {
-    if (apiStatus?.status === 'error') return 'error';
-    if (subscription.server_status === 'stopping') return 'stopping';
-    return 'offline';
-  }
-
-  if (apiStatus?.status === 'offline') {
-    return 'offline';
-  }
-
-  if (subscription.server_status === 'offline' && apiStatus?.status !== 'running') {
-    return 'offline';
-  }
-
-  if (apiStatus?.status === 'disconnected') {
-    const bootMessage =
-      apiStatus.message?.includes('khởi động') || apiStatus.message?.includes('ComfyUI');
-    if (
-      bootMessage &&
-      (subscription.server_status === 'provisioning' || subscription.server_status === 'online')
-    ) {
-      return 'starting';
-    }
-    return 'disconnected';
-  }
-  if (apiStatus?.status === 'error') return 'error';
-  if (apiStatus?.status === 'running') return 'running';
-  if (apiStatus?.status === 'starting') return 'starting';
-  if (apiStatus?.status === 'creating') return 'creating';
-
-  return 'offline';
-}
-
 type DashboardOverviewProps = {
   user: DashboardUser | null;
   subscription: DashboardSubscription | null;
-  dashboardRemaining: DashboardRemaining;
+  billingView: BillingSessionView | null;
+  machineSessionView: MachineSessionView | null;
   loading: boolean;
   error: string;
   onRefresh: (options?: { silent?: boolean }) => void | Promise<void>;
+  onMachineSessionView?: (view: MachineSessionView | null) => void;
+  onBillingSessionView?: (view: BillingSessionView | null) => void;
 };
 
 export default function DashboardOverview({
   user,
   subscription,
-  dashboardRemaining,
+  billingView,
+  machineSessionView,
   loading,
   error,
   onRefresh,
+  onMachineSessionView,
+  onBillingSessionView,
 }: DashboardOverviewProps) {
   const { session } = useAuth();
   const { isMobile, isTablet } = useIsMobile();
@@ -210,160 +110,47 @@ export default function DashboardOverview({
   const [activePlans, setActivePlans] = useState<ActivePlan[]>([]);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [changingEnv, setChangingEnv] = useState(false);
+  const [selectedEnvName, setSelectedEnvName] = useState('');
   const [sessionWorkspace, setSessionWorkspace] = useState<{ name: string; icon: string } | null>(
     null,
   );
   const [pendingStartPlan, setPendingStartPlan] = useState<ActivePlan | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [isStoppingMachine, setIsStoppingMachine] = useState(false);
-  const [machineStatus, setMachineStatus] = useState<MachineStatusResponse>({ status: 'offline' });
-  const [machineStatusLoaded, setMachineStatusLoaded] = useState(false);
-  const [hoursExhaustedWarning, setHoursExhaustedWarning] = useState(false);
-  const autoDestroyTriggeredRef = useRef(false);
-  const lastMachineStatusRef = useRef<MachineUiState>('offline');
+  const [loadingActivePlans, setLoadingActivePlans] = useState(false);
+  const [isCancellingBoot, setIsCancellingBoot] = useState(false);
   const [startMessage, setStartMessage] = useState('');
   const [toast, setToast] = useState('');
   const [showComfyMobileModal, setShowComfyMobileModal] = useState(false);
-  const subscriptionServerStatusRef = useRef(subscription?.server_status);
-  useEffect(() => {
-    subscriptionServerStatusRef.current = subscription?.server_status;
-  }, [subscription?.server_status]);
 
-  // Refs mirror committed state for use inside fetchMachineStatus debug logs
-  // without adding them to the callback's dependency array (preserves original deps).
-  const isStoppingMachineRef = useRef(isStoppingMachine);
-  const subscriptionRef = useRef(subscription);
-  useEffect(() => {
-    isStoppingMachineRef.current = isStoppingMachine;
-  }, [isStoppingMachine]);
-  useEffect(() => {
-    subscriptionRef.current = subscription;
-  }, [subscription]);
+  const handleAutostopRefresh = useCallback(async () => {
+    notifyUserPlansChanged();
+    await onRefresh({ silent: true });
+    await reloadPlans({ silent: true });
+  }, [onRefresh, reloadPlans]);
 
-  // ── SCB debug: Dashboard state machine transition logger ─────────────────
-  const scbPrevPhaseRef = useRef<ScbDbgPhase | null>(null);
-  const scbPrevDisplayStateRef = useRef<MachineUiState | null>(null);
-  const scbPrevMachineStatusRef = useRef<MachineStatusResponse | null>(null);
-  const scbPrevLoadedRef = useRef<boolean | null>(null);
-  const scbPrevStoppingRef = useRef<boolean | null>(null);
-  const scbPrevServerStatusRef = useRef<string | null | undefined>(null);
-  useEffect(() => {
-    if (subscription?.server_status != null) {
-      scbPrevServerStatusRef.current = subscription.server_status;
-    }
-  }, [subscription?.server_status]);
+  const { metrics: machineMetrics, metricsLoaded, refreshMetrics } = useMachineInfraMetrics({
+    accessToken: session?.access_token,
+    phase: machineSessionView?.phase,
+    onPollError: setStartMessage,
+    onAutostopDetected: async (message) => {
+      setToast(autostopToastMessage(message));
+      await handleAutostopRefresh();
+    },
+  });
 
   useEffect(() => {
-    const loaded = machineStatusLoaded;
-    const stopping = isStoppingMachine;
-    const apiStatus = machineStatus.status;
-    const apiMachineId = machineStatus.machineId ?? machineStatus.instanceId ?? null;
-    const serverStatus = subscription?.server_status ?? null;
-
-    // Raw machineStatus change log (every update)
-    const prevMs = scbPrevMachineStatusRef.current;
-    const msChanged =
-      !prevMs ||
-      prevMs.status !== apiStatus ||
-      (prevMs.machineId ?? null) !== (machineStatus.machineId ?? null) ||
-      (prevMs.instanceId ?? null) !== (machineStatus.instanceId ?? null) ||
-      prevMs.sessionDurationSeconds !== machineStatus.sessionDurationSeconds ||
-      prevMs.remainingHours !== machineStatus.remainingHours ||
-      prevMs.billingStartedAt !== machineStatus.billingStartedAt;
-    if (msChanged) {
-      scbDbg('machineStatus changed', {
-        status: apiStatus,
-        machineId: apiMachineId,
-        sessionDurationSeconds: machineStatus.sessionDurationSeconds,
-        billingStartedAt: machineStatus.billingStartedAt,
-        remainingHours: machineStatus.remainingHours,
-        sessionStatus: machineStatus.sessionStatus,
-        settlementStatus: machineStatus.settlementStatus,
-      });
-      scbPrevMachineStatusRef.current = { ...machineStatus };
+    if (subscription?.env_name && !changingEnv) {
+      setSelectedEnvName(subscription.env_name);
     }
+  }, [subscription?.env_name, changingEnv]);
 
-    if (!loaded || !subscription) {
-      scbDbg('state-machine (not ready)', {
-        loaded,
-        hasSubscription: Boolean(subscription),
-        stopping,
-        apiStatus,
-      });
-      return;
+  const effectiveEnvName = selectedEnvName || subscription?.env_name || '';
+
+  useEffect(() => {
+    if (machineSessionView?.phase === 'idle') {
+      setSessionWorkspace(null);
     }
+  }, [machineSessionView?.phase]);
 
-    const displayState = getMachineUiState(subscription, stopping, machineStatus);
-    const phase = phaseFromDisplayState(displayState, loaded);
-    const prevDisplay = scbPrevDisplayStateRef.current;
-    const prevPhase = scbPrevPhaseRef.current;
-    const prevStopping = scbPrevStoppingRef.current;
-    const prevServer = scbPrevServerStatusRef.current;
-    const prevLoaded = scbPrevLoadedRef.current;
-
-    const transitionStr =
-      prevDisplay == null && prevLoaded == null
-        ? `INIT → ${displayState}`
-        : `${prevDisplay} → ${displayState}`;
-
-    const suspicious =
-      (prevDisplay === 'running' && displayState === 'stopping' && phase === 'idle'
-        ? false
-        : prevDisplay === 'running' &&
-          displayState === 'offline' &&
-          // immediately going running → offline with no stopping in between
-          prevStopping !== true
-        ? false
-        : (prevDisplay === 'running' && displayState === 'starting') ||
-          (prevDisplay === 'running' && displayState === 'creating') ||
-          (prevDisplay === 'stopping' && displayState === 'starting') ||
-          (prevDisplay === 'stopping' && displayState === 'creating'));
-
-    scbDbg('state-machine transition', {
-      transition: transitionStr,
-      prevPhase,
-      phase,
-      apiStatus,
-      apiMachineId,
-      serverStatus,
-      prevServer,
-      stopping,
-      prevStopping,
-      loaded,
-      prevLoaded,
-      suspicious: suspicious ? '⚠️ SUSPICIOUS' : null,
-    });
-
-    // Detect specific bug-2 pattern: running → (creating|starting) → idle
-    if (prevDisplay === 'running' && (displayState === 'creating' || displayState === 'starting')) {
-      scbDbg('state-machine ⚠️ BUG2 PATTERN: running → opening detected', {
-        apiStatus,
-        serverStatus,
-        stopping,
-      });
-    }
-    // Detect bug-1 pattern: running → offline with timer reset (sessionDurationSeconds drops to 0/undefined)
-    if (
-      prevDisplay === 'running' &&
-      displayState === 'offline' &&
-      (machineStatus.sessionDurationSeconds == null || machineStatus.sessionDurationSeconds === 0)
-    ) {
-      scbDbg('state-machine ⚠️ BUG1 PATTERN: running → offline with timer reset', {
-        sessionDurationSeconds: machineStatus.sessionDurationSeconds,
-        billingStartedAt: machineStatus.billingStartedAt,
-      });
-    }
-
-    scbPrevDisplayStateRef.current = displayState;
-    scbPrevPhaseRef.current = phase;
-    scbPrevStoppingRef.current = stopping;
-    scbPrevLoadedRef.current = loaded;
-  }, [
-    machineStatusLoaded,
-    isStoppingMachine,
-    machineStatus,
-    subscription,
-  ]);
   const { session: supportSession, reload: reloadSupportSession } = useSupportSessionStatus(
     session?.access_token,
   );
@@ -383,254 +170,47 @@ export default function DashboardOverview({
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const fetchMachineStatus = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token) {
-      setMachineStatusLoaded(true);
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/machines/status', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as MachineStatusResponse & { error?: string };
-      const machineId = data.machineId ?? data.instanceId ?? null;
-      const rawScbView = mapMachineStatusApiToScbView(data);
-      scbDbg('fetch raw API response', {
-        httpOk: res.ok,
-        data,
-      });
-      scbDbg('fetch normalized scb view', {
-        machineId,
-        rawScbView,
-        subscriptionServerStatus: subscriptionServerStatusRef.current,
-        isStoppingMachine: isStoppingMachineRef.current,
-      });
-
-      if (!res.ok) {
-        if (data.error) setStartMessage(data.error);
-        setMachineStatus((prev) => {
-          if (prev.status === 'creating' || prev.status === 'starting') {
-            return {
-              ...prev,
-              status: prev.status,
-              message: data.error ?? 'Đang khởi động máy GPU...',
-            };
-          }
-          if (
-            prev.status === 'running' ||
-            prev.instanceId ||
-            prev.machineId
-          ) {
-            return {
-              ...prev,
-              status: 'disconnected',
-              message: data.error ?? 'Mất kết nối tạm thời',
-            };
-          }
-          return { status: 'offline' };
-        });
-        return;
-      }
-
-      if (!machineId) {
-        if (data.status === 'creating' || data.status === 'starting') {
-          lastMachineStatusRef.current = 'offline';
-          scbDbg('fetch branch: no-machineId + creating/starting → offline', {
-            apiStatus: data.status,
-            predictedNext: 'offline',
-          });
-          setMachineStatus({
-            status: 'offline',
-            message: data.message ?? 'Máy chưa bật',
-          });
-          await onRefresh({ silent: true });
-          return;
-        }
-
-        if (data.status === 'error') {
-          lastMachineStatusRef.current = 'error';
-          scbDbg('fetch branch: no-machineId + error → error', {
-            apiStatus: data.status,
-            predictedNext: 'error',
-          });
-          setMachineStatus({
-            status: 'error',
-            message: data.message ?? 'Khởi tạo máy thất bại',
-          });
-          await onRefresh({ silent: true });
-          return;
-        }
-
-        lastMachineStatusRef.current = 'offline';
-        scbDbg('fetch branch: no-machineId → offline', {
-          apiStatus: data.status,
-          predictedNext: 'offline',
-        });
-        setMachineStatus({
-          status: 'offline',
-          message: data.message ?? 'Máy chưa bật',
-        });
-        await onRefresh({ silent: true });
-        return;
-      }
-
-      if (
-        subscriptionServerStatusRef.current === 'offline' &&
-        data.status !== 'running' &&
-        data.status !== 'creating' &&
-        data.status !== 'starting'
-      ) {
-        scbDbg('fetch branch: subscription offline + non-running → offline', {
-          apiStatus: data.status,
-          subscriptionServerStatus: subscriptionServerStatusRef.current,
-          predictedNext: 'offline',
-        });
-        setMachineStatus({
-          status: 'offline',
-          message: 'Máy chưa bật',
-        });
-        await onRefresh({ silent: true });
-        return;
-      }
-
-      const prevStatus = lastMachineStatusRef.current;
-      lastMachineStatusRef.current = data.status as MachineUiState;
-
-      const nextMachineStatus = {
-        ...data,
-        machineId,
-        instanceId: data.instanceId ?? machineId,
-      };
-      const subSnap = subscriptionRef.current;
-      const predictedState = subSnap
-        ? getMachineUiState(
-            { ...subSnap, server_status: subscriptionServerStatusRef.current ?? subSnap.server_status },
-            isStoppingMachineRef.current,
-            nextMachineStatus,
-          )
-        : null;
-      scbDbg('fetch branch: set machineStatus', {
-        prevStatus,
-        apiStatus: data.status,
-        machineId,
-        subscriptionPresent: Boolean(subSnap),
-        subscriptionServerStatus: subscriptionServerStatusRef.current,
-        predictedDisplayState: predictedState,
-      });
-
-      setMachineStatus(nextMachineStatus);
-
-      if (data.status === 'creating' || data.status === 'starting' || data.status === 'running') {
-        setStartMessage('');
-      }
-
-      if (data.status === 'running' && prevStatus !== 'running') {
-        await reloadPlans({ silent: true });
-      }
-
-      if (data.outOfHours) {
-        setHoursExhaustedWarning(true);
-        if (!autoDestroyTriggeredRef.current) {
-          autoDestroyTriggeredRef.current = true;
-          const destroyRes = await fetch('/api/machines/destroy', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ interrupted: true }),
-          });
-          if (destroyRes.ok) {
-            setMachineStatus({ status: 'offline' });
-            setToast('⏰ Bạn đã hết giờ sử dụng. Máy sẽ tự động tắt.');
-            notifyUserPlansChanged();
-            await onRefresh();
-            await reloadPlans();
-          }
-        }
-        return;
-      }
-
-      setHoursExhaustedWarning(false);
-      autoDestroyTriggeredRef.current = false;
-
-      if (data.status === 'offline') {
-        lastMachineStatusRef.current = 'offline';
-        await onRefresh({ silent: true });
-        await reloadPlans({ silent: true });
-      }
-    } catch {
-      setMachineStatus((prev) => {
-        if (prev.status === 'creating' || prev.status === 'starting') {
-          return { ...prev, message: 'Đang khởi động máy GPU...' };
-        }
-        if (prev.machineId ?? prev.instanceId) {
-          return { ...prev, status: 'disconnected', message: 'Mất kết nối' };
-        }
-        return { status: 'offline' };
-      });
-    } finally {
-      setMachineStatusLoaded(true);
-    }
-  }, [session?.access_token, onRefresh, reloadPlans, user?.id]);
-
   useEffect(() => {
-    if (!session?.access_token) {
-      setMachineStatus({ status: 'offline' });
-      setMachineStatusLoaded(false);
-      return;
-    }
-    void fetchMachineStatus();
-  }, [session?.access_token, fetchMachineStatus]);
+    if (!session?.access_token) return undefined;
+    const onFocus = () => {
+      void (async () => {
+        await onRefresh({ silent: true });
+        await refreshMetrics();
+      })();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [session?.access_token, refreshMetrics, onRefresh]);
 
-  const activeMachineId = machineStatus.machineId ?? machineStatus.instanceId ?? null;
-  const shouldPollStatus =
-    Boolean(activeMachineId) ||
-    machineStatus.status === 'creating' ||
-    machineStatus.status === 'starting' ||
-    machineStatus.status === 'running' ||
-    subscription?.server_status === 'online' ||
-    subscription?.server_status === 'provisioning';
+  const viewPhase = machineSessionView?.phase;
 
-  useEffect(() => {
-    if (!session?.access_token || !shouldPollStatus) return undefined;
-
-    const pollMs =
-      machineStatus.status === 'running' ? STATUS_POLL_RUNNING_MS : STATUS_POLL_BOOT_MS;
-    const id = window.setInterval(() => void fetchMachineStatus(), pollMs);
-    return () => window.clearInterval(id);
-  }, [session?.access_token, shouldPollStatus, machineStatus.status, fetchMachineStatus]);
-
-  const statusScbView = mapMachineStatusApiToScbView(machineStatus);
   const sessionActive =
-    machineStatusLoaded && machineStatus.status === 'running' && !isStoppingMachine;
-  const apiRemainingHours = pickSessionRemainingHours(statusScbView);
-  const canInterpolateApiRemaining = sessionActive && apiRemainingHours != null;
+    (viewPhase === 'running' || viewPhase === 'disconnected') &&
+    Boolean(billingView?.billingStarted);
 
   const sessionDurationSec = useSessionElapsedSeconds(
-    statusScbView.sessionDurationSeconds,
-    statusScbView.billingStartedAt != null ? String(statusScbView.billingStartedAt) : null,
+    billingView?.sessionDurationSeconds ?? 0,
+    billingView?.billingStartedAt ?? null,
+    billingView?.verifiedRunningAt ?? null,
     sessionActive,
   );
 
   const displaySessionRemainingHours = useInterpolatedRemainingHours(
-    apiRemainingHours,
-    statusScbView.sessionDurationSeconds,
+    billingView?.remainingHours ?? null,
+    billingView?.sessionDurationSeconds ?? 0,
     sessionDurationSec,
     sessionActive,
   );
 
-  const displayCardRemainingFromApi = useInterpolatedRemainingHours(
-    canInterpolateApiRemaining ? apiRemainingHours : null,
-    statusScbView.sessionDurationSeconds,
+  const cardHoursRemainingLive = useInterpolatedRemainingHours(
+    billingView?.planCardRemainingHours ?? null,
+    billingView?.sessionDurationSeconds ?? 0,
     sessionDurationSec,
-    canInterpolateApiRemaining,
+    sessionActive,
   );
 
   const openComfyUI = useCallback(() => {
-    const url = machineStatus?.comfyUrl;
+    const url = machineMetrics?.comfyUrl;
     if (!url) return;
 
     if (isMobile) {
@@ -643,26 +223,27 @@ export default function DashboardOverview({
     }
 
     window.open(url, '_blank', 'noopener,noreferrer');
-  }, [isMobile, isTablet, machineStatus?.comfyUrl]);
+  }, [isMobile, isTablet, machineMetrics?.comfyUrl]);
 
   const confirmOpenComfyOnMobile = useCallback(() => {
-    const url = machineStatus?.comfyUrl;
+    const url = machineMetrics?.comfyUrl;
     if (!url) return;
     setShowComfyMobileModal(false);
     window.open(url, '_blank', 'noopener,noreferrer');
-  }, [machineStatus?.comfyUrl]);
+  }, [machineMetrics?.comfyUrl]);
 
   const startMachine = useCallback(
     async (plan: ActivePlan) => {
       const token = session?.access_token;
       if (!token || !subscription) return;
+      if (machineSessionView?.actions.canStart === false) return;
 
-      setSessionWorkspace({
-        name: subscription.env_name,
-        icon: subscription.env_icon,
-      });
-      setStarting(true);
+      setSessionWorkspace(workspaceDisplayFromEnvName(effectiveEnvName));
       setStartMessage('');
+      setShowStartConfirm(false);
+      setShowPlanSelector(false);
+      setPendingStartPlan(null);
+
       try {
         const res = await fetch('/api/user/start-machine', {
           method: 'POST',
@@ -675,6 +256,7 @@ export default function DashboardOverview({
             type: plan.type,
             plan: plan.plan,
             inventoryId: plan.inventoryId,
+            envName: effectiveEnvName,
           }),
         });
         const data = await res.json();
@@ -683,32 +265,32 @@ export default function DashboardOverview({
           setSessionWorkspace(null);
           return;
         }
-        if (data.machine) {
-          const machine = data.machine as MachineStatusResponse;
-          const machineId = machine.machineId ?? machine.instanceId ?? null;
-          lastMachineStatusRef.current = 'starting';
-          setMachineStatus(
-            machineId
-              ? { ...machine, machineId, instanceId: machine.instanceId ?? machineId, status: machine.status ?? 'starting' }
-              : { ...machine, status: 'starting' },
-          );
-        } else {
-          lastMachineStatusRef.current = 'starting';
-          setMachineStatus({ status: 'starting' });
+        if (data.machineSessionView) {
+          onMachineSessionView?.(data.machineSessionView as MachineSessionView);
         }
-        setShowPlanSelector(false);
-        setShowStartConfirm(false);
+        if (data.billingView) {
+          onBillingSessionView?.(data.billingView as BillingSessionView);
+        }
         setStartMessage('');
         await onRefresh({ silent: true });
         await reloadPlans();
+        void refreshMetrics();
       } catch {
         setStartMessage('Lỗi mạng khi khởi động máy.');
         setSessionWorkspace(null);
-      } finally {
-        setStarting(false);
       }
     },
-    [session?.access_token, subscription, onRefresh, reloadPlans, user?.id],
+    [
+      session?.access_token,
+      subscription,
+      effectiveEnvName,
+      machineSessionView?.actions.canStart,
+      onRefresh,
+      reloadPlans,
+      onMachineSessionView,
+      onBillingSessionView,
+      refreshMetrics,
+    ],
   );
 
   const openStartConfirm = useCallback(() => {
@@ -722,7 +304,7 @@ export default function DashboardOverview({
     if (!token) return;
 
     void (async () => {
-      setStarting(true);
+      setLoadingActivePlans(true);
       try {
         const res = await fetch('/api/user/active-plans', {
           headers: { Authorization: `Bearer ${token}` },
@@ -746,34 +328,77 @@ export default function DashboardOverview({
       } catch {
         setStartMessage('Lỗi mạng khi kiểm tra gói active.');
       } finally {
-        setStarting(false);
+        setLoadingActivePlans(false);
       }
     })();
   }, [displayPlan, session?.access_token]);
 
   const confirmStartMachine = useCallback(async () => {
+    if (machineSessionView?.actions.canStart === false) return;
     if (displayPlan) {
       await startMachine(inventoryPlanToActivePlan(displayPlan));
       return;
     }
     if (pendingStartPlan) {
       await startMachine(pendingStartPlan);
-      setPendingStartPlan(null);
       return;
     }
     if (activePlans.length === 1) {
       await startMachine(activePlans[0]);
     }
-  }, [displayPlan, pendingStartPlan, activePlans, startMachine]);
+  }, [displayPlan, pendingStartPlan, activePlans, startMachine, machineSessionView?.actions.canStart]);
 
-  const stopMachine = useCallback(async () => {
+  const cancelBoot = useCallback(async () => {
     const token = session?.access_token;
     if (!token) return;
 
-    scbDbg('destroy: user pressed Đóng phiên → setIsStoppingMachine(true)', {
-      prevMachineStatus: machineStatus,
-    });
-    setIsStoppingMachine(true);
+    setIsCancellingBoot(true);
+    setStartMessage('');
+    try {
+      const res = await fetch('/api/user/cancel-start-machine', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        message?: string;
+        machineSessionView?: MachineSessionView;
+        billingView?: BillingSessionView;
+      };
+      if (!res.ok) {
+        setStartMessage(data.error ?? 'Không hủy được khởi tạo.');
+        return;
+      }
+      if (data.machineSessionView) {
+        onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+      }
+      if (data.billingView) {
+        onBillingSessionView?.(data.billingView);
+      }
+      setSessionWorkspace(null);
+      setToast('Đã hủy khởi tạo phiên làm việc');
+      notifyUserPlansChanged();
+      await onRefresh({ silent: true });
+      await reloadPlans({ silent: true });
+      void refreshMetrics();
+    } catch {
+      setStartMessage('Lỗi mạng khi hủy khởi tạo.');
+    } finally {
+      setIsCancellingBoot(false);
+    }
+  }, [
+    session?.access_token,
+    onRefresh,
+    reloadPlans,
+    refreshMetrics,
+    onMachineSessionView,
+    onBillingSessionView,
+  ]);
+
+  const stopMachine = useCallback(async () => {
+    const token = session?.access_token;
+    if (!token || machineSessionView?.actions.canStop === false) return;
+
     setStartMessage('');
     try {
       const res = await fetch('/api/machines/destroy', {
@@ -781,36 +406,49 @@ export default function DashboardOverview({
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      scbDbg('destroy: API response', { httpOk: res.ok, data });
       if (!res.ok) {
         setStartMessage(data.error ?? 'Không tắt được máy.');
-        scbDbg('destroy: API failed → keep stopping flag, await user/state machine', {
-          error: data.error,
-        });
         return;
       }
-      const destroyView = mapDestroyApiToScbView(data);
-      scbDbg('destroy: setting machineStatus=offline', { destroyView });
-      setMachineStatus({ status: 'offline' });
-      setToast(
-        destroyView.settlementStatus
-          ? `Đã đóng phiên · settlement: ${destroyView.settlementStatus}`
-          : 'Đã đóng phiên làm việc',
-      );
+      const settlementStatus =
+        typeof data.settlementStatus === 'string' ? data.settlementStatus : null;
+      if (data.machineSessionView) {
+        onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+      }
+      if (data.billingView) {
+        onBillingSessionView?.(data.billingView as BillingSessionView);
+      }
+      setSessionWorkspace(null);
+      setStartMessage('');
+      await onRefresh({ silent: true });
+      await reloadPlans({ silent: true });
       notifyUserPlansChanged();
-      scbDbg('destroy: calling onRefresh + reloadPlans', {});
-      await onRefresh();
-      await reloadPlans();
-      scbDbg('destroy: refresh done', {
-        subscriptionServerStatus: subscriptionServerStatusRef.current,
-      });
+      void refreshMetrics();
+      const alreadyStopped = Boolean((data as { alreadyStopped?: boolean }).alreadyStopped);
+      const accepted = Boolean((data as { accepted?: boolean }).accepted);
+      if (accepted) {
+        setToast('Đang đóng phiên làm việc...');
+      } else {
+        setToast(
+          alreadyStopped
+            ? 'Đã đóng phiên làm việc'
+            : settlementStatus
+              ? `Đã đóng phiên · settlement: ${settlementStatus}`
+              : 'Đã đóng phiên làm việc',
+        );
+      }
     } catch {
       setStartMessage('Lỗi mạng khi tắt máy.');
-    } finally {
-      scbDbg('destroy: finally → setIsStoppingMachine(false)', {});
-      setIsStoppingMachine(false);
     }
-  }, [session?.access_token, onRefresh, reloadPlans, machineStatus]);
+  }, [
+    session?.access_token,
+    machineSessionView?.actions.canStop,
+    onRefresh,
+    reloadPlans,
+    refreshMetrics,
+    onMachineSessionView,
+    onBillingSessionView,
+  ]);
 
   const changeEnvironment = useCallback(
     async (workstation: Workstation) => {
@@ -835,41 +473,64 @@ export default function DashboardOverview({
         const data = await res.json();
         if (!res.ok) {
           setStartMessage(data.error ?? 'Không đổi được workspace.');
+          setSelectedEnvName(subscription?.env_name ?? '');
           return;
         }
         setToast(data.message ?? 'Đã chọn workspace.');
         await onRefresh({ silent: true });
       } catch {
         setStartMessage('Lỗi mạng khi đổi môi trường.');
+        setSelectedEnvName(subscription?.env_name ?? '');
       } finally {
         setChangingEnv(false);
       }
     },
-    [session?.access_token, onRefresh],
+    [session?.access_token, onRefresh, subscription?.env_name],
   );
 
   useEffect(() => {
-    if (!subscription || !machineStatusLoaded) return;
-    const state = getMachineUiState(subscription, isStoppingMachine, machineStatus);
-    if (state === 'offline') {
-      setSessionWorkspace(null);
+    if (!subscription || !metricsLoaded) return;
+    const phase = machineSessionView?.phase;
+    if (phase === 'idle' || phase === 'stopping') {
+      if (phase === 'idle') setSessionWorkspace(null);
+      return;
     }
-  }, [subscription, isStoppingMachine, machineStatus, machineStatusLoaded]);
-
-  useEffect(() => {
-    if (!subscription || subscription.server_status !== 'online') return;
-    setSessionWorkspace(
-      (prev) => prev ?? { name: subscription.env_name, icon: subscription.env_icon },
-    );
-  }, [subscription?.server_status, subscription?.env_name, subscription?.env_icon]);
+    if (machineMetrics.template) {
+      const templateName = resolveEnvName(machineMetrics.template);
+      const requestedName = effectiveEnvName ? resolveEnvName(effectiveEnvName) : null;
+      if (machineSessionView?.phase === 'opening' && requestedName && templateName !== requestedName) {
+        return;
+      }
+      setSessionWorkspace(workspaceDisplayFromEnvName(machineMetrics.template));
+      return;
+    }
+    if (machineSessionView?.workspace?.name) {
+      setSessionWorkspace(workspaceDisplayFromEnvName(machineSessionView.workspace.name));
+      return;
+    }
+    if (phase === 'running') {
+      setSessionWorkspace(
+        (prev) => prev ?? workspaceDisplayFromEnvName(subscription.env_name),
+      );
+    }
+  }, [
+    subscription,
+    machineMetrics,
+    metricsLoaded,
+    machineMetrics.template,
+    machineSessionView?.phase,
+    machineSessionView?.workspace?.name,
+    effectiveEnvName,
+  ]);
 
   const handleWorkspaceSelect = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const workstation = WORKSTATIONS.find((item) => item.name === event.target.value);
-      if (!workstation || workstation.name === subscription?.env_name) return;
+      if (!workstation || workstation.name === effectiveEnvName) return;
+      setSelectedEnvName(workstation.name);
       void changeEnvironment(workstation);
     },
-    [subscription?.env_name, changeEnvironment],
+    [effectiveEnvName, changeEnvironment],
   );
 
   if (loading) {
@@ -919,52 +580,49 @@ export default function DashboardOverview({
   }
 
   const isPending = subscription.status === 'pending_payment';
-  const displayMachineState = machineStatusLoaded
-    ? getMachineUiState(subscription, isStoppingMachine, machineStatus)
-    : null;
-  const isMachineBootstrapLoading = !machineStatusLoaded;
-  const canPowerOn = !isPending && displayMachineState === 'offline';
+  const serverCardPhase = resolveServerCardPhase(machineSessionView, {
+    dashboardLoading: loading,
+    metricsLoaded,
+  });
+  const canPowerOn = !isPending && (machineSessionView?.actions.canStart ?? false);
+  const canCancelBoot = machineSessionView?.actions.canCancel ?? false;
   const selectableWorkstations = WORKSTATIONS.filter((item) =>
     GPU_COMFY_WORKSTATION_IDS.includes(item.id),
   );
   const showWorkspaceDropdown =
     !isPending &&
-    !isMachineBootstrapLoading &&
-    (displayMachineState === 'offline' ||
-      (displayMachineState === 'error' && !sessionWorkspace));
-  const lockedWorkspaceName = sessionWorkspace?.name ?? subscription.env_name;
-  const lockedWorkspaceIcon = sessionWorkspace?.icon ?? subscription.env_icon;
-  const isSessionOpening =
-    displayMachineState === 'creating' || displayMachineState === 'starting';
-  const sessionPhase: 'loading' | 'idle' | 'opening' | 'running' | 'stopping' =
-    isMachineBootstrapLoading
-      ? 'loading'
-      : isSessionOpening
-        ? 'opening'
-        : displayMachineState === 'stopping'
-          ? 'stopping'
-          : displayMachineState === 'running'
-            ? 'running'
-            : 'idle';
+    (serverCardPhase === 'idle' ||
+      (serverCardPhase === 'error' && !sessionWorkspace));
+  const lockedWorkspace = workspaceDisplayFromEnvName(
+    serverCardPhase === 'opening' && effectiveEnvName
+      ? effectiveEnvName
+      : machineMetrics.template ?? sessionWorkspace?.name ?? effectiveEnvName,
+  );
+  const lockedWorkspaceName = lockedWorkspace.name;
+  const lockedWorkspaceIcon = lockedWorkspace.icon;
+  const sessionPhase = serverCardPhase;
+
+  const sessionCardDurationSec = sessionActive
+    ? sessionDurationSec
+    : (billingView?.sessionDurationSeconds ?? 0);
+  const sessionCardRemainingHours = sessionActive
+    ? displaySessionRemainingHours
+    : (billingView?.remainingHours ?? null);
+  const canStopSession = machineSessionView?.actions.canStop ?? false;
+  const perfCardActive =
+    serverCardPhase === 'running' ||
+    (serverCardPhase === 'disconnected' && Boolean(machineMetrics?.metrics?.vram));
 
   const cardPlan = displayPlan;
-  const isMachineRunning = displayMachineState === 'running';
-  const cardHoursRemainingStatic = pickPlanCardRemainingHours(
-    isMachineRunning,
-    statusScbView,
-    dashboardRemaining,
-    cardPlan?.hoursRemaining,
-  );
-  const cardHoursRemaining =
-    canInterpolateApiRemaining && displayCardRemainingFromApi != null
-      ? displayCardRemainingFromApi
-      : cardHoursRemainingStatic;
-  const cardHoursTotal = pickPlanCardTotalHours(
-    statusScbView,
-    dashboardRemaining,
-    cardPlan?.hoursTotal,
-  );
-  const sessionRemainingHours = displaySessionRemainingHours;
+  const cardHoursRemaining = sessionActive
+    ? (cardHoursRemainingLive ?? 0)
+    : (billingView?.planCardRemainingHours ?? cardPlan?.hoursRemaining ?? 0);
+  const cardHoursTotal =
+    billingView?.planCardTotalHours && billingView.planCardTotalHours > 0
+      ? billingView.planCardTotalHours
+      : cardPlan?.hoursTotal && cardPlan.hoursTotal > 0
+        ? cardPlan.hoursTotal
+        : (billingView?.planCardTotalHours ?? 0);
   const cardHoursPct =
     cardHoursTotal > 0 ? Math.round((cardHoursRemaining / cardHoursTotal) * 100) : 0;
   const cardDaysLeft = daysUntil(cardPlan?.validUntil ?? null);
@@ -974,22 +632,7 @@ export default function DashboardOverview({
     pendingStartPlan ??
     (activePlans.length === 1 ? activePlans[0] : null);
 
-  const machineStatusLabel =
-    isPending
-      ? 'Chờ xác nhận'
-      : isMachineBootstrapLoading
-        ? 'Đang đồng bộ'
-        : displayMachineState === 'running'
-        ? 'Đang chạy'
-        : isSessionOpening
-          ? 'Đang mở phiên'
-          : displayMachineState === 'stopping'
-            ? 'Đang đóng phiên'
-            : displayMachineState === 'error'
-              ? 'Lỗi'
-              : displayMachineState === 'disconnected'
-                ? 'Mất kết nối'
-                : 'Chưa mở phiên';
+  const machineStatusLabel = serverCardStatusLabel(serverCardPhase, isPending);
 
   const planCard = (
     <div className="card dashboard-plan-card dashboard-plan-card--compact">
@@ -1063,9 +706,9 @@ export default function DashboardOverview({
       <PlanSelectorModal
         open={showPlanSelector}
         plans={activePlans}
-        loading={starting}
+        loading={loadingActivePlans}
         onClose={() => {
-          if (!starting) setShowPlanSelector(false);
+          if (!loadingActivePlans) setShowPlanSelector(false);
         }}
         onConfirm={(plan) => {
           setShowPlanSelector(false);
@@ -1079,6 +722,13 @@ export default function DashboardOverview({
           <h3 id="start-machine-title">Xác nhận mở phòng làm việc</h3>
           {confirmPlan && 'displayName' in confirmPlan ? (
             <div className="machine-confirm-lines">
+              <div>
+                🖥️ Workspace:{' '}
+                <strong>
+                  {workspaceDisplayFromEnvName(effectiveEnvName).icon}{' '}
+                  {workspaceDisplayFromEnvName(effectiveEnvName).name}
+                </strong>
+              </div>
               <div>
                 📦 Gói:{' '}
                 <strong>
@@ -1099,6 +749,13 @@ export default function DashboardOverview({
             </div>
           ) : confirmPlan ? (
             <div className="machine-confirm-lines">
+              <div>
+                🖥️ Workspace:{' '}
+                <strong>
+                  {workspaceDisplayFromEnvName(effectiveEnvName).icon}{' '}
+                  {workspaceDisplayFromEnvName(effectiveEnvName).name}
+                </strong>
+              </div>
               <div>
                 📦 Gói:{' '}
                 <strong>
@@ -1126,7 +783,7 @@ export default function DashboardOverview({
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={starting}
+              disabled={loadingActivePlans}
               onClick={() => {
                 setPendingStartPlan(null);
                 setShowStartConfirm(false);
@@ -1137,10 +794,15 @@ export default function DashboardOverview({
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              disabled={starting || !confirmPlan}
+              disabled={
+                !machineSessionView?.actions.canStart ||
+                !confirmPlan ||
+                changingEnv ||
+                !effectiveEnvName
+              }
               onClick={() => void confirmStartMachine()}
             >
-              {starting ? 'Đang xử lý...' : 'Mở phiên làm việc'}
+              Mở phiên làm việc
             </button>
           </div>
         </div>
@@ -1160,7 +822,7 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {hoursExhaustedWarning && !isPending && (
+      {billingView?.outOfHours && !isPending && (
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">⏰</span>
           <div className="alert-content">
@@ -1170,13 +832,13 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {machineStatusLoaded && displayMachineState === 'error' && !isPending && (
+      {metricsLoaded && serverCardPhase === 'error' && !isPending && (
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">⚠️</span>
           <div className="alert-content">
             <div className="alert-title">Không khởi động được máy</div>
             <div className="alert-desc">
-              {machineStatus?.message ?? startMessage ?? 'Đã xảy ra lỗi khi khởi tạo máy GPU.'}
+              {machineSessionView?.message ?? startMessage ?? 'Đã xảy ra lỗi khi khởi tạo máy GPU.'}
             </div>
             <button
               type="button"
@@ -1190,7 +852,7 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {machineStatusLoaded && displayMachineState === 'disconnected' && !isPending && (
+      {metricsLoaded && serverCardPhase === 'disconnected' && !isPending && (
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">📡</span>
           <div className="alert-content">
@@ -1216,7 +878,7 @@ export default function DashboardOverview({
           <div className="card dashboard-server-card">
           <div className="card-header">
             <span className="card-title">🖥️ MÁY CHỦ</span>
-            <span className={`status-badge${displayMachineState === 'running' ? ' online' : ''}`}>
+            <span className={`status-badge${serverCardStatusBadgeClass(serverCardPhase)}`}>
               <span className="status-dot" />
               {machineStatusLabel}
             </span>
@@ -1224,7 +886,7 @@ export default function DashboardOverview({
           <div className="dashboard-workspace-section">
             <div className="dashboard-workspace-label">Workspace</div>
 
-            {isMachineBootstrapLoading ? (
+            {serverCardPhase === 'loading' ? (
               <div className="dashboard-workspace-meta-slot">
                 <p className="dashboard-workspace-hint">⏳ Đang đồng bộ trạng thái máy...</p>
               </div>
@@ -1233,7 +895,7 @@ export default function DashboardOverview({
                 <div className="dashboard-workspace-select-wrap">
                   <select
                     className="dashboard-workspace-select"
-                    value={subscription.env_name}
+                    value={effectiveEnvName}
                     disabled={changingEnv}
                     onChange={handleWorkspaceSelect}
                     aria-label="Chọn Workspace"
@@ -1247,7 +909,9 @@ export default function DashboardOverview({
                 </div>
                 <div className="dashboard-workspace-meta-slot">
                   <p className="dashboard-workspace-hint">
-                    Workspace sẽ được áp dụng khi mở phiên làm việc.
+                    {changingEnv
+                      ? '⏳ Đang lưu workspace...'
+                      : 'Workspace sẽ được áp dụng khi mở phiên làm việc.'}
                   </p>
                 </div>
               </>
@@ -1257,16 +921,24 @@ export default function DashboardOverview({
                   {lockedWorkspaceIcon} {lockedWorkspaceName}
                 </div>
                 <div className="dashboard-workspace-meta-slot">
-                  {isSessionOpening && (
+                  {serverCardPhase === 'opening' && (
                     <p className="dashboard-workspace-status">⏳ Đang khởi tạo phiên làm việc...</p>
                   )}
-                  {displayMachineState === 'running' && (
+                  {serverCardPhase === 'running' && (
                     <p className="dashboard-workspace-status">
                       🔒 Để đổi môi trường mới vui lòng đóng phiên làm việc và mở lại.
                     </p>
                   )}
-                  {displayMachineState === 'stopping' && (
+                  {serverCardPhase === 'stopping' && (
                     <p className="dashboard-workspace-status">⏳ Đang đóng phiên làm việc...</p>
+                  )}
+                  {serverCardPhase === 'disconnected' && (
+                    <p className="dashboard-workspace-status">📡 Đang thử kết nối lại máy GPU...</p>
+                  )}
+                  {serverCardPhase === 'error' && (
+                    <p className="dashboard-workspace-status">
+                      ⚠️ {machineSessionView?.message ?? startMessage ?? 'Không khởi động được phiên làm việc.'}
+                    </p>
                   )}
                 </div>
               </>
@@ -1274,14 +946,12 @@ export default function DashboardOverview({
           </div>
 
           {startMessage &&
-            displayMachineState !== 'creating' &&
-            displayMachineState !== 'starting' &&
-            displayMachineState !== 'running' && (
+            serverCardPhase === 'idle' && (
             <p style={{ fontSize: 13, color: 'var(--accent-blue)', marginBottom: 12 }}>{startMessage}</p>
           )}
 
           <div className="dashboard-server-progress-slot">
-            {isSessionOpening && (
+            {serverCardPhase === 'opening' && (
               <div className="machine-start-panel">
                 <div className="machine-start-progress" aria-hidden="true">
                   <div className="machine-start-progress-fill" />
@@ -1291,16 +961,16 @@ export default function DashboardOverview({
           </div>
 
           <div className="dashboard-server-badges-slot">
-            {displayMachineState === 'running' &&
-              (machineStatus?.metrics?.current_model ||
-                (machineStatus?.metrics?.loras?.length ?? 0) > 0) && (
+            {serverCardPhase === 'running' &&
+              (machineMetrics?.metrics?.current_model ||
+                (machineMetrics?.metrics?.loras?.length ?? 0) > 0) && (
                 <div className="dashboard-server-badges">
-                  {machineStatus?.metrics?.current_model && (
+                  {machineMetrics?.metrics?.current_model && (
                     <span className="status-badge online" style={{ fontSize: 11 }}>
-                      🧩 {machineStatus.metrics.current_model}
+                      🧩 {machineMetrics.metrics.current_model}
                     </span>
                   )}
-                  {machineStatus?.metrics?.loras?.map((lora) => (
+                  {machineMetrics?.metrics?.loras?.map((lora) => (
                     <span key={lora} className="status-badge" style={{ fontSize: 11 }}>
                       🎨 LoRA: {lora}
                     </span>
@@ -1310,13 +980,40 @@ export default function DashboardOverview({
           </div>
 
           <div className="dashboard-server-actions-slot">
-          {!isMachineBootstrapLoading &&
-            (displayMachineState === 'offline' || displayMachineState === 'running') && (
+          {serverCardPhase !== 'loading' && (
           <div className="btn-group-server">
-            {displayMachineState === 'running' && isMobile && (
+            {serverCardPhase === 'opening' && canCancelBoot && (
+              <>
+                <button type="button" className="btn btn-success btn-lg" disabled>
+                  {isCancellingBoot ? 'Đang hủy...' : 'Đang khởi tạo...'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-lg"
+                  disabled={isCancellingBoot}
+                  onClick={() => void cancelBoot()}
+                >
+                  Hủy khởi tạo
+                </button>
+              </>
+            )}
+
+            {serverCardPhase === 'opening' && !canCancelBoot && (
+              <button type="button" className="btn btn-success btn-lg" disabled>
+                Đang khởi tạo...
+              </button>
+            )}
+
+            {serverCardPhase === 'stopping' && (
+              <button type="button" className="btn btn-danger btn-lg" disabled>
+                Đang đóng phiên...
+              </button>
+            )}
+
+            {serverCardPhase === 'running' && isMobile && (
               <p className="comfy-mobile-note">
                 💻 Vui lòng dùng máy tính để vào phòng làm việc
-                {machineStatus?.comfyUrl && (
+                {machineMetrics?.comfyUrl && (
                   <button
                     type="button"
                     className="comfy-mobile-try-btn"
@@ -1328,38 +1025,52 @@ export default function DashboardOverview({
               </p>
             )}
 
-            {displayMachineState === 'running' && !isMobile && (
+            {serverCardPhase === 'running' && !isMobile && (
               <button
                 type="button"
                 className="btn-launch"
                 title={
-                  machineStatus?.comfyUrl
-                    ? `Vào phòng làm việc (${machineStatus.comfyUrl})`
+                  machineMetrics?.comfyUrl
+                    ? `Vào phòng làm việc (${machineMetrics.comfyUrl})`
                     : 'Vào phòng làm việc'
                 }
-                disabled={!machineStatus?.comfyUrl}
+                disabled={!machineSessionView?.actions.canOpenComfy || !machineMetrics?.comfyUrl}
                 onClick={openComfyUI}
               >
                 Vào phòng làm việc
               </button>
             )}
 
-            {displayMachineState === 'offline' && (
+            {serverCardPhase === 'idle' && (
               <button
                 type="button"
                 className="btn btn-success btn-lg"
-                disabled={!canPowerOn || starting || plansLoading || changingEnv}
+                disabled={!canPowerOn || plansLoading || changingEnv}
                 onClick={() => openStartConfirm()}
               >
-                {starting ? 'Đang xử lý...' : 'Mở phiên làm việc'}
+                Mở phiên làm việc
               </button>
             )}
 
-            {displayMachineState === 'running' && (
+            {serverCardPhase === 'error' && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-lg"
+                disabled={!canPowerOn || plansLoading || changingEnv}
+                onClick={() => openStartConfirm()}
+              >
+                Thử lại
+              </button>
+            )}
+
+            {(serverCardPhase === 'running' ||
+              serverCardPhase === 'disconnected' ||
+              serverCardPhase === 'error') &&
+              canStopSession && (
               <button
                 type="button"
                 className="btn btn-danger btn-lg"
-                disabled={isStoppingMachine}
+                disabled={!canStopSession}
                 onClick={() => void stopMachine()}
               >
                 Đóng phiên làm việc
@@ -1373,31 +1084,20 @@ export default function DashboardOverview({
           <div className="dashboard-metrics-row">
             <DashboardCurrentSessionCard
               phase={sessionPhase}
-              sessionDurationSec={sessionDurationSec}
-              remainingHours={sessionRemainingHours}
-              sessionStatus={
-                statusScbView.sessionStatus != null ? String(statusScbView.sessionStatus) : null
-              }
-              settlementStatus={
-                statusScbView.settlementStatus != null
-                  ? String(statusScbView.settlementStatus)
-                  : null
-              }
-              verifiedRunningAt={
-                statusScbView.verifiedRunningAt != null
-                  ? String(statusScbView.verifiedRunningAt)
-                  : null
-              }
-              idleMinutes={machineStatus?.idleMinutes ?? null}
-              idleWarningActive={Boolean(machineStatus?.idleWarningActive)}
-              minutesUntilAutoStop={machineStatus?.minutesUntilAutoStop ?? null}
-              outputCount={machineStatus?.metrics?.output_count ?? null}
-              outOfHours={Boolean(machineStatus?.outOfHours)}
-              lowCreditWarning={Boolean(machineStatus?.lowCreditWarning)}
+              sessionDurationSec={sessionCardDurationSec}
+              remainingHours={sessionCardRemainingHours}
+              idleMinutes={machineMetrics?.idleMinutes ?? null}
+              idleWarningActive={Boolean(machineMetrics?.idleWarningActive)}
+              minutesUntilAutoStop={machineMetrics?.minutesUntilAutoStop ?? null}
+              outputCount={machineMetrics?.metrics?.output_count ?? null}
+              outOfHours={Boolean(billingView?.outOfHours)}
+              lowCreditWarning={Boolean(billingView?.lowCreditWarning)}
+              statusMessage={machineSessionView?.message ?? null}
             />
             <DashboardRealtimePerfCard
-              active={displayMachineState === 'running'}
-              metrics={machineStatus?.metrics ?? null}
+              active={perfCardActive}
+              metrics={machineMetrics?.metrics ?? null}
+              connectionPaused={serverCardPhase === 'disconnected'}
             />
           </div>
           </div>
@@ -1406,19 +1106,19 @@ export default function DashboardOverview({
             {planCard}
             <DashboardStorageSummaryCard
               accessToken={session?.access_token}
-              machineRunning={displayMachineState === 'running'}
-              runtimeDisk={machineStatus?.metrics?.disk ?? null}
+              machineRunning={serverCardPhase === 'running'}
+              runtimeDisk={machineMetrics?.metrics?.disk ?? null}
             />
           </div>
         </div>
 
         <div className="dashboard-two-col">
-          <DashboardRecentWorkflowsCard accessToken={session?.access_token} />
+          <DashboardRecentWorkflowsCard />
           <DashboardRecentSessionsCard accessToken={session?.access_token} />
         </div>
 
         {isMobile && (
-          <DashboardRecentImagesMobile machineRunning={displayMachineState === 'running'} />
+          <DashboardRecentImagesMobile machineRunning={serverCardPhase === 'running'} />
         )}
 
         <div className="card">
@@ -1474,7 +1174,7 @@ export default function DashboardOverview({
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              disabled={!machineStatus?.comfyUrl}
+              disabled={!machineMetrics?.comfyUrl}
               onClick={confirmOpenComfyOnMobile}
             >
               Mở dù sao

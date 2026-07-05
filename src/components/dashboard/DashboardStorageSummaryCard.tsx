@@ -157,7 +157,7 @@ export default function DashboardStorageSummaryCard({
                 variant="ssd"
               />
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, marginBottom: 12 }}>
-                Dung lượng thật trên instance Vast · {runtimeDisk.used_gb}GB / {runtimeDisk.total_gb}GB
+                Dung lượng SSD thực tế trên máy GPU · {runtimeDisk.used_gb}GB / {runtimeDisk.total_gb}GB
               </p>
             </>
           ) : (

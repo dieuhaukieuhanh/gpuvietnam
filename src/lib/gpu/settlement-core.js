@@ -68,10 +68,9 @@ export function settlementPlanTier(plan) {
 /**
  * @param {Record<string, unknown>} a
  * @param {Record<string, unknown>} b
- * @param {number} [nowMs]
  * @returns {number}
  */
-export function compareSettlementPlanPriority(a, b, nowMs = Date.now()) {
+export function compareSettlementPlanPriority(a, b) {
   const tierDiff = settlementPlanTier(a) - settlementPlanTier(b);
   if (tierDiff !== 0) return tierDiff;
 

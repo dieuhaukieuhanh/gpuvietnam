@@ -118,7 +118,7 @@ export default async function handler(req, res) {
 
     });
 
-  } catch (err) {
+  } catch {
 
     return res.status(401).json({ error: 'Email/SĐT hoặc mật khẩu không đúng.' });
 

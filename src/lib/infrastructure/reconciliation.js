@@ -15,7 +15,6 @@ import {
 } from '../gpu/provider-verify.js';
 import { settleSession, skipSessionSettlement } from '../gpu/settlement.js';
 import {
-  buildDriftDescriptor,
   dedupeDrifts,
   detectMachineDrifts,
   detectSessionDrifts,

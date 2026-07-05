@@ -1,5 +1,4 @@
 import Head from 'next/head';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CheckoutAuthGate from '@/components/checkout/CheckoutAuthGate';
@@ -13,7 +12,6 @@ import {
   type Plan,
 } from '@/lib/checkout-plans';
 import { parseCheckoutOrder } from '@/lib/checkout-order';
-import { routes } from '@/lib/routes';
 import { WORKSTATIONS, type Workstation } from '@/lib/workstations';
 import { styles } from '@/styles/pages/checkout-1.styles';
 
@@ -126,7 +124,7 @@ export default function Checkout1Page() {
     if (!router.isReady) return;
     const order = parseCheckoutOrder(router.query);
     if (order?.billing) setCurrentBilling(order.billing);
-  }, [router.isReady, router.query.billing]);
+  }, [router.isReady, router.query.billing]); // eslint-disable-line react-hooks/exhaustive-deps -- billing slice only; full router.query would over-trigger
 
   const scrollToPayment = useCallback(() => {
     authSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });

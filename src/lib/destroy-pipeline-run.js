@@ -26,6 +26,7 @@ import {
   machineHasBillableSession,
   isProvenDestroySession,
 } from './destroy-pipeline-core.js';
+import { profStart, profEnd } from './prof.js';
 
 const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running'];
 
@@ -189,10 +190,13 @@ async function markMachineDestroyed(supabaseAdmin, machine) {
  *   reason?: string|null;
  *   skipBackup?: boolean;
  *   skipBilling?: boolean;
+ *   skipMetrics?: boolean;
  *   notifyBackupStart?: boolean;
  * }} input
  */
 export async function runDestroyPipeline(supabaseAdmin, deps, input) {
+  const __prof = profStart('runDestroyPipeline');
+  try {
   const stepTrace = /** @type {string[]} */ ([]);
   const trace = (step) => {
     stepTrace.push(step);
@@ -283,10 +287,12 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   }
 
   let metrics = { vramAvg: null, outputCount: 0 };
-  try {
-    metrics = await collectMetrics(machine);
-  } catch (error) {
-    console.warn('[destroy-pipeline] collectSessionMetrics failed:', error);
+  if (!input.skipMetrics) {
+    try {
+      metrics = await collectMetrics(machine);
+    } catch (error) {
+      console.warn('[destroy-pipeline] collectSessionMetrics failed:', error);
+    }
   }
 
   const instanceId = String(machine.instance_id);
@@ -501,4 +507,5 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     settlementStatus:
       settlementResult?.settlementStatus ?? sessionRow?.settlement_status ?? null,
   };
+  } finally { profEnd(__prof); }
 }

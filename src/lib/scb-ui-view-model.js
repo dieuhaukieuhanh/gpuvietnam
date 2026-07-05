@@ -1,107 +1,44 @@
 /**
- * M11 — API → View Model mapping for Session-Centric Billing UI.
- * Display-only: no remaining formulas, no billing business rules.
+ * SCB UI — presentation-only helpers (smooth timer/remaining display).
  */
 
-/**
- * @param {Record<string, unknown> | null | undefined} data
- */
-export function mapMachineStatusApiToScbView(data) {
-  return {
-    remainingHours: toNullableNumber(data?.remainingHours),
-    totalEntitlementHours: toNullableNumber(data?.totalEntitlementHours),
-    sessionDurationSeconds: Math.max(0, Math.floor(Number(data?.sessionDurationSeconds ?? 0))),
-    billingStartedAt: data?.billingStartedAt ?? null,
-    sessionStatus: data?.sessionStatus ?? null,
-    settlementStatus: data?.settlementStatus ?? null,
-    verifiedRunningAt: data?.verifiedRunningAt ?? null,
-    outOfHours: Boolean(data?.outOfHours),
-    lowCreditWarning: Boolean(data?.lowCreditWarning),
-  };
-}
+/** Reject lifecycle sentinel / corrupt session anchors (matches M2 remaining-time guard). */
+const MIN_VALID_SESSION_STARTED_MS = Date.parse('2020-01-01T00:00:00.000Z');
 
-/**
- * @param {boolean} isMachineRunning
- * @param {ReturnType<typeof mapMachineStatusApiToScbView>} statusView
- * @param {{ remainingHours?: number | null; totalEntitlementHours?: number | null } | null} dashboardRemaining
- * @param {number | null | undefined} planInventoryHours
- */
-export function pickPlanCardRemainingHours(
-  isMachineRunning,
-  statusView,
-  dashboardRemaining,
-  planInventoryHours,
-) {
-  if (isMachineRunning && statusView.remainingHours != null) {
-    return statusView.remainingHours;
-  }
-  if (dashboardRemaining?.remainingHours != null) {
-    return dashboardRemaining.remainingHours;
-  }
-  return planInventoryHours ?? 0;
-}
-
-/**
- * @param {ReturnType<typeof mapMachineStatusApiToScbView>} statusView
- * @param {{ totalEntitlementHours?: number | null } | null} dashboardRemaining
- * @param {number | null | undefined} planInventoryTotal
- */
-export function pickPlanCardTotalHours(statusView, dashboardRemaining, planInventoryTotal) {
-  if (statusView.totalEntitlementHours != null) {
-    return statusView.totalEntitlementHours;
-  }
-  if (dashboardRemaining?.totalEntitlementHours != null) {
-    return dashboardRemaining.totalEntitlementHours;
-  }
-  return planInventoryTotal ?? 0;
-}
-
-/**
- * @param {ReturnType<typeof mapMachineStatusApiToScbView>} statusView
- */
-export function pickSessionRemainingHours(statusView) {
-  return statusView.remainingHours;
-}
-
-/**
- * @param {Record<string, unknown> | null | undefined} data
- */
-export function mapDestroyApiToScbView(data) {
-  return {
-    settlementStatus: typeof data?.settlementStatus === 'string' ? data.settlementStatus : null,
-    verifyStatus: typeof data?.verifyStatus === 'string' ? data.verifyStatus : null,
-    verifiedDestroyedAt:
-      typeof data?.verifiedDestroyedAt === 'string' ? data.verifiedDestroyedAt : null,
-    billableSeconds: Math.max(0, Math.floor(Number(data?.billableSeconds ?? 0))),
-  };
-}
+/** Presentation cap — corrupt API duration must not inflate the session clock. */
+const MAX_PLAUSIBLE_SESSION_SECONDS = 30 * 24 * 3600;
 
 /**
  * @param {unknown} value
- * @returns {number | null}
+ * @returns {number|null}
  */
-function toNullableNumber(value) {
-  if (value == null || !Number.isFinite(Number(value))) return null;
-  return Number(value);
+function parseValidStartedMs(value) {
+  if (value == null) return null;
+  const ms = Date.parse(String(value));
+  if (!Number.isFinite(ms) || ms < MIN_VALID_SESSION_STARTED_MS) return null;
+  return ms;
 }
 
 /**
  * Presentation-only anchor for smooth session elapsed display (M11+).
- * Resync on each status poll via resolveSessionElapsedAnchor().
+ * Resync on each dashboard refresh via resolveSessionElapsedAnchor().
  *
- * @param {{ sessionDurationSeconds?: number; billingStartedAt?: string | null }} api
+ * @param {{ sessionDurationSeconds?: number; billingStartedAt?: string | null; verifiedRunningAt?: string | null }} api
  * @param {number} [syncNowMs]
  * @returns {{ mode: 'duration'; baseSeconds: number; syncedAtMs: number } | { mode: 'startedAt'; startedMs: number }}
  */
 export function resolveSessionElapsedAnchor(api, syncNowMs = Date.now()) {
-  const baseSeconds = Math.max(0, Math.floor(Number(api?.sessionDurationSeconds ?? 0)));
-  const startedMs = api?.billingStartedAt ? Date.parse(String(api.billingStartedAt)) : NaN;
-  const hasStartedAt = Number.isFinite(startedMs);
+  const rawSeconds = Math.max(0, Math.floor(Number(api?.sessionDurationSeconds ?? 0)));
+  const baseSeconds =
+    rawSeconds > MAX_PLAUSIBLE_SESSION_SECONDS ? 0 : rawSeconds;
+  const startedMs =
+    parseValidStartedMs(api?.billingStartedAt) ??
+    parseValidStartedMs(api?.verifiedRunningAt);
 
   if (baseSeconds > 0) {
     return { mode: 'duration', baseSeconds, syncedAtMs: syncNowMs };
   }
-  if (hasStartedAt) {
+  if (startedMs != null) {
     return { mode: 'startedAt', startedMs };
   }
   return { mode: 'duration', baseSeconds: 0, syncedAtMs: syncNowMs };
@@ -121,7 +58,7 @@ export function computeSessionElapsedSeconds(anchor, nowMs = Date.now()) {
 
 /**
  * Presentation-only anchor for smooth remaining-hours display (M11+).
- * Resync on each status poll. No interpolation when API pair is incomplete.
+ * Resync on each dashboard refresh. No interpolation when API pair is incomplete.
  *
  * @param {number | null | undefined} remainingHours
  * @param {number | null | undefined} sessionDurationSeconds

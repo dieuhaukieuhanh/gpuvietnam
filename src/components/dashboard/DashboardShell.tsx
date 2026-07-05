@@ -19,7 +19,7 @@ type DashboardShellProps = {
 const BOTTOM_NAV = [
   { key: 'dashboard' as const, href: routes.dashboard, icon: '🏠', label: 'Trung tâm' },
   { key: 'myPlan' as const, href: routes.dashboardGoiCuaToi, icon: '📦', label: 'Gói của tôi' },
-  { key: 'wallet' as const, href: routes.dashboardWallet, icon: '💰', label: 'Ví' },
+  { key: 'wallet' as const, href: routes.dashboardWallet, icon: '💰', label: 'Ví nạp trước' },
   { key: 'notifications' as const, href: routes.dashboard, icon: '🔔', label: 'Thông báo' },
 ];
 
@@ -153,7 +153,7 @@ export default function DashboardShell({
             className={`sidebar-item${activeTab === 'wallet' ? ' active' : ''}`}
             onClick={closeSidebar}
           >
-            <span className="icon">💰</span> <span>Ví</span>
+            <span className="icon">💰</span> <span>Ví nạp trước</span>
           </Link>
           <Link
             href={routes.dashboardCaiDat}

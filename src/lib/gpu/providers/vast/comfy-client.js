@@ -1,6 +1,17 @@
 import { GPUProviderError } from '../../gpu-errors.js';
 import { DEFAULT_GPU_PORT } from '../../gpu-config.js';
 import { normalizeVastInstanceRecord, resolveVastComfyPort } from './vast-mapper.js';
+import { profStart, profEnd } from '../../../prof.js';
+
+/**
+ * Default timeout for ComfyUI HTTP calls. ComfyUI runs on a local GPU
+ * instance and a healthy machine responds in well under a second. Node's
+ * undici default connect timeout is 10s, which blocks every caller when a
+ * machine is unreachable — notably /api/dashboard/me, which runs the destroy
+ * pipeline and calls collectSessionMetrics on a leaked/dead machine. Fail
+ * fast instead. Callers may pass their own init.signal to override.
+ */
+const COMFY_REQUEST_TIMEOUT_MS = 3000;
 
 /**
  * Low-level HTTP client for ComfyUI on a running GPU instance.
@@ -21,14 +32,19 @@ export class ComfyClient {
   async request(path, init = {}) {
     const url = `${this.endpointUrl}${path.startsWith('/') ? path : `/${path}`}`;
 
+    const signal = init.signal ?? AbortSignal.timeout(COMFY_REQUEST_TIMEOUT_MS);
+
+    const __prof = profStart(`ComfyUI ${path}`);
     let response;
     try {
-      response = await fetch(url, init);
+      response = await fetch(url, { ...init, signal });
     } catch (error) {
       throw new GPUProviderError(`ComfyUI network error: ${error.message}`, {
         cause: error,
         retryable: true,
       });
+    } finally {
+      profEnd(__prof);
     }
 
     const text = await response.text();

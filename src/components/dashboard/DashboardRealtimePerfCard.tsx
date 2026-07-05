@@ -12,6 +12,7 @@ type DashboardRealtimePerfCardProps = {
   /** Giá trị cố định khi mock (optional) */
   seedVram?: number;
   seedGpu?: number;
+  connectionPaused?: boolean;
 };
 
 function perfColor(pct: number): string {
@@ -31,13 +32,19 @@ export default function DashboardRealtimePerfCard({
   metrics,
   seedVram,
   seedGpu,
+  connectionPaused = false,
 }: DashboardRealtimePerfCardProps) {
   const [vramPct, setVramPct] = useState(seedVram ?? 72);
   const [gpuPct, setGpuPct] = useState(seedGpu ?? 85);
   const [temperature, setTemperature] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active) {
+      setVramPct(seedVram ?? 0);
+      setGpuPct(seedGpu ?? 0);
+      setTemperature(null);
+      return undefined;
+    }
 
     if (metrics?.vram?.percent != null) {
       setVramPct(metrics.vram.percent);
@@ -46,19 +53,10 @@ export default function DashboardRealtimePerfCard({
       return undefined;
     }
 
-    const tick = () => {
-      if (seedVram != null && seedGpu != null) {
-        setVramPct(Math.min(99, Math.max(55, seedVram + Math.floor(Math.random() * 11) - 5)));
-        setGpuPct(Math.min(99, Math.max(50, seedGpu + Math.floor(Math.random() * 15) - 7)));
-        return;
-      }
-      setVramPct(75 + Math.floor(Math.random() * 22));
-      setGpuPct(60 + Math.floor(Math.random() * 36));
-    };
-
-    tick();
-    const id = window.setInterval(tick, 3000);
-    return () => window.clearInterval(id);
+    setVramPct(0);
+    setGpuPct(0);
+    setTemperature(null);
+    return undefined;
   }, [active, metrics, seedVram, seedGpu]);
 
   const vramDetail =
@@ -70,10 +68,15 @@ export default function DashboardRealtimePerfCard({
     <div className="card">
       <div className="card-header">
         <span className="card-title">⚡ HIỆU SUẤT REALTIME</span>
-        {active && (
+        {active && metrics?.vram?.percent != null && !connectionPaused && (
           <span className="status-badge online" style={{ fontSize: 10 }}>
             <span className="status-dot" />
             Live
+          </span>
+        )}
+        {active && connectionPaused && (
+          <span className="status-badge" style={{ fontSize: 10 }}>
+            Tạm dừng
           </span>
         )}
       </div>
@@ -81,6 +84,10 @@ export default function DashboardRealtimePerfCard({
       <div className="dashboard-perf-body">
       {!active ? (
         <p className="dashboard-stat-empty">Máy chưa chạy — chưa có dữ liệu GPU/VRAM.</p>
+      ) : connectionPaused && metrics?.vram?.percent == null ? (
+        <p className="dashboard-stat-empty">Mất kết nối — chưa có dữ liệu GPU mới.</p>
+      ) : metrics?.vram?.percent == null ? (
+        <p className="dashboard-stat-empty">Đang chờ dữ liệu GPU từ ComfyUI...</p>
       ) : (
         <>
           <div className="perf-row">
