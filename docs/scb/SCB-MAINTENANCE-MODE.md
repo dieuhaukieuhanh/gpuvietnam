@@ -120,8 +120,9 @@ Not: architecture optimization, structural refactors, or “clean up” without 
 | [ADR-001](./ADR-001-read-path-detect-only.md) | Read Path Detect Only |
 | [ADR-002](./ADR-002-provider-abstraction-layer.md) | Provider Abstraction Layer |
 | [ADR-003](./ADR-003-projection-first-read-path.md) | Projection-first Read Path |
+| [ADR-004](./ADR-004-scb4-product-exceptions.md) | SCB 4.0 Product-Layer Exceptions |
 
-New architecture → **ADR-004+** only with owner approval.
+New architecture → **ADR-005+** only with owner approval.
 
 ---
 

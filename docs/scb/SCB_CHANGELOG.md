@@ -96,6 +96,44 @@ ChatGPT
 
 ---
 
+## 2026-07-07
+
+### Version
+
+v4.0 (tag `scb-4.0`, commit `bbed8da`)
+
+### Module
+
+- Architecture
+- Billing
+- API
+- Frontend
+
+### Reason
+
+SCB 4.0 product-layer hardening: kill the persistent "remaining hours reset after stop" UX bug, remove billing duplication from the infra status poll, and fix the recurring "stuck provisioning" during async `start-machine`. Three behaviors touched frozen-adjacent surfaces; recorded formally in [ADR-004](./ADR-004-scb4-product-exceptions.md).
+
+### Change
+
+- **D1 - Client-validated remaining-hours projection override (Phuong an 4):** `POST /api/machines/destroy` accepts `clientRemainingHours` + `clientSessionDurationSeconds`. Server validates non-negative usage, drift <= 0.05h vs `machines.billing_started_at`, no-gain vs pre-settlement entitlement. After the unchanged destroy pipeline succeeds, a CAS-guarded (`WHERE hours_used = pre.hoursUsed`) write overrides `subscriptions.hours_used` or `manual_hour_grants.hours_used`; `syncUserPlanInventory` propagates to `user_plan_inventory`. Settlement-fail guard: override skipped if `completeUserDestroy` throws. Truth (`gpu_sessions`) untouched.
+- **D2 - `/api/machines/status` infra-only response:** `handleMachinesStatusProjectionFirst` no longer returns `billingView`, `remainingFields`, `sessionFields`, `outOfHours`, `lowCreditWarning`, `planInventoryTotalHours`, `hoursRemaining`, `walletBalance`. Billing truth for the UI comes from `GET /api/dashboard/me` (`machineSessionView` + `billingView`). Documented in `docs/ui/DASHBOARD_VIEW_CONTRACT.md`.
+- **D3 - Suppress drift reset during async provisioning:** `shouldResetIdleProvisioningSubscription` always returns `false`. The frozen `machines-drift.js` reset path becomes inert for the provisioning-without-machine-row case (legitimate async window between `start-machine` setting `server_status='provisioning'` and Vast rent inserting a `machines` row).
+- **Product layer (no ADR needed):** optimistic start/stop UI, boot progress bar, stop confirmation modal, two-decimal remaining-hours display, merged Wallet tab (balance + auto-renew + storage upgrade modal), removed client-side countdown floors (`remainingHoursFloor` / `postSessionFloorHours`), `machine-lifecycle.js` `isBillingAnchored` (no PROVISIONING regression once billing anchored).
+
+### Impact
+
+- **Billing UX:** remaining hours no longer snap back after stop; client-confirmed value within 3-min drift.
+- **Read path:** `machines/status` payload shrinks; single billing truth on `dashboard/me`; aligns with invariant v2-4 (projection != billing anchor).
+- **Provisioning:** no more "stuck provisioning" flicker during async start.
+- **Frozen invariants re-asserted:** Truth = `gpu_sessions`; one destroy orchestrator; destroy ordering; settlement RPC atomicity; projection-first read path; no Provider/Comfy HTTP on read. No frozen source file semantics changed (`runDestroyPipeline`, `destroy-pipeline-*.js`, `settlement.js`, `settlement-transaction-rpc.js`, `session-lifecycle.js`, `machines-drift.js`, `machines-drift-core.js` untouched). `machines-status-projection.js` response contract narrowed per ADR-004.
+- **Closed ADR set:** ADR-001, ADR-002, ADR-003, **ADR-004**. Next architecture change -> ADR-005+.
+
+### Author
+
+Cursor
+
+---
+
 ## 2026-07-04
 
 ### Version

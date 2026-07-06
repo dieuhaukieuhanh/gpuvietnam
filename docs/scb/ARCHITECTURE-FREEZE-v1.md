@@ -169,6 +169,8 @@ Dùng các điểm mở rộng sau thay vì tạo pipeline song song:
 | [ADR-001](./ADR-001-read-path-detect-only.md) | Read Path Detect Only | Accepted | Detect/Repair split; read path enqueue; rollback `SCB21_READ_PATH_DETECT_ONLY=0` |
 | [ADR-002](./ADR-002-provider-abstraction-layer.md) | Provider Abstraction Layer | Accepted | ProviderAdapter, Registry, Capabilities, Vast adapter, contract tests |
 
+> ADR-003 (Projection-first Read Path) and ADR-004 (SCB 4.0 Product-Layer Exceptions) were added after v1; see [ARCHITECTURE-FREEZE-v2.md](./ARCHITECTURE-FREEZE-v2.md) and [ADR-004](./ADR-004-scb4-product-exceptions.md).
+
 **Next ADR required for:**
 
 - Multi-provider scheduling / routing (Phase 4)

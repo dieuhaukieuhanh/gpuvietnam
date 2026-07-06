@@ -161,6 +161,7 @@ All v1 invariants (1–18) remain in [ARCHITECTURE-FREEZE-v1.md](./ARCHITECTURE-
 | ADR-001 | Read Path Detect Only |
 | ADR-002 | Provider Abstraction Layer |
 | **ADR-003** | **Projection-first Read Path** |
+| [ADR-004](./ADR-004-scb4-product-exceptions.md) | SCB 4.0 Product-Layer Exceptions |
 
 ---
 
