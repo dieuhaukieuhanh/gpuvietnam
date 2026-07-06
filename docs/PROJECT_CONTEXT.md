@@ -1,7 +1,8 @@
 # GPUVietnam — Hồ sơ tổng thể dự án
 
 > **Mục đích:** Tài liệu context cho dev / chat mới — mô tả **thực tế đã triển khai** và phân biệt rõ với kế hoạch tương lai.  
-> **Tiến độ chi tiết theo milestone:** [`docs/PROGRESS.md`](PROGRESS.md)
+> **Tiến độ chi tiết theo milestone:** [`docs/PROGRESS.md`](PROGRESS.md)  
+> **Kiến trúc SCB:** [`docs/scb/`](./scb/) — đóng băng tại tag `scb-4.0` (commit `bbed8da`); ADR-001..004 là closed set.
 
 **Thư mục dự án:** `D:\GPU + AI\Web\gpuvietnam\`  
 **Nguồn HTML gốc:** `D:\GPU + AI\Web\*.html` (chuyển đổi qua `npm run convert`)
@@ -45,7 +46,7 @@
 
 ---
 
-## 2. Trạng thái triển khai (2026-06)
+## 2. Trạng thái triển khai (2026-07)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
@@ -54,10 +55,13 @@
 | Ví Nạp Trước, mua gói, tái tục, trial 3h | ✅ |
 | GPUService + VastProvider + start/stop machine | ✅ |
 | Billing theo phiên (combo giờ + hourly ví) | ✅ |
+| **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
+| **Dashboard UX — optimistic start/stop, boot progress, stop confirm** | ✅ |
+| **Wallet tab merge (balance + auto-renew + storage upgrade modal)** | ✅ |
 | Docker ComfyUI image | ✅ local; ⏳ push Docker Hub sau build `--no-cache` |
 | Môi trường làm việc → workflow riêng | ✅ (boot + SSH runtime) |
-| Dashboard “Chạy workflow” trên GPU | ❌ stub |
-| Jupyter / Blender workstation | ❌ UI only — “Sắp ra mắt” |
+| Dashboard "Chạy workflow" trên GPU | ❌ stub |
+| Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
 | Trợ lý AI (Qwen/Ollama) | ❌ chưa triển khai |
 | VNPay/PayOS tự động | ❌ dùng chuyển khoản + admin duyệt |
 | RunPod / multi-provider | ❌ interface only |
@@ -198,16 +202,18 @@ Sidebar: `src/components/dashboard/DashboardShell.tsx`
 
 | Tab | Route | Trạng thái |
 |-----|-------|------------|
-| Trung tâm Điều khiển | `/dashboard` | ✅ Bật/tắt máy, ComfyUI link, đổi môi trường, billing live, thông báo |
+| Trung tâm Điều khiển | `/dashboard` | ✅ Bật/tắt máy (optimistic UI), boot progress bar, stop confirm modal, ComfyUI link, đổi môi trường, billing live (2 decimal), thông báo |
 | Gói của tôi | `/dashboard/goi-cua-toi` | ✅ Kho gói, activate/deactivate, tái tục |
-| Model & LoRA | `/dashboard/model-lora` | ⚠️ Upload/list OK; “Dùng ngay trên GPU” = stub |
-| Workflow | `/dashboard/workflows` | ⚠️ Upload/list OK; “Chạy workflow” = stub |
+| Model & LoRA | `/dashboard/model-lora` | ⚠️ Upload/list OK; "Dùng ngay trên GPU" = stub |
+| Workflow | `/dashboard/workflows` | ⚠️ Upload/list OK; "Chạy workflow" = stub |
 | Bộ nhớ | `/dashboard/storage` | ✅ SSD/backup plan, upgrade, R2 files |
 | Lịch sử | `/dashboard/lich-su` | ✅ Phiên GPU từ `gpu_sessions` |
-| Ví Nạp Trước | `/dashboard/wallet` | ✅ Nạp, lịch sử, admin duyệt |
-| Cài đặt | `/dashboard/cai-dat` | ✅ Profile, SĐT, mật khẩu, auto-renew, xóa backup |
+| Ví Nạp Trước | `/dashboard/wallet` | ✅ Số dư + nạp + auto-renew (Combo) + lịch sử 7gd mở rộng + modal nâng cấp bộ nhớ (gộp từ tab Cài đặt) |
+| Cài đặt | `/dashboard/cai-dat` | ✅ Profile, SĐT, mật khẩu, xóa backup (đã gỡ card Ví + card Gia hạn tự động + card Giao diện sang tab Ví / xóa) |
 
-**Trung tâm Điều khiển** (`DashboardOverview.tsx`): card máy chủ, gói & giờ, hiệu suất realtime (poll `/api/machines/status`), phiên gần đây, chuông thông báo + remote support approve/reject.
+**Trung tâm Điều khiển** (`DashboardOverview.tsx`): card máy chủ (3 thẻ: phiên/giờ/hiệu suất), gói & giờ (2 decimal `Xh/Yh`), boot progress bar trong lúc chờ ComfyUI traffic-ready, optimistic start/stop (UI chuyển `opening`/`stopping` ngay), stop confirmation modal, hiệu suất realtime (poll `/api/machines/status` — **infra-only**, không còn `billingView`), phiên gần đây, chuông thông báo + remote support approve/reject. Billing truth lấy từ `GET /api/dashboard/me` (`machineSessionView` + `billingView`) — xem [`docs/ui/DASHBOARD_VIEW_CONTRACT.md`](ui/DASHBOARD_VIEW_CONTRACT.md).
+
+**Ví Nạp Trước** (`DashboardWalletPage.tsx`): card gộp `💰 VÍ NẠP TRƯỚC` (số dư + nạp + hints + auto-renew toggle cho Combo + lịch sử 7 giao dịch mở rộng) + aside "Mua thêm dịch vụ" (Nạp giờ/Tái tục, Combo, Nâng cấp bộ nhớ — mở `StorageUpgradeModal` tại chỗ, không chuyển trang).
 
 ---
 
@@ -312,10 +318,18 @@ POST /api/user/start-machine
 ### Tắt máy
 
 ```
-POST /api/user/stop-machine
+POST /api/user/stop-machine  hoặc  POST /api/machines/destroy
 → backup (optional) → stopBilling() → destroyInstance Vast
+→ SCB 4.0 (ADR-004 D1): client gửi clientRemainingHours + clientSessionDurationSeconds
+   - server validate: non-negative usage, drift ≤ 0.05h vs billing_started_at, no-gain
+   - chạy destroy pipeline (runDestroyPipeline — frozen) như cũ
+   - nếu settlement OK + client value hợp lệ: CAS-guarded override subscriptions.hours_used
+     hoặc manual_hour_grants.hours_used (projection only, không đụng gpu_sessions SoT)
+   - syncUserPlanInventory() → user_plan_inventory
 → machine destroyed, subscription offline
 ```
+
+> Chi tiết kiến trúc đóng băng SCB 4.0: [`docs/scb/ADR-004-scb4-product-exceptions.md`](scb/ADR-004-scb4-product-exceptions.md)
 
 ### Đổi môi trường
 
@@ -530,6 +544,8 @@ Giá lưu trong `gpu_pricing_config` (admin chỉnh qua `/admin?tab=gpuPricing`)
 - Storage R2, backup logs, upgrade plan
 - Admin: duyệt đơn, KH, tặng giờ, pricing, machine toggle, support request
 - Docker ComfyUI local; image config cho Vast
+- **SCB 4.0 (tag `scb-4.0`):** server-authoritative remaining hours (ADR-004 D1 — client-validated projection override, CAS-guarded); `/api/machines/status` infra-only (D2); suppress drift reset trong async provisioning (D3)
+- **Dashboard UX:** optimistic start/stop, boot progress bar, stop confirmation modal, remaining hours 2 decimal (`Xh/Yh`), gộp Wallet tab (balance + auto-renew + storage upgrade modal)
 
 ### ⏳ Đang / chờ
 
@@ -555,11 +571,15 @@ Giá lưu trong `gpu_pricing_config` (admin chỉnh qua `/admin?tab=gpuPricing`)
 
 | Hạng mục | Chi tiết |
 |----------|----------|
+| **SCB 4.0 đóng băng** | Tag `scb-4.0` (commit `bbed8da`); ADR-004 ghi nhận 3 ngoại lệ product-layer (D1 client-validated hours override, D2 machines/status infra-only, D3 suppress drift reset). Closed ADR set: ADR-001..004. Xem [`docs/scb/SCB_CHANGELOG.md`](scb/SCB_CHANGELOG.md) |
+| **Server-authoritative remaining hours** | `POST /api/machines/destroy` nhận `clientRemainingHours`; server validate drift ≤ 0.05h + non-gain + CAS guard; ghi projection (`subscriptions.hours_used` / `manual_hour_grants.hours_used`), không đụng `gpu_sessions` SoT |
+| **Dashboard UX** | Optimistic start/stop (UI chuyển `opening`/`stopping` ngay), boot progress bar, stop confirmation modal, hiển thị giờ còn lại 2 decimal (`20.09h/110h`) |
+| **`/api/machines/status` infra-only** | Bỏ `billingView`/`remainingFields`/`sessionFields` khỏi response; billing truth lấy từ `/api/dashboard/me`. Xem [`docs/ui/DASHBOARD_VIEW_CONTRACT.md`](ui/DASHBOARD_VIEW_CONTRACT.md) |
+| **Wallet tab merge** | Gộp card Ví + card Gia hạn tự động + modal nâng cấp bộ nhớ vào `/dashboard/wallet`; gỡ card Giao diện sáng/tối khỏi `/dashboard/cai-dat` |
 | **Docker registry** | GHCR → Docker Hub `dieuhaukieuhanh/gpuvietnam-comfyui:v1` |
 | **Dockerfile** | PyTorch timeout/retry; pin frontend 1.45.20; git clone retry; pip fallback |
 | **Workstation** | `setup-workstation.sh` + 3 env ComfyUI với workflow riêng |
 | **GPUService** | Wire `start-machine`, billing fix, multi-offer Vast retry |
-| **Dashboard** | Fix stuck provisioning, billing over-deduct, duplicate timer, boot status |
 | **SSH** | `VAST_SSH_PRIVATE_KEY_PATH` cấu hình local (cần pub key trên Vast.ai) |
 
 ---
@@ -585,7 +605,9 @@ npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 **Chat mới — copy nhanh:**
 
 ```
-Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md.
+Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/scb/SCB-MAINTENANCE-MODE.md.
+SCB 4.0 đã đóng băng (tag scb-4.0, ADR-001..004 closed set). Không refactor frozen components.
+Product layer OK: UI/Dashboard/Wallet/Billing UX. Mọi thay đổi kiến trúc → ADR-005+ cần owner approval.
 Docker Hub dieuhaukieuhanh/gpuvietnam-comfyui:v1. GPUService + billing + env workflow ✅.
 SSH: VAST_SSH_PRIVATE_KEY_PATH. Tiếp: push image → test Vast E2E.
 ```
@@ -604,4 +626,4 @@ SSH: VAST_SSH_PRIVATE_KEY_PATH. Tiếp: push image → test Vast E2E.
 
 ---
 
-*Tài liệu cập nhật: 2026-06 — đối chiếu với codebase Next.js 14.2, 72 API routes, 32 SQL files, Docker CUDA 12.0.*
+*Tài liệu cập nhật: 2026-07 — đối chiếu với codebase Next.js 14.2, 72 API routes, 32 SQL files, Docker CUDA 12.0. SCB 4.0 đóng băng tại tag `scb-4.0` (ADR-001..004).*
