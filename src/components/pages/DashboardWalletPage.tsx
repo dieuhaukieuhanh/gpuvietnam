@@ -3,14 +3,40 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import DashboardShell from '@/components/dashboard/DashboardShell';
+import {
+  StorageUpgradeModal,
+  type PlanGb,
+  type PlanPrices,
+} from '@/components/dashboard/StoragePanel';
+import WalletDepositForm from '@/components/dashboard/WalletDepositForm';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
 import { routes } from '@/lib/routes';
 import { getPlanConfig } from '@/lib/gpu-pricing';
+import {
+  BACKUP_PLANS,
+  SSD_PLANS,
+  isPlanBlocked,
+} from '@/lib/storage-plans';
+import { getSupabaseBrowser } from '@/lib/supabase-browser';
+import { WALLET_RENEW_HINTS } from '@/lib/wallet-topup';
 import { styles as dashboardStyles } from '@/styles/pages/dashboard.styles';
 import { styles } from '@/styles/pages/dashboard-cai-dat.styles';
 
-const WALLET_SERVICE_CARDS = [
+type WalletServiceAction = {
+  label: string;
+  href?: string;
+  onClickKey?: 'storage-upgrade';
+  primary?: boolean;
+};
+
+const WALLET_SERVICE_CARDS: ReadonlyArray<{
+  key: string;
+  icon: string;
+  title: string;
+  desc: string;
+  actions: WalletServiceAction[];
+}> = [
   {
     key: 'hours-renew',
     icon: '⏱️',
@@ -33,9 +59,9 @@ const WALLET_SERVICE_CARDS = [
     icon: '💾',
     title: 'Nâng cấp bộ nhớ',
     desc: 'Tăng dung lượng SSD và Backup lưu trữ trên nền tảng.',
-    actions: [{ label: 'Nâng cấp', href: routes.dashboardStorage, primary: true }],
+    actions: [{ label: 'Nâng cấp', onClickKey: 'storage-upgrade', primary: true }],
   },
-] as const;
+];
 
 type WalletTransaction = {
   id: string;
@@ -45,6 +71,12 @@ type WalletTransaction = {
   description: string | null;
   status: string;
   created_at: string;
+};
+
+type AutoRenewSettings = {
+  autoRenewEnabled: boolean;
+  autoRenewMethod: 'wallet' | 'transfer';
+  autoRenewThreshold: number;
 };
 
 function formatVnd(amount: number) {
@@ -74,10 +106,19 @@ function grantPlanLabel(plan: string): string {
   return `${config.name} (${config.gpu})`;
 }
 
+async function authFetch(path: string, token: string, options: RequestInit = {}) {
+  const headers = new Headers(options.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  if (options.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return fetch(path, { ...options, headers });
+}
+
 export default function DashboardWalletPage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading, session } = useAuth();
-  const { user, loading, error } = useDashboard();
+  const { user, billingType, loading, error } = useDashboard();
   const [balance, setBalance] = useState(0);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [hourGrants, setHourGrants] = useState<{
@@ -96,6 +137,26 @@ export default function DashboardWalletPage() {
   } | null>(null);
   const [txLoading, setTxLoading] = useState(true);
   const [walletError, setWalletError] = useState('');
+  const [showTopupModal, setShowTopupModal] = useState(false);
+  const [depositStep, setDepositStep] = useState<'amount' | 'transfer'>('amount');
+  const [autoRenew, setAutoRenew] = useState<AutoRenewSettings>({
+    autoRenewEnabled: false,
+    autoRenewMethod: 'wallet',
+    autoRenewThreshold: 10,
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+
+  const [showStorageUpgrade, setShowStorageUpgrade] = useState(false);
+  const [ssdPlanGb, setSsdPlanGb] = useState<PlanGb>(20);
+  const [backupPlanGb, setBackupPlanGb] = useState<PlanGb>(20);
+  const [selectedSsdGb, setSelectedSsdGb] = useState<PlanGb>(20);
+  const [selectedBackupGb, setSelectedBackupGb] = useState<PlanGb>(20);
+  const [ssdPrices, setSsdPrices] = useState<PlanPrices>({ ...SSD_PLANS });
+  const [backupPrices, setBackupPrices] = useState<PlanPrices>({ ...BACKUP_PLANS });
+  const [ssdUsed, setSsdUsed] = useState(0);
+  const [backupUsed, setBackupUsed] = useState(0);
+  const [confirmingStorageUpgrade, setConfirmingStorageUpgrade] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -107,13 +168,14 @@ export default function DashboardWalletPage() {
     setTxLoading(true);
     setWalletError('');
     try {
-      const [walletRes, grantsRes] = await Promise.all([
+      const [walletRes, grantsRes, settingsRes] = await Promise.all([
         fetch('/api/user/wallet?limit=100', {
           headers: { Authorization: `Bearer ${session.access_token}` },
         }),
         fetch('/api/user/my-grants', {
           headers: { Authorization: `Bearer ${session.access_token}` },
         }),
+        authFetch('/api/user/settings', session.access_token),
       ]);
       const data = await walletRes.json();
       if (walletRes.ok) {
@@ -126,10 +188,175 @@ export default function DashboardWalletPage() {
       if (grantsRes.ok) {
         setHourGrants(grantsData.summary ?? null);
       }
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        const s = settingsData.settings;
+        if (s) {
+          setAutoRenew({
+            autoRenewEnabled: Boolean(s.autoRenewEnabled),
+            autoRenewMethod: s.autoRenewMethod === 'transfer' ? 'transfer' : 'wallet',
+            autoRenewThreshold: Number(s.autoRenewThreshold ?? 10),
+          });
+        }
+      }
     } finally {
       setTxLoading(false);
     }
   }, [session?.access_token]);
+
+  const saveAutoRenew = useCallback(
+    async (patch: Partial<AutoRenewSettings>) => {
+      if (!session?.access_token) return;
+      setSavingSettings(true);
+      try {
+        const res = await authFetch('/api/user/settings', session.access_token, {
+          method: 'PUT',
+          body: JSON.stringify(patch),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Cập nhật thất bại.');
+        const s = data.settings;
+        if (s) {
+          setAutoRenew({
+            autoRenewEnabled: Boolean(s.autoRenewEnabled),
+            autoRenewMethod: s.autoRenewMethod === 'transfer' ? 'transfer' : 'wallet',
+            autoRenewThreshold: Number(s.autoRenewThreshold ?? 10),
+          });
+        }
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Cập nhật thất bại.');
+      } finally {
+        setSavingSettings(false);
+      }
+    },
+    [session?.access_token],
+  );
+
+  const loadStoragePricing = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/storage-pricing');
+      const data = await res.json();
+      if (!res.ok) return;
+      const active = ((data.items ?? []) as Array<{
+        storage_type: string;
+        size_gb: number;
+        price_monthly: number;
+        is_active: boolean;
+      }>).filter((row) => row.is_active);
+      const nextSsd: PlanPrices = {};
+      const nextBackup: PlanPrices = {};
+      for (const row of active) {
+        const price = Number(row.price_monthly);
+        if (row.storage_type === 'ssd') nextSsd[row.size_gb] = price;
+        else if (row.storage_type === 'backup') nextBackup[row.size_gb] = price;
+      }
+      if (Object.keys(nextSsd).length > 0) setSsdPrices(nextSsd);
+      if (Object.keys(nextBackup).length > 0) setBackupPrices(nextBackup);
+    } catch {
+      /* giữ fallback hardcode */
+    }
+  }, []);
+
+  const loadStoragePlan = useCallback(async () => {
+    if (!session?.access_token) return;
+    try {
+      const res = await fetch('/api/storage/plan', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      setSsdPlanGb(data.ssdPlanGb as PlanGb);
+      setBackupPlanGb(data.backupPlanGb as PlanGb);
+    } catch {
+      /* giữ mặc định */
+    }
+  }, [session?.access_token]);
+
+  const loadStorageUsage = useCallback(async () => {
+    if (!session?.access_token) return;
+    try {
+      const supabase = getSupabaseBrowser();
+      const { data, error } = await supabase
+        .from('storage_files')
+        .select('storage_type, file_size_bytes')
+        .eq('user_id', session.user.id);
+      if (error) return;
+      let ssd = 0;
+      let backup = 0;
+      for (const row of data ?? []) {
+        const size = Number(row.file_size_bytes ?? 0);
+        if (row.storage_type === 'ssd') ssd += size;
+        else if (row.storage_type === 'backup') backup += size;
+      }
+      setSsdUsed(ssd);
+      setBackupUsed(backup);
+    } catch {
+      /* bỏ qua */
+    }
+  }, [session?.access_token, session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.access_token) return;
+    void loadStoragePlan();
+    void loadStoragePricing();
+    void loadStorageUsage();
+  }, [session?.access_token, loadStoragePlan, loadStoragePricing, loadStorageUsage]);
+
+  const openStorageUpgrade = useCallback(() => {
+    void loadStoragePricing();
+    void loadStorageUsage();
+    setSelectedSsdGb(ssdPlanGb);
+    setSelectedBackupGb(backupPlanGb);
+    setShowStorageUpgrade(true);
+  }, [ssdPlanGb, backupPlanGb, loadStoragePricing, loadStorageUsage]);
+
+  const handleConfirmStorageUpgrade = useCallback(async () => {
+    const blocked =
+      isPlanBlocked(ssdUsed, selectedSsdGb) || isPlanBlocked(backupUsed, selectedBackupGb);
+    const noChange = selectedSsdGb === ssdPlanGb && selectedBackupGb === backupPlanGb;
+    if (blocked || noChange) return;
+
+    if (!session?.access_token) {
+      alert('Phiên đăng nhập hết hạn.');
+      return;
+    }
+    setConfirmingStorageUpgrade(true);
+    try {
+      const res = await fetch('/api/storage/upgrade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ ssdGb: selectedSsdGb, backupGb: selectedBackupGb }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Cập nhật gói bộ nhớ thất bại.');
+
+      if (data.redirectUrl) {
+        setShowStorageUpgrade(false);
+        router.push(data.redirectUrl);
+        return;
+      }
+
+      setSsdPlanGb(data.ssdPlanGb as PlanGb);
+      setBackupPlanGb(data.backupPlanGb as PlanGb);
+      setShowStorageUpgrade(false);
+      void loadStoragePlan();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Cập nhật gói bộ nhớ thất bại.');
+    } finally {
+      setConfirmingStorageUpgrade(false);
+    }
+  }, [ssdUsed, backupUsed, selectedSsdGb, selectedBackupGb, ssdPlanGb, backupPlanGb, session?.access_token, router, loadStoragePlan]);
+
+  const handleCleanUpStorage = useCallback(
+    (_target: 'ssd' | 'backup') => {
+      setShowStorageUpgrade(false);
+      router.push(routes.dashboardStorage);
+    },
+    [router],
+  );
 
   useEffect(() => {
     loadWallet();
@@ -224,13 +451,79 @@ export default function DashboardWalletPage() {
 
         <div className="wallet-page-layout">
           <div className="wallet-page-main">
-            <div className="card">
-              <div className="wallet-card" style={{ marginBottom: 0 }}>
+            <div className="card wallet-main-card">
+              <div className="card-header">💰 VÍ NẠP TRƯỚC</div>
+              <div className="wallet-card">
                 <div className="wallet-info">
                   <div className="wallet-balance">{formatVnd(balance)}</div>
-                  <div className="wallet-hint">Số dư khả dụng</div>
+                  <div className="wallet-hint">Số dư tự động dùng để gia hạn gói khi đến hạn.</div>
                 </div>
+                <button type="button" className="btn btn-primary" onClick={() => setShowTopupModal(true)}>
+                  ⚡ Nạp thêm
+                </button>
               </div>
+              <div className="wallet-topup-hints">
+                {WALLET_RENEW_HINTS.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+
+              {billingType === 'combo' && (
+                <>
+                  <div className="auto-renew-divider" />
+                  <div className="auto-renew-section">
+                    <div className="auto-renew-section-top">
+                      <div className="auto-renew-section-header">🔄 GIA HẠN TỰ ĐỘNG</div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={autoRenew.autoRenewEnabled}
+                          disabled={savingSettings}
+                          onChange={(e) =>
+                            saveAutoRenew({
+                              autoRenewEnabled: e.target.checked,
+                              autoRenewMethod: 'wallet',
+                            })
+                          }
+                        />
+                        <span className="toggle-slider" />
+                      </label>
+                    </div>
+                    <p className="auto-renew-section-desc">
+                      Tự động tái tục gói Combo khi giờ còn lại dưới ngưỡng
+                    </p>
+
+                    <div className="settings-auto-renew-threshold">
+                      <label htmlFor="autoRenewThreshold">
+                        Còn{' '}
+                        <select
+                          id="autoRenewThreshold"
+                          value={autoRenew.autoRenewThreshold ?? 10}
+                          disabled={savingSettings}
+                          onChange={(e) =>
+                            saveAutoRenew({ autoRenewThreshold: Number(e.target.value) })
+                          }
+                        >
+                          {[5, 10, 15, 20].map((h) => (
+                            <option key={h} value={h}>
+                              {h}h
+                            </option>
+                          ))}
+                        </select>{' '}
+                        thì tự động gia hạn
+                      </label>
+                    </div>
+
+                    <div className="auto-renew-note">
+                      <strong>📌 Lưu ý:</strong>
+                      <ul>
+                        <li>Chỉ áp dụng cho gói Combo 1 &amp; Combo 2</li>
+                        <li>Hệ thống chỉ gia hạn khi số dư Ví ≥ số tiền cần để tái tục</li>
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="card">
@@ -242,22 +535,35 @@ export default function DashboardWalletPage() {
               ) : transactions.length === 0 ? (
                 <p className="settings-loading">Chưa có giao dịch nào.</p>
               ) : (
-                <ul className="wallet-history-list wallet-history-full">
-                  {transactions.map((tx) => (
-                    <li key={tx.id}>
-                      <div>
-                        <strong>{tx.description ?? tx.type}</strong>
-                        <span className="text-muted" style={{ display: 'block', fontSize: 11 }}>
-                          {formatDate(tx.created_at)} · {tx.status}
+                <>
+                  <ul className="wallet-history-list wallet-history-full">
+                    {(showAllTransactions ? transactions : transactions.slice(0, 7)).map((tx) => (
+                      <li key={tx.id}>
+                        <div>
+                          <strong>{tx.description ?? tx.type}</strong>
+                          <span className="text-muted" style={{ display: 'block', fontSize: 11 }}>
+                            {formatDate(tx.created_at)} · {tx.status}
+                          </span>
+                        </div>
+                        <span className={tx.type === 'topup' ? 'text-green' : ''}>
+                          {tx.type === 'payment' ? '-' : '+'}
+                          {formatVnd(Number(tx.amount))}
                         </span>
-                      </div>
-                      <span className={tx.type === 'topup' ? 'text-green' : ''}>
-                        {tx.type === 'payment' ? '-' : '+'}
-                        {formatVnd(Number(tx.amount))}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                  {transactions.length > 7 && (
+                    <button
+                      type="button"
+                      className="wallet-history-toggle"
+                      onClick={() => setShowAllTransactions((v) => !v)}
+                    >
+                      {showAllTransactions
+                        ? `▲ Thu gọn`
+                        : `▼ Xem thêm ${transactions.length - 7} giao dịch`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -275,20 +581,99 @@ export default function DashboardWalletPage() {
                   </div>
                 </div>
                 <div className="wallet-service-card-actions">
-                  {card.actions.map((action) => (
-                    <Link
-                      key={action.href}
-                      href={action.href}
-                      className={`wallet-service-card-link${'primary' in action && action.primary ? ' primary' : ''}`}
-                    >
-                      {action.label}
-                    </Link>
-                  ))}
+                  {card.actions.map((action) => {
+                    const cls = `wallet-service-card-link${action.primary ? ' primary' : ''}`;
+                    if (action.onClickKey === 'storage-upgrade') {
+                      return (
+                        <button
+                          key={action.onClickKey}
+                          type="button"
+                          className={cls}
+                          onClick={openStorageUpgrade}
+                        >
+                          {action.label}
+                        </button>
+                      );
+                    }
+                    return (
+                      <Link key={action.href} href={action.href ?? '#'} className={cls}>
+                        {action.label}
+                      </Link>
+                    );
+                  })}
                 </div>
               </article>
             ))}
           </aside>
         </div>
+
+        <div
+          className={`modal-overlay${showTopupModal ? ' active' : ''}`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setDepositStep('amount');
+              setShowTopupModal(false);
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className={`modal wallet-deposit-modal${depositStep === 'transfer' ? ' is-deposit-transfer' : ''}`}
+            role="dialog"
+            aria-modal="true"
+          >
+            <button
+              type="button"
+              className="close-btn"
+              onClick={() => {
+                setDepositStep('amount');
+                setShowTopupModal(false);
+              }}
+            >
+              ✕
+            </button>
+            {depositStep === 'amount' ? (
+              <>
+                <h3>💰 Nạp vào Ví</h3>
+                <p className="modal-subtitle">
+                  Nhập số tiền chuyển khoản — Admin duyệt trong ~15 phút.
+                </p>
+              </>
+            ) : (
+              <h3 className="wallet-deposit-modal-transfer-title">💰 Thông tin chuyển khoản</h3>
+            )}
+            {session?.access_token ? (
+              <WalletDepositForm
+                accessToken={session.access_token}
+                onStepChange={setDepositStep}
+                onClose={() => {
+                  setDepositStep('amount');
+                  setShowTopupModal(false);
+                }}
+                onSubmitted={() => void loadWallet()}
+                onError={(message) => alert(message)}
+              />
+            ) : null}
+          </div>
+        </div>
+
+        <StorageUpgradeModal
+          open={showStorageUpgrade}
+          ssdPlanGb={ssdPlanGb}
+          backupPlanGb={backupPlanGb}
+          selectedSsdGb={selectedSsdGb}
+          selectedBackupGb={selectedBackupGb}
+          ssdUsed={ssdUsed}
+          backupUsed={backupUsed}
+          ssdPrices={ssdPrices}
+          backupPrices={backupPrices}
+          confirming={confirmingStorageUpgrade}
+          onClose={() => !confirmingStorageUpgrade && setShowStorageUpgrade(false)}
+          onSelectSsd={setSelectedSsdGb}
+          onSelectBackup={setSelectedBackupGb}
+          onConfirm={() => void handleConfirmStorageUpgrade()}
+          onCleanUp={handleCleanUpStorage}
+        />
       </DashboardShell>
     </>
   );

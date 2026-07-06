@@ -12,7 +12,7 @@ import { styles } from '@/styles/pages/dashboard-cai-dat.styles';
 export default function DashboardCaiDatPage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useAuth();
-  const { user, billingType, loading, error, refresh } = useDashboard();
+  const { user, loading, error, refresh } = useDashboard();
 
   useEffect(() => {
     if (authLoading) return;
@@ -30,7 +30,6 @@ export default function DashboardCaiDatPage() {
       <DashboardShell user={user} activeTab="settings" title="Cài đặt" mainClassName="main-content settings-main">
         <DashboardSettingsPage
           user={user}
-          billingType={billingType}
           loading={loading}
           error={error}
           onRefresh={refresh}

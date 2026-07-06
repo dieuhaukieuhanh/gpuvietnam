@@ -77,6 +77,11 @@ function ctxNow(context) {
   return context.now ?? new Date().toISOString();
 }
 
+/** Billing anchor set — lifecycle must not regress to opening when projection TTL expires. */
+function isBillingAnchored(machine) {
+  return Boolean(machine?.billing_started_at);
+}
+
 export function isMachineRowBooting(machine) {
   if (!machine) return false;
   return BOOTING_STATUSES.has(String(machine.status ?? 'creating'));
@@ -89,7 +94,12 @@ export function deriveLifecycleStatus(subscription, machine, context = {}) {
   if (machineStatus === 'error') return MACHINE_LIFECYCLE_STATUS.ERROR;
   if (serverStatus === 'online') {
     if (machine && machineStatus !== 'running') return MACHINE_LIFECYCLE_STATUS.PROVISIONING;
-    if (machine && machineStatus === 'running' && !isProjectionTrafficReady(machine)) {
+    if (
+      machine &&
+      machineStatus === 'running' &&
+      !isProjectionTrafficReady(machine) &&
+      !isBillingAnchored(machine)
+    ) {
       return MACHINE_LIFECYCLE_STATUS.PROVISIONING;
     }
     return MACHINE_LIFECYCLE_STATUS.RUNNING;

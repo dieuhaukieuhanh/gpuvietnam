@@ -132,6 +132,37 @@ describe('deriveLifecycleStatus', () => {
     );
   });
 
+  it('stays running when billing anchored even if projection verify is stale', () => {
+    const staleVerifiedAt = new Date(Date.now() - 120_000).toISOString();
+    assert.equal(
+      deriveLifecycleStatus(
+        sub({ server_status: 'online' }),
+        machineRow({
+          status: 'running',
+          billing_started_at: '2026-07-03T10:00:05.000Z',
+          projection_verified_at: staleVerifiedAt,
+          projection_message: 'ComfyUI sẵn sàng',
+        }),
+      ),
+      MACHINE_LIFECYCLE_STATUS.RUNNING,
+    );
+    assert.equal(
+      deriveSessionPhase(
+        snapshotToMachineRecord(
+          sub({ server_status: 'online' }),
+          machineRow({
+            status: 'running',
+            billing_started_at: '2026-07-03T10:00:05.000Z',
+            projection_verified_at: staleVerifiedAt,
+            projection_message: 'ComfyUI sẵn sàng',
+          }),
+          'user-1',
+        ),
+      ),
+      'running',
+    );
+  });
+
   it('provisioning until subscription online even if machine row running', () => {
     assert.equal(
       deriveLifecycleStatus(sub({ server_status: 'provisioning' }), machineRow({ status: 'running' })),

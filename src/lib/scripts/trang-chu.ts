@@ -61,7 +61,10 @@ export function initTrangChu(): void {
             grid.innerHTML = faqs.map(faq => \`<div class="faq-item" onclick="this.classList.toggle('open')"><h4>\${faq.q} <span style="font-size: 18px;">▾</span></h4><p>\${faq.a}</p></div>\`).join('');
         }
 
-        document.getElementById('packageModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+        const packageModal = document.getElementById('packageModal');
+        if (packageModal) {
+          packageModal.addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+        }
         document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 
         // ─── Init ─────────────────────────────────────────────────────────

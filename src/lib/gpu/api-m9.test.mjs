@@ -95,13 +95,13 @@ describe('M9 API legacy caller removal', () => {
     });
   }
 
-  it('status API delegates to projection handler with billing fields', () => {
+  it('status API delegates to projection handler for infra + auto-stop', () => {
     const source = readApiSrc('machines/status.js');
     const projection = readFileSync(path.join(__dirname, '../machines-status-projection.js'), 'utf8');
     assert.ok(source.includes('handleMachinesStatusProjectionFirst'));
     assert.ok(projection.includes('readRemainingForMachine'));
-    assert.ok(projection.includes('mapSessionStatusFields'));
-    assert.ok(projection.includes('buildBillingSessionView'));
+    assert.ok(projection.includes('checkAutoStop'));
+    assert.ok(!projection.includes('buildBillingSessionView'));
   });
 
   it('destroy APIs use mapDestroyApiResponse', () => {
@@ -149,12 +149,13 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(source.includes('billingView'));
   });
 
-  it('status API exposes billingView projection', () => {
+  it('status API is infra-only (no billing session view in response)', () => {
     const source = readApiSrc('machines/status.js');
     const projection = readFileSync(path.join(__dirname, '../machines-status-projection.js'), 'utf8');
     assert.ok(source.includes('handleMachinesStatusProjectionFirst'));
-    assert.ok(projection.includes('billingView'));
-    assert.ok(projection.includes('buildBillingSessionView'));
+    assert.ok(!projection.includes('buildBillingSessionView'));
+    assert.ok(!projection.includes('loadActiveSessionRow'));
+    assert.ok(!projection.includes('sessionDurationSeconds'));
   });
 });
 

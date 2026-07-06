@@ -292,6 +292,7 @@ export default async function handler(req, res) {
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
     const machineSessionView = resolveMachineSessionView(machineRecord, {
       envName: syncedSubscription?.env_name,
+      billingStarted: Boolean(activeMachine?.billing_started_at),
     });
 
     const billingView = await resolveBillingSessionView(supabaseAdmin, user.id, {
@@ -300,6 +301,7 @@ export default async function handler(req, res) {
       walletBalance: Number(profile?.wallet_balance ?? 0),
       gpuService: getGpuService(),
       billablePlans: billablePlans,
+      subscriptionPackageHours: syncedSubscription?.hours_total ?? null,
       tryOpenBillableSession: Boolean(
         activeMachine &&
           String(activeMachine.status ?? '') === 'running' &&

@@ -1,21 +1,7 @@
-import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import type { BillingType, DashboardUser } from '@/hooks/useDashboard';
-import { routes } from '@/lib/routes';
+import type { DashboardUser } from '@/hooks/useDashboard';
 import { getSupabaseBrowser } from '@/lib/supabase-browser';
-import WalletDepositForm from '@/components/dashboard/WalletDepositForm';
-import { WALLET_RENEW_HINTS } from '@/lib/wallet-topup';
-
-type WalletTransaction = {
-  id: string;
-  type: string;
-  amount: number;
-  bonus_amount: number;
-  description: string | null;
-  status: string;
-  created_at: string;
-};
 
 type NotificationSettings = {
   zaloEnabled: boolean;
@@ -25,39 +11,6 @@ type NotificationSettings = {
   eventBackupFull: boolean;
   eventPaymentSuccess: boolean;
 };
-
-type UserSettings = {
-  autoRenewEnabled: boolean;
-  autoRenewMethod: 'wallet' | 'transfer';
-  autoRenewThreshold: number;
-  autoTopupEnabled: boolean;
-  autoTopupThreshold: number;
-  autoTopupAmount: number;
-  autoTopupWarnEnabled: boolean;
-  theme: 'light' | 'dark';
-  autoRenewPreview: {
-    hoursRemaining: number | null;
-    withinThreshold: boolean;
-    renewPrice: number;
-    walletBalance: number;
-    canAutoRenew: boolean;
-    badge: 'ready' | 'low_balance' | null;
-  } | null;
-};
-
-function formatVnd(amount: number) {
-  return `${new Intl.NumberFormat('vi-VN').format(amount)}đ`;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function maskPhone(phone: string | null) {
   if (!phone) return '—';
@@ -104,7 +57,6 @@ function ToggleRow({ label, desc, checked, onChange, disabled }: ToggleRowProps)
 
 type DashboardSettingsPageProps = {
   user: DashboardUser | null;
-  billingType: BillingType;
   loading: boolean;
   error: string;
   onRefresh: () => void;
@@ -112,7 +64,6 @@ type DashboardSettingsPageProps = {
 
 export default function DashboardSettingsPage({
   user,
-  billingType,
   loading,
   error,
   onRefresh,
@@ -122,22 +73,6 @@ export default function DashboardSettingsPage({
   const [fullName, setFullName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
 
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [showTopupModal, setShowTopupModal] = useState(false);
-  const [depositStep, setDepositStep] = useState<'amount' | 'transfer'>('amount');
-
-  const [userSettings, setUserSettings] = useState<UserSettings>({
-    autoRenewEnabled: false,
-    autoRenewMethod: 'wallet',
-    autoRenewThreshold: 10,
-    autoTopupEnabled: false,
-    autoTopupThreshold: 50_000,
-    autoTopupAmount: 200_000,
-    autoTopupWarnEnabled: true,
-    theme: 'dark',
-    autoRenewPreview: null,
-  });
   const [notifications, setNotifications] = useState<NotificationSettings>({
     zaloEnabled: true,
     emailEnabled: true,
@@ -174,23 +109,16 @@ export default function DashboardSettingsPage({
     if (!token) return;
 
     try {
-      const [walletRes, notifRes, settingsRes] = await Promise.all([
-        authFetch('/api/user/wallet', token),
+      const [notifRes, settingsRes] = await Promise.all([
         authFetch('/api/user/notifications', token),
         authFetch('/api/user/settings', token),
       ]);
 
-      const walletData = await walletRes.json();
       const notifData = await notifRes.json();
       const settingsData = await settingsRes.json();
 
-      if (walletRes.ok) {
-        setWalletBalance(walletData.balance ?? 0);
-        setTransactions(walletData.transactions ?? []);
-      }
       if (notifRes.ok) setNotifications(notifData.settings);
       if (settingsRes.ok) {
-        setUserSettings(settingsData.settings);
         applyTheme(settingsData.settings.theme);
       }
     } catch {
@@ -209,7 +137,6 @@ export default function DashboardSettingsPage({
     if (user) {
       setFullName(user.fullName ?? user.displayName ?? '');
       setDisplayPhone(user.phone);
-      setWalletBalance(user.walletBalance ?? 0);
     }
   }, [user]);
 
@@ -245,25 +172,6 @@ export default function DashboardSettingsPage({
       alert(err instanceof Error ? err.message : 'Lưu thất bại.');
     } finally {
       setSavingProfile(false);
-    }
-  };
-
-  const saveUserSettings = async (patch: Partial<UserSettings>) => {
-    if (!token) return;
-    setSavingSettings(true);
-    try {
-      const res = await authFetch('/api/user/settings', token, {
-        method: 'PUT',
-        body: JSON.stringify(patch),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Cập nhật thất bại.');
-      setUserSettings(data.settings);
-      if (patch.theme) applyTheme(patch.theme);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Cập nhật thất bại.');
-    } finally {
-      setSavingSettings(false);
     }
   };
 
@@ -461,162 +369,6 @@ export default function DashboardSettingsPage({
           </button>
         </div>
 
-        {/* Ví nạp trước */}
-        <div className="card settings-card">
-          <div className="card-header">💰 VÍ NẠP TRƯỚC</div>
-          <div className="wallet-card">
-            <div className="wallet-info">
-              <div className="wallet-balance">{formatVnd(walletBalance)}</div>
-              <div className="wallet-hint">Số dư tự động dùng để gia hạn gói khi đến hạn.</div>
-            </div>
-            <button type="button" className="btn btn-primary" onClick={() => setShowTopupModal(true)}>
-              ⚡ Nạp thêm
-            </button>
-          </div>
-          <div className="wallet-topup-hints">
-            {WALLET_RENEW_HINTS.map((line) => (
-              <p key={line}>{line}</p>
-            ))}
-          </div>
-
-          {transactions.length > 0 && (
-            <div className="wallet-history">
-              <div className="wallet-history-head">
-                <span>Giao dịch gần đây</span>
-                <Link href={routes.dashboardWallet} className="settings-link">
-                  Xem tất cả →
-                </Link>
-              </div>
-              <ul className="wallet-history-list">
-                {transactions.map((tx) => (
-                  <li key={tx.id}>
-                    <span>{tx.description ?? tx.type}</span>
-                    <span className={tx.type === 'topup' ? 'text-green' : ''}>
-                      {tx.type === 'payment' ? '-' : '+'}
-                      {formatVnd(Number(tx.amount))}
-                    </span>
-                    <span className="text-muted">{formatDate(tx.created_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        {/* Gia hạn tự động (Combo) / Auto Top-up (Hourly) */}
-        {billingType === 'combo' && (() => {
-          const renewMethod = userSettings.autoRenewMethod || 'wallet';
-          const renewPrice = userSettings.autoRenewPreview?.renewPrice ?? 0;
-          const balanceForRenew =
-            userSettings.autoRenewPreview?.walletBalance ?? walletBalance;
-          const walletSufficient = renewPrice <= 0 || balanceForRenew >= renewPrice;
-          const threshold = userSettings.autoRenewThreshold ?? 10;
-          const thresholdOptions = [5, 10, 15, 20];
-
-          return (
-            <div className="card settings-card auto-renew-card">
-              <div className="card-header">🔄 Gia hạn tự động</div>
-
-              <ToggleRow
-                label="Bật gia hạn tự động"
-                desc="Tự động tái tục gói Combo khi giờ còn lại dưới ngưỡng"
-                checked={userSettings.autoRenewEnabled}
-                disabled={savingSettings}
-                onChange={(v) => saveUserSettings({ autoRenewEnabled: v })}
-              />
-
-              <div className="settings-auto-renew-threshold">
-                <label htmlFor="autoRenewThreshold">
-                  Còn{' '}
-                  <select
-                    id="autoRenewThreshold"
-                    value={threshold}
-                    disabled={savingSettings}
-                    onChange={(e) =>
-                      saveUserSettings({ autoRenewThreshold: Number(e.target.value) })
-                    }
-                  >
-                    {thresholdOptions.map((h) => (
-                      <option key={h} value={h}>
-                        {h}h
-                      </option>
-                    ))}
-                  </select>{' '}
-                  thì tự động gia hạn
-                </label>
-              </div>
-
-              <div className="auto-renew-options">
-                <label
-                  className={`auto-renew-radio${renewMethod === 'wallet' ? ' is-selected' : ''}`}
-                >
-                  <input
-                    type="radio"
-                    name="autoRenewMethod"
-                    checked={renewMethod === 'wallet'}
-                    disabled={savingSettings}
-                    onChange={() =>
-                      saveUserSettings({ autoRenewMethod: 'wallet', autoRenewEnabled: true })
-                    }
-                  />
-                  <div className="auto-renew-radio-body">
-                    <div className="auto-renew-radio-title">
-                      Ví nạp trước
-                      {renewMethod === 'wallet' && (
-                        <span
-                          className={`auto-renew-wallet-inline${walletSufficient ? ' ok' : ' low'}`}
-                        >
-                          {' '}
-                          · Số dư: {formatVnd(balanceForRenew)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </label>
-
-                <label
-                  className={`auto-renew-radio${renewMethod === 'transfer' ? ' is-selected' : ''}`}
-                >
-                  <input
-                    type="radio"
-                    name="autoRenewMethod"
-                    checked={renewMethod === 'transfer'}
-                    disabled={savingSettings}
-                    onChange={() =>
-                      saveUserSettings({ autoRenewMethod: 'transfer', autoRenewEnabled: true })
-                    }
-                  />
-                  <div className="auto-renew-radio-body">
-                    <div className="auto-renew-radio-title">Chuyển khoản thủ công</div>
-                    {renewMethod === 'transfer' && (
-                      <p className="auto-renew-transfer-hint">
-                        Bạn sẽ nhận thông báo khi sắp hết giờ
-                      </p>
-                    )}
-                  </div>
-                </label>
-              </div>
-
-              <p className="auto-renew-bonus-line">
-                🎁 Bật gia hạn tự động: tặng thêm 3% giờ mỗi lần tái tục
-              </p>
-              <p className="auto-renew-bonus-line hint">
-                💡 Tái tục chủ động khi còn &gt;10h được tặng 5% giờ
-              </p>
-
-              <div className="auto-renew-divider" />
-
-              <div className="auto-renew-note">
-                <strong>📌 Lưu ý:</strong>
-                <ul>
-                  <li>Chỉ áp dụng cho gói Combo 1 &amp; Combo 2</li>
-                  <li>Hệ thống chỉ gia hạn khi số dư Ví ≥ số tiền cần để tái tục</li>
-                </ul>
-              </div>
-            </div>
-          );
-        })()}
-
         {/* Thông báo */}
         <div className="card settings-card">
           <div className="card-header">🔔 THÔNG BÁO</div>
@@ -661,36 +413,6 @@ export default function DashboardSettingsPage({
           />
         </div>
 
-        {/* Giao diện */}
-        <div className="card settings-card">
-          <div className="card-header">🎨 GIAO DIỆN</div>
-          <div className="form-group">
-            <label className="form-label">Chủ đề</label>
-            <div className="radio-group">
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="theme"
-                  checked={userSettings.theme === 'light'}
-                  disabled={savingSettings}
-                  onChange={() => saveUserSettings({ theme: 'light' })}
-                />
-                ☀️ Sáng
-              </label>
-              <label className="radio-option">
-                <input
-                  type="radio"
-                  name="theme"
-                  checked={userSettings.theme === 'dark'}
-                  disabled={savingSettings}
-                  onChange={() => saveUserSettings({ theme: 'dark' })}
-                />
-                🌙 Tối
-              </label>
-            </div>
-          </div>
-        </div>
-
         {/* Bảo mật */}
         <div className="card settings-card settings-card-warn">
           <div className="card-header">🔒 BẢO MẬT</div>
@@ -718,57 +440,6 @@ export default function DashboardSettingsPage({
           <button type="button" className="btn btn-danger" onClick={() => setShowDeleteModal(true)}>
             🗑️ Xóa tất cả Backup
           </button>
-        </div>
-      </div>
-
-      {/* Modal nạp ví */}
-      <div
-        className={`modal-overlay${showTopupModal ? ' active' : ''}`}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) {
-            setDepositStep('amount');
-            setShowTopupModal(false);
-          }
-        }}
-        role="presentation"
-      >
-        <div
-          className={`modal wallet-deposit-modal${depositStep === 'transfer' ? ' is-deposit-transfer' : ''}`}
-          role="dialog"
-          aria-modal="true"
-        >
-          <button
-            type="button"
-            className="close-btn"
-            onClick={() => {
-              setDepositStep('amount');
-              setShowTopupModal(false);
-            }}
-          >
-            ✕
-          </button>
-          {depositStep === 'amount' ? (
-            <>
-              <h3>💰 Nạp vào Ví</h3>
-              <p className="modal-subtitle">
-                Nhập số tiền chuyển khoản — Admin duyệt trong ~15 phút.
-              </p>
-            </>
-          ) : (
-            <h3 className="wallet-deposit-modal-transfer-title">💰 Thông tin chuyển khoản</h3>
-          )}
-          {token ? (
-            <WalletDepositForm
-              accessToken={token}
-              onStepChange={setDepositStep}
-              onClose={() => {
-                setDepositStep('amount');
-                setShowTopupModal(false);
-              }}
-              onSubmitted={() => void loadExtras()}
-              onError={(message) => alert(message)}
-            />
-          ) : null}
         </div>
       </div>
 

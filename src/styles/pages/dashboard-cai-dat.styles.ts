@@ -697,6 +697,47 @@ export const styles = `:root {
             border-top: 1px solid var(--border);
             margin: 16px 0 14px;
         }
+        .auto-renew-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .auto-renew-section-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .auto-renew-section-header {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+        .auto-renew-section-desc {
+            margin: 0;
+            font-size: 12.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .wallet-history-toggle {
+            margin-top: 12px;
+            width: 100%;
+            padding: 8px 12px;
+            background: transparent;
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            font-size: 12.5px;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .wallet-history-toggle:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
         .auto-renew-note {
             background: var(--bg-secondary);
             border: 1px solid var(--border);

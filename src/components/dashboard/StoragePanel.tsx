@@ -10,7 +10,7 @@ import {
   planBytes,
 } from '@/lib/storage-plans';
 
-type PlanPrices = Record<number, number>;
+export type PlanPrices = Record<number, number>;
 
 export type StorageFileRecord = {
   id: string;
@@ -35,7 +35,7 @@ type StoragePanelProps = {
   } | null;
 };
 
-type PlanGb = 10 | 20 | 50 | 100;
+export type PlanGb = 10 | 20 | 50 | 100;
 
 type AutoBackupLog = {
   id: number;
@@ -92,7 +92,7 @@ function formatGiB(bytes: number) {
   return `${(bytes / 1024 ** 3).toFixed(1)}GB`;
 }
 
-function formatVndShort(amount: number) {
+export function formatVndShort(amount: number) {
   if (amount === 0) return '0đ';
   const formatted = new Intl.NumberFormat('vi-VN').format(Math.abs(amount));
   if (amount > 0) return `+${formatted}đ`;
@@ -228,7 +228,7 @@ type StorageUpgradeModalProps = {
   onCleanUp: (target: 'ssd' | 'backup') => void;
 };
 
-function StorageUpgradeModal({
+export function StorageUpgradeModal({
   open,
   ssdPlanGb,
   backupPlanGb,

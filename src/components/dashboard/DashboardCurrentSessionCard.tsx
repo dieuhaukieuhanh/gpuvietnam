@@ -1,34 +1,17 @@
-type SessionPhase =
-  | 'loading'
-  | 'idle'
-  | 'opening'
-  | 'running'
-  | 'stopping'
-  | 'disconnected'
-  | 'error';
-
-function formatRuntimeClock(totalSeconds: number): string {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatIdleMinutes(totalMinutes: number): string {
-  const minutes = Math.max(0, Math.floor(totalMinutes));
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m > 0 ? `${h}h${m}p` : `${h}h`;
-  }
-  return `${minutes} phút`;
-}
+import {
+  formatDisplayHours,
+  formatRuntimeClock,
+  formatSessionElapsedLabel,
+  type SessionPhase,
+  type TimerDisplayMode,
+} from '@/lib/dashboard-session-display';
 
 type DashboardCurrentSessionCardProps = {
   phase: SessionPhase;
+  timerMode: TimerDisplayMode;
   sessionDurationSec: number;
   remainingHours: number | null;
+  billingStarted: boolean;
   idleMinutes: number | null;
   idleWarningActive: boolean;
   minutesUntilAutoStop: number | null;
@@ -38,10 +21,29 @@ type DashboardCurrentSessionCardProps = {
   statusMessage?: string | null;
 };
 
+function timerClassName(mode: TimerDisplayMode): string {
+  if (mode === 'live') return 'dashboard-session-timer dashboard-session-timer--live';
+  if (mode === 'paused') return 'dashboard-session-timer dashboard-session-timer--paused';
+  if (mode === 'muted') return 'dashboard-session-timer dashboard-session-timer--muted';
+  return 'dashboard-session-timer dashboard-session-timer--hidden';
+}
+
+function timerLabel(mode: TimerDisplayMode, phase: SessionPhase, billingStarted: boolean): string | null {
+  if (phase === 'opening') return 'Chưa bắt đầu tính giờ';
+  if (phase === 'running' && !billingStarted) return 'Chờ xác nhận billing từ server';
+  if (mode === 'live') return null;
+  if (mode === 'paused' && phase === 'disconnected') return 'Thời gian phiên (tạm dừng hiển thị)';
+  if (mode === 'paused' && phase === 'stopping') return 'Phiên đang đóng · timer dừng';
+  if (mode === 'muted') return 'Timer chưa chạy';
+  return null;
+}
+
 export default function DashboardCurrentSessionCard({
   phase,
+  timerMode,
   sessionDurationSec,
   remainingHours,
+  billingStarted,
   idleMinutes,
   idleWarningActive,
   minutesUntilAutoStop,
@@ -50,8 +52,23 @@ export default function DashboardCurrentSessionCard({
   lowCreditWarning,
   statusMessage,
 }: DashboardCurrentSessionCardProps) {
-  const showSessionStats =
-    phase === 'running' || phase === 'disconnected' || phase === 'error';
+  const showStats =
+    phase === 'running' ||
+    ((phase === 'disconnected' || phase === 'stopping') && billingStarted);
+
+  const showTimer = timerMode !== 'hidden';
+  const timerSeconds = timerMode === 'muted' && phase !== 'stopping' ? 0 : sessionDurationSec;
+  const timerCaption = timerLabel(timerMode, phase, billingStarted);
+
+  const primaryAlert =
+    phase === 'running' && (outOfHours || lowCreditWarning)
+      ? { type: 'danger' as const, text: '⏰ Máy sẽ tắt ngay khi hết giờ' }
+      : phase === 'running' && idleWarningActive && minutesUntilAutoStop != null
+        ? {
+            type: 'warning' as const,
+            text: `⚠️ Máy sẽ tự tắt sau ${minutesUntilAutoStop} phút nếu không có hoạt động`,
+          }
+        : null;
 
   return (
     <div className="card dashboard-session-card">
@@ -67,85 +84,69 @@ export default function DashboardCurrentSessionCard({
           <p className="dashboard-session-muted">⏳ Đang đồng bộ trạng thái phiên...</p>
         )}
 
-        {phase === 'opening' && (
-          <p className="dashboard-session-muted">⏳ Đang khởi tạo phiên làm việc...</p>
+        {phase === 'running' && !billingStarted && (
+          <p className="dashboard-session-callout dashboard-session-callout--warn">
+            Comfy đang hoàn tất — chưa bắt đầu tính giờ
+          </p>
         )}
 
         {phase === 'stopping' && (
-          <p className="dashboard-session-muted">⏳ Đang đóng phiên làm việc...</p>
+          <p className="dashboard-session-callout">Thanh toán phiên đang được xử lý...</p>
         )}
 
         {phase === 'disconnected' && (
-          <p className="dashboard-session-muted">
+          <p className="dashboard-session-callout dashboard-session-callout--warn">
             ⚠️ {statusMessage ?? 'Mất kết nối tạm thời — đang thử kết nối lại...'}
           </p>
         )}
 
         {phase === 'error' && (
-          <p className="dashboard-session-muted">
+          <p className="dashboard-session-callout dashboard-session-callout--error">
             ❌ {statusMessage ?? 'Phiên gặp lỗi — vui lòng thử đóng phiên hoặc mở lại.'}
           </p>
         )}
 
-        {showSessionStats && (
-          <>
-            <div className="dashboard-session-timer" aria-live="polite">
-              {formatRuntimeClock(sessionDurationSec)}
+        {showTimer && (
+          <div className="dashboard-session-timer-block">
+            <div className={timerClassName(timerMode)} aria-live="polite">
+              {formatRuntimeClock(timerSeconds)}
             </div>
-            <div className="dashboard-session-timer-label">
-              {phase === 'running' ? 'Thời gian phiên' : 'Thời gian phiên (tạm dừng)'}
-            </div>
+            {timerCaption && (
+              <div className="dashboard-session-timer-label">{timerCaption}</div>
+            )}
+          </div>
+        )}
 
-            <div className="dashboard-session-stats">
-              {remainingHours != null ? (
-                <div className="dashboard-session-stat">
-                  Còn{' '}
-                  <strong style={{ color: 'var(--accent-blue)' }}>
-                    {remainingHours.toFixed(2)}h
-                  </strong>{' '}
-                  sử dụng
-                </div>
-              ) : (
-                <div className="dashboard-session-stat dashboard-session-muted">Đang tải giờ...</div>
-              )}
+        {showStats && (
+          <div className="dashboard-session-stats">
+            {remainingHours != null ? (
+              <div className="dashboard-session-stat">
+                Còn{' '}
+                <strong className="dashboard-session-stat-strong">
+                  {formatDisplayHours(remainingHours)}
+                </strong>{' '}
+                sử dụng
+              </div>
+            ) : (
+              <div className="dashboard-session-stat dashboard-session-muted">Đang tải giờ...</div>
+            )}
 
-              {idleMinutes != null && idleMinutes > 0 && (
-                <div className="dashboard-session-stat">
-                  🕐 Không sử dụng: {formatIdleMinutes(idleMinutes)}
-                </div>
-              )}
+            {billingStarted && sessionDurationSec > 0 && (
+              <div className="dashboard-session-stat">
+                Phiên này ~{formatSessionElapsedLabel(sessionDurationSec)}
+              </div>
+            )}
 
-              {outputCount != null && (
-                <div className="dashboard-session-stat">🖼️ {outputCount} ảnh đã tạo</div>
-              )}
-            </div>
-          </>
+            {outputCount != null && outputCount > 0 && (
+              <div className="dashboard-session-stat">🖼️ {outputCount} ảnh đã tạo</div>
+            )}
+          </div>
         )}
       </div>
 
-      {phase === 'running' && idleWarningActive && minutesUntilAutoStop != null && (
-        <div
-          className="alert-card warning"
-          style={{ display: 'flex', marginTop: 12, padding: '10px 12px', fontSize: 12 }}
-        >
-          <span className="alert-icon">⚠️</span>
-          <div className="alert-content">
-            <div className="alert-desc">
-              Máy sẽ tự tắt sau {minutesUntilAutoStop} phút nếu không có hoạt động
-            </div>
-          </div>
-        </div>
-      )}
-
-      {phase === 'running' && (outOfHours || lowCreditWarning) && (
-        <div
-          className="alert-card danger"
-          style={{ display: 'flex', marginTop: 12, padding: '10px 12px', fontSize: 12 }}
-        >
-          <span className="alert-icon">⏰</span>
-          <div className="alert-content">
-            <div className="alert-desc">Máy sẽ tắt ngay khi hết giờ</div>
-          </div>
+      {primaryAlert && (
+        <div className={`dashboard-session-alert dashboard-session-alert--${primaryAlert.type}`}>
+          {primaryAlert.text}
         </div>
       )}
     </div>

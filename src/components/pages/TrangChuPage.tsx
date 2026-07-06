@@ -7,6 +7,7 @@ import HomePricingSection from '@/components/pricing/HomePricingSection';
 import WorkstationCard from '@/components/workstations/WorkstationCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActivePlanGate } from '@/hooks/useActivePlanGate';
+import { usePageStyles } from '@/hooks/usePageStyles';
 import { useTrialWorkstationModal } from '@/hooks/useTrialWorkstationModal';
 import { routes } from '@/lib/routes';
 import { initTrangChu } from '@/lib/scripts/trang-chu';
@@ -54,6 +55,8 @@ export default function TrangChuPage() {
   const { openTrialModal, trialModal } = useTrialWorkstationModal();
   const planCheckDone = planGateLoaded;
   const planCtaState = session && hasActivePlan ? 'active' : 'trial';
+
+  usePageStyles(styles, 'trang-chu');
 
   useEffect(() => {
     initTrangChu();
@@ -126,8 +129,8 @@ export default function TrangChuPage() {
     <>
       <Head>
         <title>GPUVietnam – GPU Mạnh Cho AI Art | ComfyUI Cài Sẵn</title>
-        <style dangerouslySetInnerHTML={{ __html: styles }} />
       </Head>
+      <style data-page="trang-chu" dangerouslySetInnerHTML={{ __html: styles }} />
       <>
         <PublicHeader onTrialClick={openTrialModal} />
         

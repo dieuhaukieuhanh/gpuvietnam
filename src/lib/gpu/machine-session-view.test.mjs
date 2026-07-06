@@ -91,10 +91,24 @@ describe('resolveMachineSessionView', () => {
     assert.equal(view.actions.canCancel, false);
   });
 
-  it('canOpenComfy requires comfyUrl and running machine status', () => {
+  it('canOpenComfy when running (comfyUrl comes from infra poll on client)', () => {
     const record = snapshotToMachineRecord(sub({ server_status: 'online' }), trafficReadyMachine(), 'user-1');
-    assert.equal(resolveMachineSessionView(record).actions.canOpenComfy, false);
-    assert.equal(resolveMachineSessionView(record, { comfyUrl: 'https://x' }).actions.canOpenComfy, true);
+    assert.equal(resolveMachineSessionView(record).actions.canOpenComfy, true);
+    const opening = snapshotToMachineRecord(sub({ server_status: 'online' }), machineRow({ status: 'running' }), 'user-1');
+    assert.equal(resolveMachineSessionView(opening).actions.canOpenComfy, false);
+  });
+
+  it('canStop when billing started even during opening phase', () => {
+    const openingBillable = snapshotToMachineRecord(
+      sub({ server_status: 'online' }),
+      machineRow({ status: 'running' }),
+      'user-1',
+    );
+    assert.equal(resolveMachineSessionView(openingBillable).actions.canStop, false);
+    assert.equal(
+      resolveMachineSessionView(openingBillable, { billingStarted: true }).actions.canStop,
+      true,
+    );
   });
 
   it('re-exports snapshotToMachineRecord from module', () => {

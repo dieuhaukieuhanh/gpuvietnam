@@ -88,12 +88,16 @@ export function isStaleProvisioningBoot(
 }
 
 /**
+ * Async start-machine sets provisioning before Vast rent inserts a machine row.
+ * Read-path drift must not reset that window (see machine-lifecycle detectDriftRepair).
+ *
  * @param {Record<string, unknown>|null|undefined} machine
  * @param {string|undefined|null} subscriptionServerStatus
  */
 export function shouldResetIdleProvisioningSubscription(machine, subscriptionServerStatus) {
-  if (machine) return false;
-  return subscriptionServerStatus === 'provisioning';
+  void machine;
+  void subscriptionServerStatus;
+  return false;
 }
 
 /**

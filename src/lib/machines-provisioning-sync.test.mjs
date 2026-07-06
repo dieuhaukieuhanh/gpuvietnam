@@ -17,8 +17,8 @@ const RECENT = new Date(NOW - 2 * 60 * 1000).toISOString();
 const OLD = new Date(NOW - 20 * 60 * 1000).toISOString();
 
 describe('machines provisioning sync (boot race)', () => {
-  it('resets idle provisioning when no machine row exists', () => {
-    assert.equal(shouldResetIdleProvisioningSubscription(null, 'provisioning'), true);
+  it('keeps fresh provisioning without machine row (async Vast rent)', () => {
+    assert.equal(shouldResetIdleProvisioningSubscription(null, 'provisioning'), false);
     assert.equal(shouldResetIdleProvisioningSubscription(null, 'offline'), false);
   });
 

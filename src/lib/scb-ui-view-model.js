@@ -87,3 +87,79 @@ export function computeDisplayRemainingHours(anchor, currentElapsedSeconds) {
   const deltaSeconds = Math.max(0, elapsed - anchor.sessionDurationSeconds);
   return Math.max(0, anchor.remainingHours - deltaSeconds / 3600);
 }
+
+const REMAINING_REGRESSION_EPSILON_HOURS = 0.02;
+
+/** @param {Record<string, unknown> | null | undefined} view */
+export function pickBillingRemainingHours(view) {
+  if (view?.planCardRemainingHours != null) return Number(view.planCardRemainingHours);
+  if (view?.remainingHours != null) return Number(view.remainingHours);
+  return null;
+}
+
+/**
+ * Reject stale entitlement reads right after session end (settlement lag).
+ * @param {Record<string, unknown> | null | undefined} prev
+ * @param {Record<string, unknown> | null | undefined} next
+ */
+/**
+ * Reject stale lifecycle regression while boot/shutdown is in flight on the client.
+ * @param {Record<string, unknown> | null | undefined} prev
+ * @param {Record<string, unknown> | null | undefined} next
+ * @param {{ openingGuardUntilMs?: number; nowMs?: number }} [options]
+ */
+export function mergeMachineSessionViewOnPoll(prev, next, options = {}) {
+  if (!next) return next;
+  if (!prev) return next;
+
+  const prevPhase = String(prev.phase ?? 'idle');
+  const nextPhase = String(next.phase ?? 'idle');
+  const nowMs = Number(options.nowMs ?? Date.now());
+  const openingGuardUntilMs = Number(options.openingGuardUntilMs ?? 0);
+
+  if (prevPhase === 'opening' && nextPhase === 'idle') {
+    if (openingGuardUntilMs > nowMs || prev.clientOptimistic === true) {
+      return prev;
+    }
+  }
+
+  if (prevPhase === 'running' && nextPhase === 'opening') {
+    return prev;
+  }
+
+  if (prevPhase === 'stopping' && (nextPhase === 'opening' || nextPhase === 'running')) {
+    return prev;
+  }
+
+  return next;
+}
+
+export function mergeBillingSessionViewOnPoll(prev, next) {
+  if (!next) return next;
+  if (!prev) return next;
+
+  const prevRemaining = pickBillingRemainingHours(prev);
+  const nextRemaining = pickBillingRemainingHours(next);
+  if (prevRemaining == null || nextRemaining == null) return next;
+
+  const hadBillableSession =
+    Boolean(prev.billingStarted) ||
+    Number(prev.sessionDurationSeconds ?? 0) > 0 ||
+    prev.phase === 'running' ||
+    prev.phase === 'stopping' ||
+    prev.phase === 'disconnected' ||
+    prev.phase === 'opening';
+
+  if (
+    hadBillableSession &&
+    nextRemaining > prevRemaining + REMAINING_REGRESSION_EPSILON_HOURS
+  ) {
+    return {
+      ...next,
+      planCardRemainingHours: prev.planCardRemainingHours ?? prevRemaining,
+      remainingHours: prev.remainingHours ?? prevRemaining,
+    };
+  }
+
+  return next;
+}

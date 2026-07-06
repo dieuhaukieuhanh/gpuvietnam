@@ -3,5 +3,4 @@ export { WALLET_DEPOSIT_QUICK_AMOUNTS as WALLET_TOPUP_AMOUNTS, WALLET_DEPOSIT_QU
 
 export const WALLET_RENEW_HINTS = [
   '💡 Bật gia hạn tự động để được tặng thêm 3% giờ mỗi lần tái tục',
-  '💡 Tái tục chủ động khi còn >10h để được tặng 5% giờ',
 ];

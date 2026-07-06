@@ -4,7 +4,14 @@ import type { BillingMode } from '@/lib/checkout-plans';
 import { BILLING_LABELS } from '@/lib/checkout-plans';
 import RenewPlanModal from '@/components/dashboard/RenewPlanModal';
 import { useGpuPricingConfig } from '@/hooks/useGpuPricingConfig';
+import type { BillingSessionView, DashboardSubscription } from '@/hooks/useDashboard';
 import { notifyUserPlansChanged } from '@/hooks/useUserPlans';
+import { mergeBillingSessionViewOnPoll } from '@/lib/scb-ui-view-model';
+import { formatDisplayHours } from '@/lib/dashboard-session-display';
+import {
+  resolvePlanCardHours,
+  resolvePlanCardValidUntil,
+} from '@/lib/plan-card-display';
 import {
   formatCurrency,
   getPlanConfig,
@@ -48,12 +55,42 @@ type PlansResponse = {
 
 type MeResponse = {
   hasUsedTrial?: boolean;
+  subscription?: DashboardSubscription | null;
+  billingView?: BillingSessionView | null;
   error?: string;
 };
 
 type MyPlanPanelProps = {
   accessToken: string | undefined;
+  subscription?: DashboardSubscription | null;
+  billingView?: BillingSessionView | null;
+  onBillingRefresh?: (options?: { silent?: boolean }) => void | Promise<void>;
 };
+
+type PlanHoursOverlay = {
+  hoursRemaining: number;
+  hoursTotal: number;
+  validUntil: string | null;
+};
+
+function resolveActivePlanHoursOverlay(
+  plan: InventoryPlan,
+  subscription: DashboardSubscription | null | undefined,
+  billingView: BillingSessionView | null | undefined,
+): PlanHoursOverlay {
+  const { hoursRemaining, hoursTotal } = resolvePlanCardHours({
+    inventoryHoursRemaining: plan.hoursRemaining,
+    inventoryHoursTotal: plan.hoursTotal,
+    subscriptionPackageHours: subscription?.hours_total ?? null,
+    billingView,
+  });
+
+  return {
+    hoursRemaining,
+    hoursTotal,
+    validUntil: resolvePlanCardValidUntil(plan.validUntil, subscription?.expires_at ?? null),
+  };
+}
 
 type RenewTarget = {
   planName: string;
@@ -130,6 +167,7 @@ function NoPlanView({ hasUsedTrial }: { hasUsedTrial: boolean }) {
 
 type PlanCardProps = {
   plan: InventoryPlan;
+  hoursOverlay?: PlanHoursOverlay;
   otherUsableCount: number;
   actionBusy: boolean;
   renewPrice: number;
@@ -140,6 +178,7 @@ type PlanCardProps = {
 
 function PlanCard({
   plan,
+  hoursOverlay,
   otherUsableCount,
   actionBusy,
   renewPrice,
@@ -150,6 +189,9 @@ function PlanCard({
   const billing = resolveBilling(plan);
   const billingLabel = plan.billing ? BILLING_LABELS[billing] ?? plan.billing : plan.planTypeLabel;
   const isActiveUsing = plan.isActive && plan.usable;
+  const hoursRemaining = hoursOverlay?.hoursRemaining ?? plan.hoursRemaining;
+  const hoursTotal = hoursOverlay?.hoursTotal ?? plan.hoursTotal;
+  const validUntil = hoursOverlay?.validUntil ?? plan.validUntil;
 
   return (
     <div
@@ -165,10 +207,10 @@ function PlanCard({
             </span>
           </div>
           <div className="my-plan-inventory-meta">
-            {plan.hoursRemaining}h còn
-            {plan.hoursTotal > 0 ? ` / ${plan.hoursTotal}h` : ''}
+            Còn lại {formatDisplayHours(hoursRemaining)}
+            {hoursTotal > 0 ? ` / ${formatDisplayHours(hoursTotal)}` : ''}
             {' · '}
-            Hạn: {formatDate(plan.validUntil)}
+            Hạn: {formatDate(validUntil)}
           </div>
         </div>
         <span
@@ -228,10 +270,17 @@ function PlanCard({
   );
 }
 
-export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
+export default function MyPlanPanel({
+  accessToken,
+  subscription: subscriptionProp,
+  billingView: billingViewProp,
+  onBillingRefresh,
+}: MyPlanPanelProps) {
   useGpuPricingConfig();
   const [plansData, setPlansData] = useState<PlansResponse | null>(null);
   const [hasUsedTrial, setHasUsedTrial] = useState(false);
+  const [meSubscription, setMeSubscription] = useState<DashboardSubscription | null>(null);
+  const [meBillingView, setMeBillingView] = useState<BillingSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
@@ -268,6 +317,10 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
 
       setPlansData(plansResult);
       setHasUsedTrial(Boolean(meResult.hasUsedTrial));
+      setMeSubscription(meResult.subscription ?? null);
+      setMeBillingView((prev) =>
+        mergeBillingSessionViewOnPoll(prev, meResult.billingView ?? null) as BillingSessionView | null,
+      );
     } catch {
       setError('Không tải được gói của bạn.');
     } finally {
@@ -278,6 +331,17 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
   useEffect(() => {
     void loadPlans();
   }, [loadPlans]);
+
+  useEffect(() => {
+    if (!accessToken) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadPlans();
+      void onBillingRefresh?.({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [accessToken, loadPlans, onBillingRefresh]);
 
   useEffect(() => {
     if (!toast) return;
@@ -304,6 +368,7 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
       }
       setToast('Đã chọn gói đang dùng.');
       notifyUserPlansChanged();
+      await onBillingRefresh?.({ silent: true });
       await loadPlans();
     } catch {
       setToast('Lỗi mạng khi đổi gói.');
@@ -331,6 +396,7 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
       }
       setToast('Đã dừng dùng gói này.');
       notifyUserPlansChanged();
+      await onBillingRefresh?.({ silent: true });
       await loadPlans();
     } catch {
       setToast('Lỗi mạng.');
@@ -343,6 +409,12 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
   const usablePlans = plansData?.usable ?? [];
   const inactivePlans = plansData?.inactive ?? [];
   const otherUsableCount = Math.max(0, usablePlans.length - 1);
+  const subscription = subscriptionProp ?? meSubscription;
+  const billingView = billingViewProp ?? meBillingView;
+  const activePlanHoursOverlay =
+    activePlan != null
+      ? resolveActivePlanHoursOverlay(activePlan, subscription, billingView)
+      : undefined;
 
   const getRenewPrice = useCallback(
     (plan: InventoryPlan) => {
@@ -387,6 +459,7 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
           <div className="my-plan-active-label">Gói đang dùng</div>
           <PlanCard
             plan={activePlan}
+            hoursOverlay={activePlanHoursOverlay}
             otherUsableCount={otherUsableCount}
             actionBusy={actionBusy}
             renewPrice={getRenewPrice(activePlan)}
@@ -449,6 +522,7 @@ export default function MyPlanPanel({ accessToken }: MyPlanPanelProps) {
           onSuccess={() => {
             setToast('Tái tục thành công!');
             notifyUserPlansChanged();
+            void onBillingRefresh?.({ silent: true });
             void loadPlans();
           }}
           onPendingSubmitted={() => {

@@ -27,7 +27,7 @@ function isMachineRecord(value) {
 
 /**
  * @param {import('./machine-lifecycle.js').MachineRecord|null} record
- * @param {{ envName?: string|null; disconnected?: boolean; providerPhase?: string; comfyUrl?: string|null }} options
+ * @param {{ envName?: string|null; disconnected?: boolean; providerPhase?: string; comfyUrl?: string|null; billingStarted?: boolean; message?: string|null }} options
  */
 function buildMachineSessionView(record, options = {}) {
   if (!record) {
@@ -74,11 +74,10 @@ function buildMachineSessionView(record, options = {}) {
     canStop:
       phase === 'running' ||
       phase === 'disconnected' ||
-      (phase === 'error' && Boolean(machine)),
+      (phase === 'error' && Boolean(machine)) ||
+      (Boolean(options.billingStarted) && Boolean(machine)),
     canOpenComfy:
-      phase === 'running' &&
-      Boolean(options.comfyUrl) &&
-      machine?.status === 'running',
+      phase === 'running' && machine?.status === 'running',
   };
 
   return {
@@ -179,6 +178,7 @@ export function resolveMachineSessionView(recordOrSubscription, machineOrOptions
     disconnected: options.disconnected,
     providerPhase: options.providerPhase,
     comfyUrl: options.comfyUrl,
+    billingStarted: options.billingStarted,
     message: options.message,
   };
   return buildMachineSessionView(record, viewOptions);

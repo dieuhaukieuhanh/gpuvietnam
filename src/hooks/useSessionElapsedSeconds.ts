@@ -29,8 +29,14 @@ export function useSessionElapsedSeconds(
       { sessionDurationSeconds, billingStartedAt, verifiedRunningAt },
       Date.now(),
     );
-    anchorRef.current = anchor;
-    setElapsed(computeSessionElapsedSeconds(anchor));
+    const nextElapsed = computeSessionElapsedSeconds(anchor);
+    setElapsed((prev) => {
+      if (prev > 0 && nextElapsed < prev) {
+        return prev;
+      }
+      anchorRef.current = anchor;
+      return nextElapsed;
+    });
   }, [active, sessionDurationSeconds, billingStartedAt, verifiedRunningAt]);
 
   useEffect(() => {

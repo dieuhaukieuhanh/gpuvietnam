@@ -8,8 +8,9 @@ import {
   type MachineMetricsSnapshot,
 } from '@/lib/scb-dashboard-machine-view';
 
-const STATUS_POLL_BOOT_MS = 10_000;
+const STATUS_POLL_BOOT_MS = 6_000;
 const STATUS_POLL_RUNNING_MS = 30_000;
+const STATUS_POLL_RUNNING_WAIT_COMFY_MS = 4_000;
 const STATUS_POLL_STOPPING_MS = 3_000;
 
 type InfraPollResponse = {
@@ -27,7 +28,7 @@ type InfraPollResponse = {
   idleWarningActive?: boolean;
 };
 
-function shouldPollInfra(phase: MachineSessionPhase | null | undefined): boolean {
+export function shouldPollInfra(phase: MachineSessionPhase | null | undefined): boolean {
   return (
     phase === 'opening' ||
     phase === 'running' ||
@@ -36,9 +37,14 @@ function shouldPollInfra(phase: MachineSessionPhase | null | undefined): boolean
   );
 }
 
-function pollIntervalMs(phase: MachineSessionPhase | null | undefined): number {
+export function pollIntervalMs(
+  phase: MachineSessionPhase | null | undefined,
+  hasComfyUrl = false,
+): number {
   if (phase === 'stopping') return STATUS_POLL_STOPPING_MS;
-  if (phase === 'running') return STATUS_POLL_RUNNING_MS;
+  if (phase === 'running') {
+    return hasComfyUrl ? STATUS_POLL_RUNNING_MS : STATUS_POLL_RUNNING_WAIT_COMFY_MS;
+  }
   return STATUS_POLL_BOOT_MS;
 }
 
@@ -70,12 +76,12 @@ export function useMachineInfraMetrics({
     }
   }, [phase]);
 
-  const refreshMetrics = useCallback(async () => {
+  const refreshMetrics = useCallback(async (): Promise<MachineMetricsSnapshot | null> => {
     const token = accessToken;
     const isInitial = isInitialFetchRef.current;
     if (!token) {
       setMetricsLoaded(true);
-      return;
+      return null;
     }
 
     try {
@@ -86,7 +92,7 @@ export function useMachineInfraMetrics({
 
       if (!res.ok) {
         if (data.error) onPollError?.(data.error);
-        return;
+        return null;
       }
 
       const offlineMessage = data.message ?? '';
@@ -97,10 +103,14 @@ export function useMachineInfraMetrics({
         if (!isInitial) {
           await onAutostopDetected?.(offlineMessage);
         }
-        return;
+        return createEmptyMachineMetrics();
       }
 
-      setMetrics((prev) => mergeMetricsFromStatusPoll(prev, data));
+      let nextMetrics: MachineMetricsSnapshot | null = null;
+      setMetrics((prev) => {
+        nextMetrics = mergeMetricsFromStatusPoll(prev, data);
+        return nextMetrics;
+      });
 
       if (
         (data.status === 'offline' || isAutostopOfflineMessage(offlineMessage)) &&
@@ -109,8 +119,9 @@ export function useMachineInfraMetrics({
       ) {
         await onAutostopDetected?.();
       }
+      return nextMetrics;
     } catch {
-      // Keep last infra snapshot; lifecycle comes from dashboard/me.
+      return null;
     } finally {
       isInitialFetchRef.current = false;
       setMetricsLoaded(true);
@@ -122,16 +133,8 @@ export function useMachineInfraMetrics({
       setMetrics(createEmptyMachineMetrics());
       setMetricsLoaded(false);
       isInitialFetchRef.current = true;
-      return;
     }
-    void refreshMetrics();
-  }, [accessToken, refreshMetrics]);
-
-  useEffect(() => {
-    if (!accessToken || !shouldPollInfra(phase)) return undefined;
-    const id = window.setInterval(() => void refreshMetrics(), pollIntervalMs(phase));
-    return () => window.clearInterval(id);
-  }, [accessToken, phase, refreshMetrics]);
+  }, [accessToken]);
 
   return {
     metrics,

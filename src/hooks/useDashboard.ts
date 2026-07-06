@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  mergeBillingSessionViewOnPoll,
+  mergeMachineSessionViewOnPoll,
+} from '@/lib/scb-ui-view-model';
 
 export type DashboardSubscription = {
   id: string;
@@ -59,6 +63,7 @@ export type MachineSessionView = {
   };
   message: string | null;
   domainEvent: string | null;
+  clientOptimistic?: boolean;
 };
 
 export type BillingSessionView = {
@@ -91,6 +96,26 @@ export function useDashboard() {
   const [machineSessionView, setMachineSessionView] = useState<MachineSessionView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const refreshAbortRef = useRef<AbortController | null>(null);
+  const silentRefreshInFlightRef = useRef(false);
+  const silentRefreshQueuedRef = useRef(false);
+  const openingGuardUntilRef = useRef(0);
+
+  const markOpeningBootGuard = useCallback(() => {
+    openingGuardUntilRef.current = Date.now() + 45_000;
+  }, []);
+
+  const clearOpeningBootGuard = useCallback(() => {
+    openingGuardUntilRef.current = 0;
+  }, []);
+
+  const mergeBillingView = useCallback(
+    (prev: BillingSessionView | null, next: BillingSessionView | null) => {
+      return mergeBillingSessionViewOnPoll(prev, next) as BillingSessionView | null;
+    },
+    [],
+  );
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
     if (!session?.access_token) {
@@ -99,8 +124,24 @@ export function useDashboard() {
       setBillingType(null);
       setBillingView(null);
       setMachineSessionView(null);
+      setDataLoaded(true);
       setLoading(false);
       return;
+    }
+
+    if (options?.silent) {
+      if (silentRefreshInFlightRef.current) {
+        silentRefreshQueuedRef.current = true;
+        return;
+      }
+      silentRefreshInFlightRef.current = true;
+    } else {
+      refreshAbortRef.current?.abort();
+    }
+
+    const controller = new AbortController();
+    if (!options?.silent) {
+      refreshAbortRef.current = controller;
     }
 
     if (!options?.silent) {
@@ -111,38 +152,94 @@ export function useDashboard() {
     try {
       const response = await fetch('/api/dashboard/me', {
         headers: { Authorization: `Bearer ${session.access_token}` },
+        signal: controller.signal,
       });
       const result = await response.json();
+      if (!options?.silent && refreshAbortRef.current !== controller) return;
       if (!response.ok) {
-        setError(result.error ?? 'Không tải được dữ liệu.');
+        if (!options?.silent) {
+          setError(result.error ?? 'Không tải được dữ liệu.');
+        }
         return;
       }
       setUser(result.user);
       setSubscription(result.subscription);
       setBillingType(result.billingType ?? null);
-      setBillingView(result.billingView ?? null);
-      setMachineSessionView(result.machineSessionView ?? null);
-    } catch {
-      setError('Không tải được dữ liệu dashboard.');
+      setBillingView((prev) => mergeBillingView(prev, result.billingView ?? null));
+      setMachineSessionView((prev) => {
+        const merged = mergeMachineSessionViewOnPoll(
+          prev,
+          result.machineSessionView ?? null,
+          {
+            openingGuardUntilMs: openingGuardUntilRef.current,
+            nowMs: Date.now(),
+          },
+        ) as MachineSessionView | null;
+        if (merged?.phase !== 'opening') {
+          clearOpeningBootGuard();
+        }
+        return merged;
+      });
+      setDataLoaded(true);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      if (!options?.silent && refreshAbortRef.current !== controller) return;
+      if (!options?.silent) {
+        setError('Không tải được dữ liệu dashboard.');
+      }
+      setDataLoaded(true);
     } finally {
       if (!options?.silent) {
+        if (refreshAbortRef.current !== controller) return;
+        refreshAbortRef.current = null;
         setLoading(false);
+      } else {
+        silentRefreshInFlightRef.current = false;
+        if (silentRefreshQueuedRef.current) {
+          silentRefreshQueuedRef.current = false;
+          void refresh({ silent: true });
+        }
       }
     }
-  }, [session?.access_token]);
+  }, [session?.access_token, clearOpeningBootGuard, mergeBillingView]);
 
   const applyMachineSessionView = useCallback((view: MachineSessionView | null) => {
+    if (view?.phase === 'opening') {
+      markOpeningBootGuard();
+    } else if (view?.phase === 'stopping') {
+      clearOpeningBootGuard();
+    } else if (view?.phase === 'idle' || view?.phase === 'error') {
+      clearOpeningBootGuard();
+    }
     setMachineSessionView(view);
-  }, []);
+  }, [markOpeningBootGuard, clearOpeningBootGuard]);
 
-  const applyBillingSessionView = useCallback((view: BillingSessionView | null) => {
-    setBillingView(view);
-  }, []);
+  const applyBillingSessionView = useCallback(
+    (view: BillingSessionView | null) => {
+      setBillingView((prev) => mergeBillingView(prev, view));
+    },
+    [mergeBillingView],
+  );
 
   useEffect(() => {
     if (authLoading) return;
     refresh();
   }, [authLoading, refresh]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session?.access_token) {
+      setDataLoaded(true);
+      return;
+    }
+    setDataLoaded(false);
+  }, [authLoading, session?.access_token]);
+
+  useEffect(() => {
+    return () => {
+      refreshAbortRef.current?.abort();
+    };
+  }, []);
 
   const tryAutoRenew = useCallback(async () => {
     if (!session?.access_token) return null;
@@ -162,9 +259,9 @@ export function useDashboard() {
   }, [session?.access_token, refresh]);
 
   useEffect(() => {
-    if (authLoading || !session?.access_token) return;
+    if (authLoading || !session?.access_token || !dataLoaded) return;
     void tryAutoRenew();
-  }, [authLoading, session?.access_token, tryAutoRenew]);
+  }, [authLoading, session?.access_token, dataLoaded, tryAutoRenew]);
 
   return {
     user,
@@ -172,7 +269,7 @@ export function useDashboard() {
     billingType,
     billingView,
     machineSessionView,
-    loading: authLoading || loading,
+    loading: authLoading || loading || (Boolean(session?.access_token) && !dataLoaded),
     error,
     refresh,
     applyMachineSessionView,

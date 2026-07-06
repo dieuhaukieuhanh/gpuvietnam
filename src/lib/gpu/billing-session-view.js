@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Server-authoritative billing projection (SCB M9 + display layer).
  * Single read path: M2 Remaining + M5 getBillingStatus - no duplicate formulas.
  */
@@ -8,17 +8,17 @@ import { mapRemainingStatusFields, mapSessionStatusFields } from './api-scb.js';
 import { getBillingStatus, readRemainingForMachine, readRemainingForUser } from './billing.js';
 import { isOutOfCredit, REMAINING_STATE_OK } from './remaining-time.js';
 import { openBillableSession, loadActiveSessionRow } from './session-start.js';
+import { resolvePlanCardTotalHours } from '@/lib/plan-card-display.js';
+
+export { resolvePlanCardHours, resolvePlanCardTotalHours, resolvePlanCardValidUntil } from '@/lib/plan-card-display.js';
 
 const BILLABLE_MACHINE_PHASES = new Set(['running', 'disconnected', 'error', 'stopping']);
 
-export function resolvePlanCardTotalHours(planInventoryTotalHours, m2TotalEntitlementHours) {
-  if (planInventoryTotalHours != null && Number(planInventoryTotalHours) > 0) {
-    return Number(planInventoryTotalHours);
-  }
-  if (m2TotalEntitlementHours != null && Number.isFinite(Number(m2TotalEntitlementHours))) {
-    return Number(m2TotalEntitlementHours);
-  }
-  return null;
+/** Live session burn — include opening when billing anchor is already set. */
+export function shouldUseMachineRemainingRead(machine, machineSessionPhase) {
+  if (!machine || String(machine.status ?? '') !== 'running') return false;
+  if (BILLABLE_MACHINE_PHASES.has(machineSessionPhase)) return true;
+  return machineSessionPhase === 'opening' && Boolean(machine.billing_started_at);
 }
 
 export function primaryPlanInventoryTotalHours(billablePlans) {
@@ -36,6 +36,7 @@ export function buildBillingSessionView(input) {
     outOfHours = false,
     lowCreditWarning = false,
     planInventoryTotalHours = null,
+    subscriptionPackageHours = null,
   } = input;
 
   const remainingFields = mapRemainingStatusFields(remainingRead);
@@ -56,7 +57,7 @@ export function buildBillingSessionView(input) {
 
   const planCardTotalHours = resolvePlanCardTotalHours(
     planInventoryTotalHours,
-    remainingFields.totalEntitlementHours,
+    subscriptionPackageHours,
   );
 
   return {
@@ -101,15 +102,14 @@ export async function resolveBillingSessionView(supabaseAdmin, userId, options =
     walletBalance = null,
     gpuService = null,
     billablePlans = undefined,
+    subscriptionPackageHours = null,
     tryOpenBillableSession = false,
   } = options;
 
   let activeMachine = machine;
   const machineIsRunning = activeMachine && String(activeMachine.status ?? '') === 'running';
   const useMachineRemaining =
-    activeMachine &&
-    machineIsRunning &&
-    BILLABLE_MACHINE_PHASES.has(machineSessionPhase);
+    activeMachine && shouldUseMachineRemainingRead(activeMachine, machineSessionPhase);
 
   if (tryOpenBillableSession && machineIsRunning && activeMachine.instance_id && gpuService) {
     try {
@@ -171,6 +171,7 @@ export async function resolveBillingSessionView(supabaseAdmin, userId, options =
     outOfHours,
     lowCreditWarning,
     planInventoryTotalHours: primaryPlanInventoryTotalHours(billablePlans),
+    subscriptionPackageHours,
   });
 }
 

@@ -7,6 +7,8 @@ import { describe, it } from 'node:test';
 import {
   computeDisplayRemainingHours,
   computeSessionElapsedSeconds,
+  mergeBillingSessionViewOnPoll,
+  mergeMachineSessionViewOnPoll,
   resolveRemainingHoursAnchor,
   resolveSessionElapsedAnchor,
 } from './scb-ui-view-model.js';
@@ -89,6 +91,98 @@ describe('scb-ui-view-model (presentation)', () => {
   it('display remaining hours returns null without anchor', () => {
     assert.equal(computeDisplayRemainingHours(null, 100), null);
   });
+
+  it('mergeBillingSessionViewOnPoll rejects stale remaining regression after session end', () => {
+    const prev = {
+      billingStarted: true,
+      sessionDurationSeconds: 1800,
+      phase: 'running',
+      remainingHours: 19.7,
+      planCardRemainingHours: 19.7,
+    };
+    const stale = {
+      billingStarted: false,
+      sessionDurationSeconds: 0,
+      phase: 'idle',
+      remainingHours: 20.1,
+      planCardRemainingHours: 20.1,
+    };
+    const merged = mergeBillingSessionViewOnPoll(prev, stale);
+    assert.equal(merged.planCardRemainingHours, 19.7);
+    assert.equal(merged.remainingHours, 19.7);
+
+    const settled = { ...stale, remainingHours: 19.65, planCardRemainingHours: 19.65 };
+    const accepted = mergeBillingSessionViewOnPoll(prev, settled);
+    assert.equal(accepted.planCardRemainingHours, 19.65);
+  });
+
+  it('mergeBillingSessionViewOnPoll rejects stale increase during stopping phase', () => {
+    const prev = {
+      billingStarted: true,
+      phase: 'running',
+      remainingHours: 19.7,
+      planCardRemainingHours: 19.7,
+    };
+    const staleStopping = {
+      billingStarted: true,
+      phase: 'stopping',
+      remainingHours: 20.1,
+      planCardRemainingHours: 20.1,
+    };
+    const merged = mergeBillingSessionViewOnPoll(prev, staleStopping);
+    assert.equal(merged.planCardRemainingHours, 19.7);
+  });
+
+  it('mergeBillingSessionViewOnPoll rejects stale increase after billable session', () => {
+    const prev = {
+      billingStarted: true,
+      sessionDurationSeconds: 3600,
+      phase: 'idle',
+      remainingHours: 19.7,
+      planCardRemainingHours: 19.7,
+    };
+    const stale = {
+      billingStarted: false,
+      sessionDurationSeconds: 0,
+      phase: 'idle',
+      remainingHours: 20.1,
+      planCardRemainingHours: 20.1,
+    };
+    const merged = mergeBillingSessionViewOnPoll(prev, stale);
+    assert.equal(merged.planCardRemainingHours, 19.7);
+  });
+
+  it('mergeMachineSessionViewOnPoll keeps opening during boot guard', () => {
+    const prev = {
+      phase: 'opening',
+      serverStatus: 'provisioning',
+      clientOptimistic: true,
+      actions: { canStart: false, canCancel: true },
+    };
+    const staleIdle = {
+      phase: 'idle',
+      serverStatus: 'offline',
+      actions: { canStart: true, canCancel: false },
+    };
+    const merged = mergeMachineSessionViewOnPoll(prev, staleIdle, {
+      openingGuardUntilMs: Date.now() + 30_000,
+    });
+    assert.equal(merged.phase, 'opening');
+
+    const acceptedIdle = mergeMachineSessionViewOnPoll(
+      { ...prev, clientOptimistic: false },
+      staleIdle,
+      { openingGuardUntilMs: Date.now() - 1 },
+    );
+    assert.equal(acceptedIdle.phase, 'idle');
+  });
+
+  it('mergeMachineSessionViewOnPoll blocks stopping to opening flicker', () => {
+    const prev = { phase: 'stopping', serverStatus: 'stopping' };
+    const staleOpening = { phase: 'opening', serverStatus: 'provisioning' };
+    const merged = mergeMachineSessionViewOnPoll(prev, staleOpening);
+    assert.equal(merged.phase, 'stopping');
+  });
 });
 
 describe('M11 frontend legacy removal (grep)', () => {
@@ -127,6 +221,8 @@ describe('M11 frontend legacy removal (grep)', () => {
     assert.ok(source.includes('machineSessionView'));
     assert.ok(source.includes('billingView'));
     assert.ok(source.includes('useMachineInfraMetrics'));
+    assert.ok(source.includes('shouldPollInfra'));
+    assert.ok(source.includes('syncDashboardAndInfra'));
     assert.ok(source.includes('useSessionElapsedSeconds'));
     assert.ok(source.includes('useInterpolatedRemainingHours'));
     assert.ok(source.includes('billingStarted'));
@@ -138,11 +234,43 @@ describe('M11 frontend legacy removal (grep)', () => {
     assert.ok(!source.includes('autoDestroyTriggeredRef'));
   });
 
+  it('useMachineInfraMetrics does not consume billingView from status poll', () => {
+    const source = readFileSync(
+      path.join(__dirname, '../hooks/useMachineInfraMetrics.ts'),
+      'utf8',
+    );
+    assert.ok(source.includes('/api/machines/status'));
+    assert.ok(!source.includes('billingView'));
+    assert.ok(!source.includes('sessionDurationSeconds'));
+    assert.ok(!source.includes('remainingHours'));
+  });
+
+  it('machines/status projection omits billing session view from JSON response', () => {
+    const source = readFileSync(
+      path.join(__dirname, 'machines-status-projection.js'),
+      'utf8',
+    );
+    assert.ok(!source.includes('buildBillingSessionView'));
+    assert.ok(!source.includes('loadActiveSessionRow'));
+  });
+
   it('DashboardCurrentSessionCard uses remainingHours prop', () => {
     const source = readComponent('dashboard/DashboardCurrentSessionCard.tsx');
     assert.ok(source.includes('remainingHours'));
+    assert.ok(source.includes('timerMode'));
+    assert.ok(source.includes('billingStarted'));
+    assert.ok(!source.includes('DashboardSessionBootTimeline'));
     assert.ok(!source.includes('liveEffectiveHours'));
     assert.ok(source.includes("phase === 'loading'"));
+  });
+
+  it('DashboardOverview wires session UX helpers across three cards', () => {
+    const source = readComponent('dashboard/DashboardOverview.tsx');
+    assert.ok(source.includes('resolveTimerDisplayMode'));
+    assert.ok(!source.includes('DashboardSessionBootTimeline'));
+    assert.ok(source.includes('formatDisplayHours'));
+    assert.ok(source.includes('planCardFromSubscription'));
+    assert.ok(source.includes('showLiveTimer'));
   });
 
   it('openBillableSession does not rewrite billing_started_at on already-started path', () => {

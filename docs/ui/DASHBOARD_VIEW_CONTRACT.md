@@ -32,13 +32,15 @@ anchor    = billingView.sessionDurationSeconds (+ smooth display hooks)
 ## Refresh pattern
 
 1. `GET /api/dashboard/me` → `machineSessionView` + `billingView`
-2. `GET /api/machines/status` → infra metrics only (when phase is active)
+2. `GET /api/machines/status` → **infra only** (metrics, comfyUrl, idle) — no `billingView`
 3. POST mutations → patch views from response + silent refresh
+
+While phase is active, dashboard polls **both** endpoints on the same interval (`dashboard/me` then `machines/status`).
 
 ---
 
 ## Poll must not
 
-- Overwrite `billingView` or `machineSessionView`
+- Overwrite `billingView` or `machineSessionView` from `/api/machines/status`
 - Call destroy API
 - Derive lifecycle phase from provider status

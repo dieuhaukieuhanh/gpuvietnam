@@ -1,24 +1,16 @@
 /**
  * SCB 2.1 AF v2 — machines/status read handler (projection-only, no Provider I/O).
+ * Response is infra-only: no session billing fields (see DASHBOARD_VIEW_CONTRACT).
  */
 
 import {
-  fetchOrderedBillablePlansForUser,
   getBillingStatus,
   readRemainingForMachine,
-  readRemainingForUser,
-  loadActiveSessionRow,
   syncMachineIdleState,
   checkAutoStop,
   IDLE_STOP_MINUTES,
 } from '@/lib/gpu';
 import { isOutOfCredit, REMAINING_STATE_OK } from '@/lib/gpu/remaining-time';
-import { mapRemainingStatusFields, mapSessionStatusFields } from '@/lib/gpu/api-scb';
-import {
-  buildBillingSessionView,
-  primaryPlanInventoryTotalHours,
-  resolveStatusBillingPhase,
-} from '@/lib/gpu/billing-session-view';
 import { buildConsumerEndpoint, isEndpointReadyForTraffic } from '@/lib/endpoint-utils';
 import {
   fetchActiveSubscription,
@@ -118,35 +110,19 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
 
   const activeMachine = machine;
   const isTrafficReady = liveStatus.status === 'running' && healthOk;
-  const billablePlans = await fetchOrderedBillablePlansForUser(supabaseAdmin, user.id);
-  const planInventoryTotalHours = primaryPlanInventoryTotalHours(billablePlans);
 
   let billing = null;
-  let remainingRead;
-  let sessionRow = null;
+  let remainingRead = null;
 
   if (isTrafficReady) {
     billing = await getBillingStatus(supabaseAdmin, user.id, activeMachine);
     remainingRead = await readRemainingForMachine(supabaseAdmin, user.id, activeMachine);
-    sessionRow = await loadActiveSessionRow(
-      supabaseAdmin,
-      activeMachine?.gpu_session_id ? String(activeMachine.gpu_session_id) : null,
-      activeMachine?.id ? String(activeMachine.id) : null,
-    );
-  } else {
-    remainingRead = await readRemainingForUser(supabaseAdmin, user.id, {
-      knownRunningMachine: null,
-      machine: activeMachine ?? undefined,
-      billablePlans,
-    });
   }
-  const remainingFields = mapRemainingStatusFields(remainingRead);
-  const sessionFields = mapSessionStatusFields(sessionRow);
 
   const outOfHours =
     isTrafficReady &&
     Boolean(activeMachine?.billing_started_at) &&
-    remainingRead.remaining?.state === REMAINING_STATE_OK &&
+    remainingRead?.remaining?.state === REMAINING_STATE_OK &&
     isOutOfCredit({
       ...remainingRead.remaining,
       walletBalance: remainingRead.walletBalance,
@@ -176,52 +152,13 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     }
   }
 
-  const lowCreditWarning =
-    isTrafficReady &&
-    billing?.effectiveHoursRemaining != null &&
-    billing.effectiveHoursRemaining > 0 &&
-    billing.effectiveHoursRemaining <= 0.08;
-
-  const billingView = buildBillingSessionView({
-    machineSessionPhase: resolveStatusBillingPhase(liveStatus.status, activeMachine, healthOk),
-    billing: isTrafficReady ? billing : null,
-    remainingRead,
-    sessionFields,
-    outOfHours,
-    lowCreditWarning,
-    planInventoryTotalHours,
-  });
-
-  const billingPayload =
-    isTrafficReady && billing
-      ? {
-          sessionDurationSeconds: billing.sessionDurationSeconds,
-          billingStartedAt: billing.billingStartedAt,
-          hoursRemaining: billing.hoursRemaining,
-          effectiveHoursRemaining: billing.effectiveHoursRemaining,
-          walletBalance: billing.walletBalance,
-          planType: billing.planType,
-          outOfHours,
-          lowCreditWarning,
-        }
-      : {
-          sessionDurationSeconds: 0,
-          billingStartedAt: null,
-          hoursRemaining: remainingFields.remainingHours,
-          effectiveHoursRemaining: remainingFields.remainingHours,
-          walletBalance: remainingRead.walletBalance,
-          planType: remainingRead.remaining?.primaryPlanType ?? null,
-          outOfHours: false,
-          lowCreditWarning: false,
-        };
-
   let metrics = null;
   if (isTrafficReady && isEndpointReadyForTraffic(activeMachine, healthOk)) {
     metrics = await fetchLiveMetrics({
       machine: activeMachine,
       healthOk,
       instanceId: liveStatus.instanceId,
-      sessionStartedAt: billing.billingStartedAt ?? activeMachine?.billing_started_at,
+      sessionStartedAt: billing?.billingStartedAt ?? activeMachine?.billing_started_at,
     });
   }
 
@@ -236,14 +173,10 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     template: activeMachine?.template ? String(activeMachine.template) : null,
     projectionFirst: true,
     metrics,
-    ...billingPayload,
-    ...remainingFields,
-    ...sessionFields,
     idleMinutes: idleInfo.idleMinutes,
     lastActivity: idleInfo.lastActivity,
     minutesUntilAutoStop: idleInfo.minutesUntilAutoStop,
     idleWarningActive: idleInfo.idleWarningActive,
-    billingView,
   };
 
   scbDbg('EXIT ok', { id: scbReqId, status: responsePayload.status });

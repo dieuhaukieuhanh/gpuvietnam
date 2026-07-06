@@ -46,6 +46,87 @@ export function createEmptyMachineMetrics(): MachineMetricsSnapshot {
   };
 }
 
+/** Instant UI feedback while start-machine API is in flight. */
+export function buildOptimisticOpeningMachineSessionView(
+  envName: string | null | undefined,
+): MachineSessionView {
+  return {
+    phase: 'opening',
+    lifecycleStatus: 'provisioning',
+    serverStatus: 'provisioning',
+    workspace: { name: envName ?? null, locked: true },
+    machine: null,
+    actions: {
+      canStart: false,
+      canCancel: true,
+      canStop: false,
+      canOpenComfy: false,
+    },
+    message: 'Đang mở phiên làm việc...',
+    domainEvent: 'MACHINE_PROVISIONING',
+    clientOptimistic: true,
+  };
+}
+
+/** Instant UI feedback while destroy API is in flight. */
+export function buildOptimisticStoppingMachineSessionView(
+  envName: string | null | undefined,
+): MachineSessionView {
+  return {
+    phase: 'stopping',
+    lifecycleStatus: 'stopping',
+    serverStatus: 'stopping',
+    workspace: { name: envName ?? null, locked: true },
+    machine: null,
+    actions: {
+      canStart: false,
+      canCancel: false,
+      canStop: false,
+      canOpenComfy: false,
+    },
+    message: 'Đang đóng phiên làm việc...',
+    domainEvent: 'MACHINE_STOPPING',
+    clientOptimistic: true,
+  };
+}
+
+export function buildIdleMachineSessionViewForUi(
+  envName: string | null | undefined,
+): MachineSessionView {
+  return {
+    phase: 'idle',
+    lifecycleStatus: 'idle',
+    serverStatus: 'offline',
+    workspace: { name: envName ?? null, locked: false },
+    machine: null,
+    actions: {
+      canStart: true,
+      canCancel: false,
+      canStop: false,
+      canOpenComfy: false,
+    },
+    message: null,
+    domainEvent: null,
+  };
+}
+
+/** Keep boot UI stable until billing anchor is set (Comfy traffic-ready). */
+export function resolveBootDisplayPhase(
+  phase: ServerCardPhase,
+  billingStarted: boolean,
+  sessionView?: Pick<MachineSessionView, 'lifecycleStatus' | 'serverStatus' | 'phase'> | null,
+): ServerCardPhase {
+  if (phase === 'stopping') return 'stopping';
+  if (phase !== 'running' || billingStarted) return phase;
+
+  const lifecycle = sessionView?.lifecycleStatus;
+  const serverStatus = sessionView?.serverStatus;
+  if (lifecycle === 'provisioning' || serverStatus === 'provisioning') {
+    return 'opening';
+  }
+  return phase;
+}
+
 /** Server-authoritative card phase from machineSessionView only. */
 export function resolveServerCardPhase(
   view: MachineSessionView | null,
@@ -57,6 +138,7 @@ export function resolveServerCardPhase(
   const { dashboardLoading, metricsLoaded } = options;
 
   if (dashboardLoading && !view) return 'loading';
+  if (dashboardLoading && view) return view.phase as ServerCardPhase;
   if (!view) return metricsLoaded ? 'idle' : 'loading';
 
   if (view.phase === 'loading') return 'loading';

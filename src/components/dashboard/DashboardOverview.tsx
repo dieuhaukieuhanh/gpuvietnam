@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import PlanSelectorModal, { type ActivePlan } from '@/components/dashboard/PlanSelectorModal';
 import DashboardCurrentSessionCard from '@/components/dashboard/DashboardCurrentSessionCard';
 import DashboardRealtimePerfCard from '@/components/dashboard/DashboardRealtimePerfCard';
@@ -30,18 +30,28 @@ import type {
 import { formatCurrency } from '@/lib/gpu-pricing';
 import { routes } from '@/lib/routes';
 import {
+  formatDisplayHours,
+  formatRuntimeClock,
+  resolveTimerDisplayMode,
+} from '@/lib/dashboard-session-display';
+import { clampPlanCardRemainingHours } from '@/lib/plan-card-display';
+import {
   autostopToastMessage,
+  buildIdleMachineSessionViewForUi,
+  buildOptimisticOpeningMachineSessionView,
+  buildOptimisticStoppingMachineSessionView,
+  resolveBootDisplayPhase,
   resolveServerCardPhase,
   serverCardStatusBadgeClass,
   serverCardStatusLabel,
 } from '@/lib/scb-dashboard-machine-view';
-import { useMachineInfraMetrics } from '@/hooks/useMachineInfraMetrics';
+import {
+  pollIntervalMs,
+  shouldPollInfra,
+  useMachineInfraMetrics,
+} from '@/hooks/useMachineInfraMetrics';
 import { GPU_COMFY_WORKSTATION_IDS, resolveEnvName, workspaceDisplayFromEnvName } from '@/lib/workstation-env';
 import { WORKSTATIONS, type Workstation } from '@/lib/workstations';
-
-function roundHours(value: number): number {
-  return Math.round(value * 100) / 100;
-}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -78,6 +88,49 @@ function inventoryPlanToActivePlan(plan: UserInventoryPlan): ActivePlan {
   };
 }
 
+type PlanCardSnapshot = {
+  displayName: string;
+  gpu: string;
+  vram: string;
+  hoursTotal: number;
+  hoursRemaining: number;
+  validUntil: string | null;
+  planType: UserInventoryPlan['planType'];
+  billing: string | null;
+};
+
+function planCardFromSubscription(
+  sub: DashboardSubscription,
+  billing: BillingSessionView | null,
+): PlanCardSnapshot {
+  const planKey = normalizePlanKey(sub.plan);
+  return {
+    displayName: planKey.charAt(0).toUpperCase() + planKey.slice(1),
+    gpu: sub.gpu_label ?? 'GPU',
+    vram: '',
+    hoursTotal: sub.hours_total ?? billing?.planCardTotalHours ?? 0,
+    hoursRemaining:
+      billing?.planCardRemainingHours ??
+      Math.max(0, Number(sub.hours_total ?? 0) - Number(sub.hours_used ?? 0)),
+    validUntil: sub.expires_at,
+    planType: sub.billing === 'hourly' ? 'hourly' : 'combo',
+    billing: sub.billing,
+  };
+}
+
+function planCardSnapshotFromInventory(plan: UserInventoryPlan): PlanCardSnapshot {
+  return {
+    displayName: plan.displayName,
+    gpu: plan.gpu,
+    vram: plan.vram,
+    hoursTotal: plan.hoursTotal,
+    hoursRemaining: plan.hoursRemaining,
+    validUntil: plan.validUntil,
+    planType: plan.planType,
+    billing: plan.billing,
+  };
+}
+
 type DashboardOverviewProps = {
   user: DashboardUser | null;
   subscription: DashboardSubscription | null;
@@ -109,6 +162,8 @@ export default function DashboardOverview({
   const [showPlanSelector, setShowPlanSelector] = useState(false);
   const [activePlans, setActivePlans] = useState<ActivePlan[]>([]);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [isStoppingSession, setIsStoppingSession] = useState(false);
   const [changingEnv, setChangingEnv] = useState(false);
   const [selectedEnvName, setSelectedEnvName] = useState('');
   const [sessionWorkspace, setSessionWorkspace] = useState<{ name: string; icon: string } | null>(
@@ -120,6 +175,9 @@ export default function DashboardOverview({
   const [startMessage, setStartMessage] = useState('');
   const [toast, setToast] = useState('');
   const [showComfyMobileModal, setShowComfyMobileModal] = useState(false);
+  const [isOpeningComfy, setIsOpeningComfy] = useState(false);
+  const startMachineAbortRef = useRef<AbortController | null>(null);
+  const cardHoursRemainingLiveRef = useRef<number | null>(null);
 
   const handleAutostopRefresh = useCallback(async () => {
     notifyUserPlansChanged();
@@ -127,15 +185,23 @@ export default function DashboardOverview({
     await reloadPlans({ silent: true });
   }, [onRefresh, reloadPlans]);
 
+  const handleAutostopDetected = useCallback(
+    async (message?: string | null) => {
+      setToast(autostopToastMessage(message));
+      await handleAutostopRefresh();
+    },
+    [handleAutostopRefresh],
+  );
+
   const { metrics: machineMetrics, metricsLoaded, refreshMetrics } = useMachineInfraMetrics({
     accessToken: session?.access_token,
     phase: machineSessionView?.phase,
     onPollError: setStartMessage,
-    onAutostopDetected: async (message) => {
-      setToast(autostopToastMessage(message));
-      await handleAutostopRefresh();
-    },
+    onAutostopDetected: handleAutostopDetected,
   });
+
+  const machineMetricsRef = useRef(machineMetrics);
+  machineMetricsRef.current = machineMetrics;
 
   useEffect(() => {
     if (subscription?.env_name && !changingEnv) {
@@ -170,30 +236,98 @@ export default function DashboardOverview({
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  const syncDashboardAndInfra = useCallback(async () => {
+    await Promise.all([onRefresh({ silent: true }), refreshMetrics()]);
+  }, [onRefresh, refreshMetrics]);
+
+  const syncDashboardAndInfraRef = useRef(syncDashboardAndInfra);
+  syncDashboardAndInfraRef.current = syncDashboardAndInfra;
+  const refreshMetricsRef = useRef(refreshMetrics);
+  refreshMetricsRef.current = refreshMetrics;
+
+  const lastFocusSyncRef = useRef(0);
+  const viewPhaseRef = useRef(machineSessionView?.phase);
+  viewPhaseRef.current = machineSessionView?.phase;
+  const prevViewPhaseRef = useRef(machineSessionView?.phase);
+
+  useEffect(() => {
+    const prev = prevViewPhaseRef.current;
+    const next = machineSessionView?.phase;
+    if (prev !== 'running' && next === 'running') {
+      void refreshMetricsRef.current();
+    }
+    if (prev === 'stopping' && next === 'idle') {
+      void onRefresh({ silent: true });
+      void reloadPlans({ silent: true });
+      notifyUserPlansChanged();
+    }
+    prevViewPhaseRef.current = next;
+  }, [machineSessionView?.phase, onRefresh, reloadPlans]);
+
   useEffect(() => {
     if (!session?.access_token) return undefined;
-    const onFocus = () => {
-      void (async () => {
-        await onRefresh({ silent: true });
-        await refreshMetrics();
-      })();
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const phase = viewPhaseRef.current;
+      const minGapMs = phase === 'opening' ? 3_000 : 1_500;
+      const now = Date.now();
+      if (now - lastFocusSyncRef.current < minGapMs) return;
+      lastFocusSyncRef.current = now;
+      void syncDashboardAndInfraRef.current();
     };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [session?.access_token, refreshMetrics, onRefresh]);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [session?.access_token]);
+
+  const infraPollActive = shouldPollInfra(machineSessionView?.phase);
+
+  useEffect(() => {
+    if (!session?.access_token || !infraPollActive) return undefined;
+
+    let cancelled = false;
+
+    const runPollLoop = async () => {
+      while (!cancelled) {
+        const waitMs = pollIntervalMs(
+          viewPhaseRef.current,
+          Boolean(machineMetricsRef.current?.comfyUrl),
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, waitMs));
+        if (cancelled) break;
+        await syncDashboardAndInfraRef.current();
+      }
+    };
+
+    void runPollLoop();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, infraPollActive]);
 
   const viewPhase = machineSessionView?.phase;
+  const billingStarted = Boolean(billingView?.billingStarted);
+  const showLiveTimer = viewPhase === 'running' && billingStarted;
 
   const sessionActive =
-    (viewPhase === 'running' || viewPhase === 'disconnected') &&
-    Boolean(billingView?.billingStarted);
+    (viewPhase === 'running' ||
+      viewPhase === 'disconnected' ||
+      (viewPhase === 'opening' && billingStarted)) &&
+    billingStarted;
+
+  const planCardSessionActive =
+    Boolean(billingView?.billingStarted) &&
+    (viewPhase === 'running' || viewPhase === 'disconnected' || viewPhase === 'stopping');
 
   const sessionDurationSec = useSessionElapsedSeconds(
     billingView?.sessionDurationSeconds ?? 0,
     billingView?.billingStartedAt ?? null,
     billingView?.verifiedRunningAt ?? null,
-    sessionActive,
+    showLiveTimer,
   );
+
+  const timerMode = resolveTimerDisplayMode(viewPhase, billingStarted);
+  const serverDurationSec = billingView?.sessionDurationSeconds ?? 0;
 
   const displaySessionRemainingHours = useInterpolatedRemainingHours(
     billingView?.remainingHours ?? null,
@@ -206,24 +340,45 @@ export default function DashboardOverview({
     billingView?.planCardRemainingHours ?? null,
     billingView?.sessionDurationSeconds ?? 0,
     sessionDurationSec,
-    sessionActive,
+    planCardSessionActive,
   );
+  cardHoursRemainingLiveRef.current = cardHoursRemainingLive;
 
-  const openComfyUI = useCallback(() => {
-    const url = machineMetrics?.comfyUrl;
-    if (!url) return;
+  const openComfyUI = useCallback(async () => {
+    if (!machineSessionView?.actions.canOpenComfy) return;
 
-    if (isMobile) {
-      setShowComfyMobileModal(true);
-      return;
+    setIsOpeningComfy(true);
+    try {
+      let url = machineMetrics?.comfyUrl ?? null;
+      if (!url) {
+        const snapshot = await refreshMetrics();
+        url = snapshot?.comfyUrl ?? machineMetricsRef.current?.comfyUrl ?? null;
+      }
+      if (!url) {
+        setToast('ComfyUI đang khởi động — thử lại sau vài giây.');
+        return;
+      }
+
+      if (isMobile) {
+        setShowComfyMobileModal(true);
+        return;
+      }
+
+      if (isTablet) {
+        setToast('ComfyUI hoạt động tốt nhất trên màn hình lớn');
+      }
+
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setIsOpeningComfy(false);
     }
-
-    if (isTablet) {
-      setToast('ComfyUI hoạt động tốt nhất trên màn hình lớn');
-    }
-
-    window.open(url, '_blank', 'noopener,noreferrer');
-  }, [isMobile, isTablet, machineMetrics?.comfyUrl]);
+  }, [
+    isMobile,
+    isTablet,
+    machineMetrics?.comfyUrl,
+    machineSessionView?.actions.canOpenComfy,
+    refreshMetrics,
+  ]);
 
   const confirmOpenComfyOnMobile = useCallback(() => {
     const url = machineMetrics?.comfyUrl;
@@ -238,11 +393,16 @@ export default function DashboardOverview({
       if (!token || !subscription) return;
       if (machineSessionView?.actions.canStart === false) return;
 
+      startMachineAbortRef.current?.abort();
+      const controller = new AbortController();
+      startMachineAbortRef.current = controller;
+
       setSessionWorkspace(workspaceDisplayFromEnvName(effectiveEnvName));
       setStartMessage('');
       setShowStartConfirm(false);
       setShowPlanSelector(false);
       setPendingStartPlan(null);
+      onMachineSessionView?.(buildOptimisticOpeningMachineSessionView(effectiveEnvName));
 
       try {
         const res = await fetch('/api/user/start-machine', {
@@ -258,11 +418,16 @@ export default function DashboardOverview({
             inventoryId: plan.inventoryId,
             envName: effectiveEnvName,
           }),
+          signal: controller.signal,
         });
         const data = await res.json();
+        if (startMachineAbortRef.current !== controller) return;
         if (!res.ok) {
           setStartMessage(data.error ?? 'Không khởi động được máy.');
           setSessionWorkspace(null);
+          onMachineSessionView?.(
+            buildIdleMachineSessionViewForUi(subscription.env_name ?? effectiveEnvName),
+          );
           return;
         }
         if (data.machineSessionView) {
@@ -275,9 +440,17 @@ export default function DashboardOverview({
         await onRefresh({ silent: true });
         await reloadPlans();
         void refreshMetrics();
-      } catch {
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
         setStartMessage('Lỗi mạng khi khởi động máy.');
         setSessionWorkspace(null);
+        onMachineSessionView?.(
+          buildIdleMachineSessionViewForUi(subscription.env_name ?? effectiveEnvName),
+        );
+      } finally {
+        if (startMachineAbortRef.current === controller) {
+          startMachineAbortRef.current = null;
+        }
       }
     },
     [
@@ -335,6 +508,11 @@ export default function DashboardOverview({
 
   const confirmStartMachine = useCallback(async () => {
     if (machineSessionView?.actions.canStart === false) return;
+    setShowStartConfirm(false);
+    setShowPlanSelector(false);
+    setPendingStartPlan(null);
+    setSessionWorkspace(workspaceDisplayFromEnvName(effectiveEnvName));
+    onMachineSessionView?.(buildOptimisticOpeningMachineSessionView(effectiveEnvName));
     if (displayPlan) {
       await startMachine(inventoryPlanToActivePlan(displayPlan));
       return;
@@ -346,11 +524,30 @@ export default function DashboardOverview({
     if (activePlans.length === 1) {
       await startMachine(activePlans[0]);
     }
-  }, [displayPlan, pendingStartPlan, activePlans, startMachine, machineSessionView?.actions.canStart]);
+  }, [
+    displayPlan,
+    pendingStartPlan,
+    activePlans,
+    startMachine,
+    machineSessionView?.actions.canStart,
+    effectiveEnvName,
+    onMachineSessionView,
+  ]);
 
   const cancelBoot = useCallback(async () => {
     const token = session?.access_token;
     if (!token) return;
+
+    if (startMachineAbortRef.current) {
+      startMachineAbortRef.current.abort();
+      startMachineAbortRef.current = null;
+      onMachineSessionView?.(
+        buildIdleMachineSessionViewForUi(subscription?.env_name ?? effectiveEnvName),
+      );
+      setSessionWorkspace(null);
+      setToast('Đã hủy khởi tạo phiên làm việc');
+      return;
+    }
 
     setIsCancellingBoot(true);
     setStartMessage('');
@@ -388,6 +585,8 @@ export default function DashboardOverview({
     }
   }, [
     session?.access_token,
+    subscription?.env_name,
+    effectiveEnvName,
     onRefresh,
     reloadPlans,
     refreshMetrics,
@@ -397,13 +596,29 @@ export default function DashboardOverview({
 
   const stopMachine = useCallback(async () => {
     const token = session?.access_token;
-    if (!token || machineSessionView?.actions.canStop === false) return;
+    const canStop =
+      machineSessionView?.actions.canStop !== false || Boolean(billingView?.billingStarted);
+    if (!token || !canStop) return;
 
     setStartMessage('');
+    setIsStoppingSession(true);
     try {
+      const clientRemainingHours = cardHoursRemainingLiveRef.current;
+      const clientSessionDurationSeconds =
+        billingView?.billingStarted && sessionDurationSec > 0 ? Math.floor(sessionDurationSec) : null;
       const res = await fetch('/api/machines/destroy', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientRemainingHours:
+            clientRemainingHours != null && Number.isFinite(clientRemainingHours)
+              ? Math.max(0, Number(clientRemainingHours))
+              : null,
+          clientSessionDurationSeconds,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -420,34 +635,50 @@ export default function DashboardOverview({
       }
       setSessionWorkspace(null);
       setStartMessage('');
+      const alreadyStopped = Boolean((data as { alreadyStopped?: boolean }).alreadyStopped);
       await onRefresh({ silent: true });
       await reloadPlans({ silent: true });
       notifyUserPlansChanged();
       void refreshMetrics();
-      const alreadyStopped = Boolean((data as { alreadyStopped?: boolean }).alreadyStopped);
-      const accepted = Boolean((data as { accepted?: boolean }).accepted);
-      if (accepted) {
-        setToast('Đang đóng phiên làm việc...');
-      } else {
-        setToast(
-          alreadyStopped
-            ? 'Đã đóng phiên làm việc'
-            : settlementStatus
-              ? `Đã đóng phiên · settlement: ${settlementStatus}`
-              : 'Đã đóng phiên làm việc',
-        );
-      }
+      setToast(
+        alreadyStopped
+          ? 'Đã đóng phiên làm việc'
+          : settlementStatus
+            ? `Đã đóng phiên · settlement: ${settlementStatus}`
+            : 'Đã đóng phiên làm việc',
+      );
     } catch {
       setStartMessage('Lỗi mạng khi tắt máy.');
+    } finally {
+      setIsStoppingSession(false);
+      setShowStopConfirm(false);
     }
   }, [
     session?.access_token,
     machineSessionView?.actions.canStop,
+    billingView?.billingStarted,
+    billingView?.sessionDurationSeconds,
+    sessionDurationSec,
     onRefresh,
     reloadPlans,
     refreshMetrics,
     onMachineSessionView,
     onBillingSessionView,
+  ]);
+
+  const confirmStopMachine = useCallback(async () => {
+    setShowStopConfirm(false);
+    onMachineSessionView?.(
+      buildOptimisticStoppingMachineSessionView(
+        machineSessionView?.workspace?.name ?? effectiveEnvName,
+      ),
+    );
+    await stopMachine();
+  }, [
+    machineSessionView?.workspace?.name,
+    effectiveEnvName,
+    onMachineSessionView,
+    stopMachine,
   ]);
 
   const changeEnvironment = useCallback(
@@ -580,10 +811,14 @@ export default function DashboardOverview({
   }
 
   const isPending = subscription.status === 'pending_payment';
-  const serverCardPhase = resolveServerCardPhase(machineSessionView, {
-    dashboardLoading: loading,
-    metricsLoaded,
-  });
+  const serverCardPhase = resolveBootDisplayPhase(
+    resolveServerCardPhase(machineSessionView, {
+      dashboardLoading: loading,
+      metricsLoaded,
+    }),
+    billingStarted,
+    machineSessionView,
+  );
   const canPowerOn = !isPending && (machineSessionView?.actions.canStart ?? false);
   const canCancelBoot = machineSessionView?.actions.canCancel ?? false;
   const selectableWorkstations = WORKSTATIONS.filter((item) =>
@@ -602,37 +837,58 @@ export default function DashboardOverview({
   const lockedWorkspaceIcon = lockedWorkspace.icon;
   const sessionPhase = serverCardPhase;
 
-  const sessionCardDurationSec = sessionActive
-    ? sessionDurationSec
-    : (billingView?.sessionDurationSeconds ?? 0);
+  const sessionCardDurationSec = showLiveTimer ? sessionDurationSec : serverDurationSec;
   const sessionCardRemainingHours = sessionActive
     ? displaySessionRemainingHours
     : (billingView?.remainingHours ?? null);
-  const canStopSession = machineSessionView?.actions.canStop ?? false;
+  const canStopSession =
+    serverCardPhase === 'opening' || serverCardPhase === 'stopping'
+      ? false
+      : (machineSessionView?.actions.canStop ?? false) || Boolean(billingView?.billingStarted);
+  const showStopSessionButton =
+    canStopSession &&
+    (serverCardPhase === 'running' ||
+      serverCardPhase === 'disconnected' ||
+      serverCardPhase === 'error');
   const perfCardActive =
     serverCardPhase === 'running' ||
     (serverCardPhase === 'disconnected' && Boolean(machineMetrics?.metrics?.vram));
 
-  const cardPlan = displayPlan;
-  const cardHoursRemaining = sessionActive
-    ? (cardHoursRemainingLive ?? 0)
-    : (billingView?.planCardRemainingHours ?? cardPlan?.hoursRemaining ?? 0);
+  const cardPlan = displayPlan
+    ? planCardSnapshotFromInventory(displayPlan)
+    : subscription
+      ? planCardFromSubscription(subscription, billingView)
+      : null;
+  const showPlanLoading = plansLoading && !cardPlan;
+  const cardHoursRemaining = clampPlanCardRemainingHours(
+    cardHoursRemainingLive ??
+      billingView?.planCardRemainingHours ??
+      billingView?.remainingHours ??
+      cardPlan?.hoursRemaining ??
+      0,
+  );
   const cardHoursTotal =
-    billingView?.planCardTotalHours && billingView.planCardTotalHours > 0
-      ? billingView.planCardTotalHours
-      : cardPlan?.hoursTotal && cardPlan.hoursTotal > 0
-        ? cardPlan.hoursTotal
-        : (billingView?.planCardTotalHours ?? 0);
+    (cardPlan?.hoursTotal && cardPlan.hoursTotal > 0
+      ? cardPlan.hoursTotal
+      : subscription?.hours_total && subscription.hours_total > 0
+        ? subscription.hours_total
+        : billingView?.planCardTotalHours) ?? 0;
   const cardHoursPct =
     cardHoursTotal > 0 ? Math.round((cardHoursRemaining / cardHoursTotal) * 100) : 0;
   const cardDaysLeft = daysUntil(cardPlan?.validUntil ?? null);
-  const cardPlanBadge = cardPlan ? getInventoryPlanBadge(cardPlan) : null;
+  const cardPlanBadge = displayPlan ? getInventoryPlanBadge(displayPlan) : null;
   const confirmPlan =
-    cardPlan ??
+    displayPlan ??
     pendingStartPlan ??
     (activePlans.length === 1 ? activePlans[0] : null);
 
   const machineStatusLabel = serverCardStatusLabel(serverCardPhase, isPending);
+  const serverCardLayoutStable =
+    serverCardPhase === 'running' ||
+    serverCardPhase === 'stopping' ||
+    serverCardPhase === 'opening' ||
+    serverCardPhase === 'disconnected' ||
+    serverCardPhase === 'error';
 
   const planCard = (
     <div className="card dashboard-plan-card dashboard-plan-card--compact">
@@ -646,7 +902,7 @@ export default function DashboardOverview({
         </Link>
       </div>
 
-      {plansLoading ? (
+      {showPlanLoading ? (
         <p className="dashboard-plan-loading">Đang tải gói...</p>
       ) : !cardPlan ? (
         <div className="dashboard-plan-card-content dashboard-plan-card-content--empty">
@@ -673,10 +929,10 @@ export default function DashboardOverview({
               <>
                 <div className="dashboard-plan-hours-main">
                   <span className="dashboard-plan-hours-value">
-                    {roundHours(cardHoursRemaining).toFixed(2)}
+                    {formatDisplayHours(cardHoursRemaining)}
                   </span>
                   <span className="dashboard-plan-hours-sep">/</span>
-                  <span className="dashboard-plan-hours-total">{cardHoursTotal}</span>
+                  <span className="dashboard-plan-hours-total">{formatDisplayHours(cardHoursTotal)}</span>
                 </div>
                 <div className="dashboard-plan-hours-caption">Giờ còn lại · {cardHoursPct}%</div>
                 <div className="progress-bar dashboard-plan-compact-progress">
@@ -808,6 +1064,52 @@ export default function DashboardOverview({
         </div>
       </div>
 
+      <div className={`modal-overlay${showStopConfirm ? ' active' : ''}`}>
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="stop-machine-title">
+          <h3 id="stop-machine-title">Xác nhận đóng phiên làm việc</h3>
+          <div className="machine-confirm-lines">
+            <div>
+              🖥️ Workspace:{' '}
+              <strong>
+                {lockedWorkspaceIcon} {lockedWorkspaceName}
+              </strong>
+            </div>
+            {showLiveTimer && (
+              <div>
+                ⏱️ Thời gian phiên:{' '}
+                <strong>{formatRuntimeClock(sessionCardDurationSec)}</strong>
+              </div>
+            )}
+            {cardHoursRemaining > 0 && (
+              <div>
+                📦 Giờ còn lại: <strong>{formatDisplayHours(cardHoursRemaining)}</strong>
+              </div>
+            )}
+          </div>
+          <p className="machine-confirm-note">
+            GPU sẽ tắt và phiên làm việc hiện tại sẽ kết thúc. Bạn có chắc muốn tiếp tục?
+          </p>
+          <div className="machine-confirm-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={isStoppingSession}
+              onClick={() => setShowStopConfirm(false)}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              disabled={isStoppingSession}
+              onClick={() => void confirmStopMachine()}
+            >
+              {isStoppingSession ? 'Đang đóng phiên...' : 'Đóng phiên làm việc'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {isPending && (
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">⏳</span>
@@ -818,16 +1120,6 @@ export default function DashboardOverview({
               chuyển khoản và kích hoạt GPU trong 5–10 phút. Nội dung CK:{' '}
               <em>{subscription.transfer_note ?? '—'}</em>
             </div>
-          </div>
-        </div>
-      )}
-
-      {billingView?.outOfHours && !isPending && (
-        <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
-          <span className="alert-icon">⏰</span>
-          <div className="alert-content">
-            <div className="alert-title">Hết giờ sử dụng</div>
-            <div className="alert-desc">⏰ Bạn đã hết giờ sử dụng. Máy sẽ tự động tắt.</div>
           </div>
         </div>
       )}
@@ -875,7 +1167,7 @@ export default function DashboardOverview({
       <div className="card-grid">
         <div className="dashboard-top-row">
           <div className="dashboard-server-column">
-          <div className="card dashboard-server-card">
+          <div className={`card dashboard-server-card${serverCardLayoutStable ? ' dashboard-server-card--session' : ''}`}>
           <div className="card-header">
             <span className="card-title">🖥️ MÁY CHỦ</span>
             <span className={`status-badge${serverCardStatusBadgeClass(serverCardPhase)}`}>
@@ -922,7 +1214,12 @@ export default function DashboardOverview({
                 </div>
                 <div className="dashboard-workspace-meta-slot">
                   {serverCardPhase === 'opening' && (
-                    <p className="dashboard-workspace-status">⏳ Đang khởi tạo phiên làm việc...</p>
+                    <>
+                      <p className="dashboard-workspace-status">⏳ Đang khởi tạo phiên làm việc...</p>
+                      <div className="dashboard-boot-progress" aria-hidden="true">
+                        <div className="dashboard-boot-progress-fill" />
+                      </div>
+                    </>
                   )}
                   {serverCardPhase === 'running' && (
                     <p className="dashboard-workspace-status">
@@ -949,16 +1246,6 @@ export default function DashboardOverview({
             serverCardPhase === 'idle' && (
             <p style={{ fontSize: 13, color: 'var(--accent-blue)', marginBottom: 12 }}>{startMessage}</p>
           )}
-
-          <div className="dashboard-server-progress-slot">
-            {serverCardPhase === 'opening' && (
-              <div className="machine-start-panel">
-                <div className="machine-start-progress" aria-hidden="true">
-                  <div className="machine-start-progress-fill" />
-                </div>
-              </div>
-            )}
-          </div>
 
           <div className="dashboard-server-badges-slot">
             {serverCardPhase === 'running' &&
@@ -1034,10 +1321,10 @@ export default function DashboardOverview({
                     ? `Vào phòng làm việc (${machineMetrics.comfyUrl})`
                     : 'Vào phòng làm việc'
                 }
-                disabled={!machineSessionView?.actions.canOpenComfy || !machineMetrics?.comfyUrl}
-                onClick={openComfyUI}
+                disabled={!machineSessionView?.actions.canOpenComfy || isOpeningComfy}
+                onClick={() => void openComfyUI()}
               >
-                Vào phòng làm việc
+                {isOpeningComfy ? 'Đang mở ComfyUI...' : 'Vào phòng làm việc'}
               </button>
             )}
 
@@ -1063,17 +1350,14 @@ export default function DashboardOverview({
               </button>
             )}
 
-            {(serverCardPhase === 'running' ||
-              serverCardPhase === 'disconnected' ||
-              serverCardPhase === 'error') &&
-              canStopSession && (
+            {showStopSessionButton && (
               <button
                 type="button"
                 className="btn btn-danger btn-lg"
-                disabled={!canStopSession}
-                onClick={() => void stopMachine()}
+                disabled={!canStopSession || isStoppingSession}
+                onClick={() => setShowStopConfirm(true)}
               >
-                Đóng phiên làm việc
+                {isStoppingSession ? 'Đang đóng phiên...' : 'Đóng phiên làm việc'}
               </button>
             )}
           </div>
@@ -1084,8 +1368,10 @@ export default function DashboardOverview({
           <div className="dashboard-metrics-row">
             <DashboardCurrentSessionCard
               phase={sessionPhase}
+              timerMode={timerMode}
               sessionDurationSec={sessionCardDurationSec}
               remainingHours={sessionCardRemainingHours}
+              billingStarted={billingStarted}
               idleMinutes={machineMetrics?.idleMinutes ?? null}
               idleWarningActive={Boolean(machineMetrics?.idleWarningActive)}
               minutesUntilAutoStop={machineMetrics?.minutesUntilAutoStop ?? null}
@@ -1148,7 +1434,11 @@ export default function DashboardOverview({
           <div className="support-row">
             <span>📱 Zalo: 0961 862 141</span>
             <span>📧 hello@gpuvietnam.com</span>
-            <Link href={routes.home} style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}>
+            <Link
+              href={routes.home}
+              prefetch
+              style={{ color: 'var(--accent-blue)', textDecoration: 'none' }}
+            >
               📖 Về trang chủ
             </Link>
           </div>

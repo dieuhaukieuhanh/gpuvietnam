@@ -12,7 +12,7 @@ import { styles } from '@/styles/pages/dashboard.styles';
 export default function DashboardGoiCuaToiPage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading, session } = useAuth();
-  const { user } = useDashboard();
+  const { user, subscription, billingView, refresh } = useDashboard();
 
   useEffect(() => {
     if (authLoading) return;
@@ -28,7 +28,12 @@ export default function DashboardGoiCuaToiPage() {
         <style dangerouslySetInnerHTML={{ __html: styles + myPlanStyles }} />
       </Head>
       <DashboardShell user={user} activeTab="myPlan" title="Gói của tôi">
-        <MyPlanPanel accessToken={session?.access_token} />
+        <MyPlanPanel
+          accessToken={session?.access_token}
+          subscription={subscription}
+          billingView={billingView}
+          onBillingRefresh={refresh}
+        />
       </DashboardShell>
     </>
   );

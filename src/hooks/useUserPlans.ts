@@ -104,11 +104,15 @@ export function useUserPlans(accessToken: string | undefined) {
     if (!accessToken) return undefined;
 
     const onPlansChanged = () => {
-      void loadPlans();
+      void loadPlans({ silent: true });
     };
 
+    let lastFocusLoadAt = 0;
     const onFocus = () => {
-      void loadPlans();
+      const now = Date.now();
+      if (now - lastFocusLoadAt < 3_000) return;
+      lastFocusLoadAt = now;
+      void loadPlans({ silent: true });
     };
 
     window.addEventListener(USER_PLANS_CHANGED_EVENT, onPlansChanged);

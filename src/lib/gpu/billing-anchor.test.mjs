@@ -143,14 +143,18 @@ describe('FK fallback — read-path resilience for projection drift', () => {
     );
   });
 
-  it('status projection passes machineId to loadActiveSessionRow for session-field fallback', () => {
+  it('status projection does not load session row for client billing fields', () => {
     const source = readFileSync(
       path.join(__dirname, '..', 'machines-status-projection.js'),
       'utf8',
     );
     assert.ok(
-      source.includes('activeMachine?.id ? String(activeMachine.id) : null'),
-      'machines-status-projection must pass machine.id to loadActiveSessionRow for FK fallback',
+      !source.includes('loadActiveSessionRow'),
+      'machines/status infra handler must not build client billing/session fields',
+    );
+    assert.ok(
+      !source.includes('buildBillingSessionView'),
+      'machines/status must not expose billing session view',
     );
   });
 

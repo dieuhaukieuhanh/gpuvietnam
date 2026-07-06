@@ -57,9 +57,10 @@ fs.rmSync(nextDir, { recursive: true, force: true });
 console.log('[dev:clean] Removed .next cache');
 console.log(`[dev:clean] Starting next dev on http://localhost:${port}`);
 
-const child = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['next', 'dev', '-p', port], {
+const child = spawn('npx', ['next', 'dev', '-p', port], {
   cwd: root,
   stdio: 'inherit',
+  shell: true,
   env: { ...process.env, PORT: port },
 });
 
