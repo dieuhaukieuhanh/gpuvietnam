@@ -97,7 +97,7 @@ Fake Provider (endpoint publish trễ) + fake Comfy → full Job; assert đúng 
 
 ## Out of scope
 
-- Failover Attempt 2 (**1.7**)  
+- Failover Attempt 2 → [B1_7_FAILOVER.md](./B1_7_FAILOVER.md)  
 - Persist Supabase `runtime_registry` / `job_attempts` từ store (ops/wire tiếp)  
 - Marketplace offer walk / bad-host (đã nằm trong Provider; binder gọi `createInstance` như black box)  
 - Dashboard (**1.8**)

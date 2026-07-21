@@ -56,7 +56,7 @@ Dashboard tối thiểu
 | 1.4 | Runtime Port (create / submit / monitor / fetch / destroy) | [RuntimePort.md](./RuntimePort.md) + `src/lib/cp-runtime/runtime-port.js` (stub/interface) | CP chỉ nói chuyện qua Port |
 | 1.5 | Comfy Adapter implement Port | [B1_5_COMFY_ADAPTER.md](./B1_5_COMFY_ADAPTER.md) + `comfy-adapter.js` + smoke test (fake Comfy e2e via Port) | Một Job end-to-end qua Adapter, CP không gọi Comfy trực tiếp |
 | 1.6 | Provider gắn Attempt: thuê máy → metadata → submit | [B1_6_PROVIDER_ATTEMPT.md](./B1_6_PROVIDER_ATTEMPT.md) + `provider-runtime-bind.js` | Một Attempt = một Runtime/GPU |
-| 1.7 | Failover: Runtime chết → Attempt FAIL → Attempt 2 trên máy mới | Failover path + test/runbook | Job hoàn thành trên máy B sau khi A chết (chạy lại, không resume CUDA) |
+| 1.7 | Failover: Runtime chết → Attempt FAIL → Attempt 2 trên máy mới | [B1_7_FAILOVER.md](./B1_7_FAILOVER.md) + `failover.js` + test/runbook | Job hoàn thành trên máy B sau khi A chết (chạy lại, không resume CUDA) |
 | 1.8 | Dashboard tối thiểu: trạng thái Job/Attempt | UI tối thiểu trên dashboard | User thấy queued / running / failed / retry |
 
 ### Definition of Done — B1

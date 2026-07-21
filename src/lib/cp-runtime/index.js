@@ -60,3 +60,9 @@ export {
   runProviderBackedJobAttempt,
   waitForProviderEndpoint,
 } from './provider-runtime-bind.js';
+
+export {
+  FAILOVER_RETRYABLE_CODES,
+  isFailoverRetryable,
+  runJobWithFailover,
+} from './failover.js';

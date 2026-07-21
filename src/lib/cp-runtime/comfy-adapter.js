@@ -219,6 +219,21 @@ export function createComfyRuntimePort(deps = {}) {
           inferImageSpecRefFromDockerImage(String(meta.image ?? '')) ||
           resolveImageSpecRefForGpuLine(params.gpuLine);
 
+        // Fail closed before renting GPU when required vs predicted spec already mismatch.
+        {
+          const earlyParity = evaluateParity({
+            requiredSpecId: params.requiredImageSpecRef,
+            runtimeSpecId: imageSpecRef,
+          });
+          if (!earlyParity.ok) {
+            throw new RuntimePortError(
+              'PARITY_FAILED',
+              earlyParity.missing.reason || 'Image Spec parity failed',
+              { details: { missing: earlyParity.missing, code: earlyParity.code } },
+            );
+          }
+        }
+
         if (!endpointUrl && typeof deps.provisionRuntime === 'function') {
           const provisioned = await deps.provisionRuntime(params);
           endpointUrl = String(provisioned.endpointUrl ?? '').trim();
