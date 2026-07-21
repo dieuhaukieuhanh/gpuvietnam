@@ -2,7 +2,8 @@
 
 > **Mục đích:** Tài liệu context cho dev / chat mới — mô tả **thực tế đã triển khai** và phân biệt rõ với kế hoạch tương lai.  
 > **Tiến độ chi tiết theo milestone:** [`docs/PROGRESS.md`](PROGRESS.md)  
-> **Kiến trúc SCB:** [`docs/scb/`](./scb/) — đóng băng tại tag `scb-4.0` (commit `bbed8da`); ADR-001..004 là closed set.
+> **Kiến trúc SCB:** [`docs/scb/`](./scb/) — đóng băng tại tag `scb-4.0` (commit `bbed8da`); ADR-001..004 là closed set.  
+> **Kiến trúc Control Plane / Runtime v2.0:** [`docs/architecture/ARCHITECTURE_V2_FREEZE.md`](./architecture/ARCHITECTURE_V2_FREEZE.md) + [ADR-005](./architecture/ADR-005-control-plane-runtime-v2.md) — Frozen 2026-07-21; code checkpoint tag `checkpoint/pre-cp-runtime-split`.
 
 **Thư mục dự án:** `D:\GPU + AI\Web\gpuvietnam\`  
 **Nguồn HTML gốc:** `D:\GPU + AI\Web\*.html` (chuyển đổi qua `npm run convert`)
@@ -611,7 +612,9 @@ npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 ```
 Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/scb/SCB-MAINTENANCE-MODE.md.
 SCB 4.0 đã đóng băng (tag scb-4.0, ADR-001..004 closed set). Không refactor frozen components.
-Product layer OK: UI/Dashboard/Wallet/Billing UX. Mọi thay đổi kiến trúc → ADR-005+ cần owner approval.
+Control Plane / Runtime v2.0 đã đóng băng (docs/architecture/ARCHITECTURE_V2_FREEZE.md, ADR-005).
+Triển khai theo v2.0 (Job/Attempt, Runtime Port, Comfy Adapter). Đổi kiến trúc CP/Runtime → ADR-006+ + evidence.
+Product layer OK: UI/Dashboard/Wallet/Billing UX trong giới hạn hai freeze.
 Docker Hub dieuhaukieuhanh/gpuvietnam-comfyui:v1. GPUService + billing + env workflow ✅.
 SSH: VAST_SSH_PRIVATE_KEY_PATH. Tiếp: push image → test Vast E2E.
 ```
