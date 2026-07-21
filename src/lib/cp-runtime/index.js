@@ -41,3 +41,13 @@ export {
   validateCreateParams,
   validateSubmitParams,
 } from './runtime-port.js';
+
+export {
+  createComfyRuntimePort,
+  runJobAttemptViaRuntimePort,
+} from './comfy-adapter.js';
+
+export {
+  COMFY_SMOKE_WORKFLOW,
+  TINY_PNG_BYTES,
+} from './comfy-smoke-workflow.js';

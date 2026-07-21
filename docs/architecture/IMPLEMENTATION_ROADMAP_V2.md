@@ -54,7 +54,7 @@ Dashboard tối thiểu
 | 1.3 | Kho bền: input/output (+ quy ước model) ngoài ổ GPU | **Storage Spec** [B1_3_STORAGE_SPEC.md](./B1_3_STORAGE_SPEC.md) + `cp_assets` (**0044**) + `src/lib/cp-runtime/storage-paths.js` | Hủy máy không mất file cần cho Attempt sau |
 | **1.3.5** | **Runtime Image Spec** (parity): Docker image, custom nodes, models, LoRA, extensions bắt buộc cho một Attempt | [RuntimeImageSpec.md](./RuntimeImageSpec.md) + `runtime-image-spec.js` + `jobs.required_image_spec_ref` (**0045**) | Trước submit biết Runtime “đủ môi trường” hay không |
 | 1.4 | Runtime Port (create / submit / monitor / fetch / destroy) | [RuntimePort.md](./RuntimePort.md) + `src/lib/cp-runtime/runtime-port.js` (stub/interface) | CP chỉ nói chuyện qua Port |
-| 1.5 | Comfy Adapter implement Port | **ComfyAdapter** (module) + smoke chạy 1 Job | Một Job end-to-end qua Adapter, CP không gọi Comfy trực tiếp |
+| 1.5 | Comfy Adapter implement Port | [B1_5_COMFY_ADAPTER.md](./B1_5_COMFY_ADAPTER.md) + `comfy-adapter.js` + smoke test (fake Comfy e2e via Port) | Một Job end-to-end qua Adapter, CP không gọi Comfy trực tiếp |
 | 1.6 | Provider gắn Attempt: thuê máy → metadata → submit | Provision → Runtime Registry → Attempt running | Một Attempt = một Runtime/GPU |
 | 1.7 | Failover: Runtime chết → Attempt FAIL → Attempt 2 trên máy mới | Failover path + test/runbook | Job hoàn thành trên máy B sau khi A chết (chạy lại, không resume CUDA) |
 | 1.8 | Dashboard tối thiểu: trạng thái Job/Attempt | UI tối thiểu trên dashboard | User thấy queued / running / failed / retry |
