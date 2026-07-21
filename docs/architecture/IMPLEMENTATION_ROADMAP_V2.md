@@ -10,6 +10,8 @@
 
 Làm **theo thứ tự**. Mỗi bước có **Deliverable** và tiêu chí **Xong khi**. Không nhồi Salad / Warm Pool / FE mới vào B1.
 
+**Kiểm thử E2E:** không dùng checklist phẳng T1–T25 làm merge gate. Dùng **4 Gate** — [E2E_TEST_GATES_V2.md](./E2E_TEST_GATES_V2.md) (P0 Merge · P1 Go-Live · B4 Hardening · Production Scale).
+
 ---
 
 ## Giai đoạn 0 — Nền tảng ✅
