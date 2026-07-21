@@ -7,6 +7,7 @@
 | **Architecture** | [ARCHITECTURE_V2_FREEZE.md](./ARCHITECTURE_V2_FREEZE.md) · [ADR-005](./ADR-005-control-plane-runtime-v2.md) |
 | **Roadmap** | [IMPLEMENTATION_ROADMAP_V2.md](./IMPLEMENTATION_ROADMAP_V2.md) |
 | **Branch baseline** | `feat/cp-runtime-b1` |
+| **Gate 1 progress** | [GATE1_TEST_STATUS.md](./GATE1_TEST_STATUS.md) — auto vs GPU thật |
 
 ---
 
