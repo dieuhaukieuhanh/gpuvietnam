@@ -62,7 +62,7 @@ User
 
 ## Out of scope for 1.2
 
-- Runtime Port / Comfy Adapter code (1.4–1.5)  
+- Runtime Port → [RuntimePort.md](./RuntimePort.md); Comfy Adapter (1.5)  
 - Persistent object-storage paths detail → [B1_3_STORAGE_SPEC.md](./B1_3_STORAGE_SPEC.md)  
 - Full Runtime Image Spec document → [RuntimeImageSpec.md](./RuntimeImageSpec.md)  
 - Applying migration to production (ops; run `scripts/run-migrations.mjs` when ready)

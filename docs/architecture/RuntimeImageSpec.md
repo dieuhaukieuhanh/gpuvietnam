@@ -176,7 +176,7 @@ Weights khác (IPAdapter, ControlNet, …) = optional / tải khi workflow cần
 
 ## Out of scope
 
-- Runtime Port / Comfy Adapter (1.4–1.5)  
+- Runtime Port → [RuntimePort.md](./RuntimePort.md); Comfy Adapter (1.5)  
 - Failover orchestration (1.7)  
 - Warm pool image pre-pull policy (B4)  
 - User-installed custom nodes restore (Image v2.0 product note)
