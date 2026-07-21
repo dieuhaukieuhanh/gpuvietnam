@@ -9,6 +9,7 @@ import DashboardStorageSummaryCard from '@/components/dashboard/DashboardStorage
 import DashboardRecentWorkflowsCard from '@/components/dashboard/DashboardRecentWorkflowsCard';
 import DashboardRecentSessionsCard from '@/components/dashboard/DashboardRecentSessionsCard';
 import DashboardJobsCard from '@/components/dashboard/DashboardJobsCard';
+import DualRunSafetyCard from '@/components/dashboard/DualRunSafetyCard';
 import DashboardRecentImagesMobile from '@/components/dashboard/DashboardRecentImagesMobile';
 import {
   DashboardSupportActiveBanner,
@@ -2119,6 +2120,10 @@ export default function DashboardOverview({
 
           <div className="dashboard-sidebar-column">
             {planCard}
+            <DualRunSafetyCard
+              accessToken={session?.access_token}
+              planKey={displayPlan?.planKey ?? normalizePlanKey(subscription?.plan ?? '')}
+            />
             <DashboardStorageSummaryCard
               accessToken={session?.access_token}
               machineRunning={serverCardPhase === 'running'}

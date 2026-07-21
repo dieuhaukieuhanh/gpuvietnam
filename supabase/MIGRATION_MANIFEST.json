@@ -488,6 +488,16 @@
       "depends_on": [
         "0043"
       ]
+    },
+    {
+      "id": "0047",
+      "file": "supabase/cp-runtime-v2-dual-run.sql",
+      "category": "migration",
+      "description": "B3 dual-run: jobs.dual_run_group_id, winner_attempt_id, dual_run_enabled",
+      "idempotent": true,
+      "depends_on": [
+        "0043"
+      ]
     }
   ],
   "seeds": [

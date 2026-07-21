@@ -531,20 +531,11 @@ export function createComfyRuntimePort(deps = {}) {
 
 /**
  * CP-style orchestration for one Job Attempt via Port only (smoke / 1.5).
+ * opts: userId, jobId?, attemptId?, requiredImageSpecRef, workflowSnapshot,
+ * createMetadata?, gpuLine?, pollMs?, timeoutMs?, inputManifest?, shouldAbort?
  *
  * @param {RuntimePort} port
- * @param {{
- *   userId: string;
- *   jobId?: string;
- *   attemptId?: string;
- *   requiredImageSpecRef: string;
- *   workflowSnapshot: Record<string, unknown>;
- *   createMetadata?: Record<string, unknown>;
- *   gpuLine?: string;
- *   pollMs?: number;
- *   timeoutMs?: number;
- *   inputManifest?: object;
- * }} opts
+ * @param {object} opts
  */
 export async function runJobAttemptViaRuntimePort(port, opts) {
   assertRuntimePort(port);
@@ -553,6 +544,7 @@ export async function runJobAttemptViaRuntimePort(port, opts) {
   const attemptId = String(opts.attemptId ?? randomUUID());
   const pollMs = Math.max(10, Number(opts.pollMs ?? 50));
   const timeoutMs = Math.max(pollMs, Number(opts.timeoutMs ?? 15_000));
+  const shouldAbort = typeof opts.shouldAbort === 'function' ? opts.shouldAbort : null;
 
   const created = await port.create({
     userId,
@@ -570,6 +562,13 @@ export async function runJobAttemptViaRuntimePort(port, opts) {
     );
   }
 
+  if (shouldAbort?.()) {
+    await port.destroy({ runtimeId: created.runtimeId, reason: 'aborted_before_submit' });
+    throw new RuntimePortError('CANCELLED', 'Attempt aborted before submit', {
+      details: { attemptId, runtimeId: created.runtimeId },
+    });
+  }
+
   const submitted = await port.submit({
     runtimeId: created.runtimeId,
     jobId,
@@ -583,6 +582,12 @@ export async function runJobAttemptViaRuntimePort(port, opts) {
   /** @type {Awaited<ReturnType<RuntimePort['monitor']>> | null} */
   let last = null;
   while (Date.now() < deadline) {
+    if (shouldAbort?.()) {
+      await port.destroy({ runtimeId: created.runtimeId, reason: 'aborted_by_dual_run_winner' });
+      throw new RuntimePortError('CANCELLED', 'Attempt aborted (sibling won dual-run)', {
+        details: { attemptId, runtimeId: created.runtimeId },
+      });
+    }
     last = await port.monitor({
       runtimeId: created.runtimeId,
       attemptId,

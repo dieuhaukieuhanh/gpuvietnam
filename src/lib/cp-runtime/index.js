@@ -101,3 +101,17 @@ export {
   buildRuntimeRebindPlan,
   rebindComfyProxyToRuntime,
 } from './runtime-rebind.js';
+
+export {
+  DUAL_RUN_BILLING,
+  DUAL_RUN_UX_COPY_VI,
+  buildDualRunUxState,
+  estimateDualRunCustomerCharge,
+  evaluateDualRunEligibility,
+  isDualRunAllowedForPlan,
+} from './dual-run-policy.js';
+
+export {
+  runJobWithDualRun,
+  selectDualRunWinner,
+} from './dual-run.js';

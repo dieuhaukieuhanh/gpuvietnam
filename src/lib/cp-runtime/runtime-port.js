@@ -122,6 +122,7 @@ export const RUNTIME_PORT_ERROR_CODES = Object.freeze([
   'DESTROY_FAILED',
   'TIMEOUT',
   'UNAVAILABLE',
+  'CANCELLED',
 ]);
 
 export class RuntimePortError extends Error {

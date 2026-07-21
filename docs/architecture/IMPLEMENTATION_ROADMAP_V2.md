@@ -89,9 +89,9 @@ Hủy Runtime giữa chừng → máy mới → Attempt 2 chạy lại → outpu
 
 | Step | Việc | Deliverable | Xong khi |
 |------|------|-------------|----------|
-| 3.1 | Policy Dual-run: Job → Attempt A + Attempt B | **DualRun policy note / ADR nhỏ** (policy, không đổi lớp) | Spec + cờ bật cho KH |
-| 3.2 | Chọn kết quả thắng; hủy Attempt còn lại | Winner selection + cleanup | Một output thắng khi một GPU chết hoặc chậm |
-| 3.3 | Billing + UX “chạy 2 GPU” | Pricing/UX copy + flags | KH bật/tắt và hiểu chi phí |
+| 3.1 | Policy Dual-run: Job → Attempt A + Attempt B | [ADR-006](./ADR-006-dual-run-policy.md) · [B3_DUAL_RUN.md](./B3_DUAL_RUN.md) · `dual-run-policy.js` | Spec + cờ bật cho KH |
+| 3.2 | Chọn kết quả thắng; hủy Attempt còn lại | `runJobWithDualRun` + `selectDualRunWinner` | Một output thắng khi một GPU chết hoặc chậm |
+| 3.3 | Billing + UX “chạy 2 GPU” | Cap 1.9× + `DualRunSafetyCard` + `/api/cp/dual-run` | KH bật/tắt và hiểu chi phí |
 
 ### Definition of Done — B3
 
