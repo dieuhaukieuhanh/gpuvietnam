@@ -101,5 +101,5 @@ Kịch bản: máy A chết sau submit → Attempt 2 trên máy B → output b�
 ## Out of scope
 
 - Dual-run song song (B3 — policy, không phải failover tuần tự)  
-- Dashboard UI (**1.8**)  
+- Dashboard UI → [B1_8_DASHBOARD_JOBS.md](./B1_8_DASHBOARD_JOBS.md)  
 - Auto health watcher daemon (B4 §4.3) — orchestrator sẵn dùng khi wire

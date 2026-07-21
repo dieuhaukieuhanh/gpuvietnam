@@ -8,6 +8,7 @@ import DashboardRealtimePerfCard from '@/components/dashboard/DashboardRealtimeP
 import DashboardStorageSummaryCard from '@/components/dashboard/DashboardStorageSummaryCard';
 import DashboardRecentWorkflowsCard from '@/components/dashboard/DashboardRecentWorkflowsCard';
 import DashboardRecentSessionsCard from '@/components/dashboard/DashboardRecentSessionsCard';
+import DashboardJobsCard from '@/components/dashboard/DashboardJobsCard';
 import DashboardRecentImagesMobile from '@/components/dashboard/DashboardRecentImagesMobile';
 import {
   DashboardSupportActiveBanner,
@@ -2127,9 +2128,11 @@ export default function DashboardOverview({
         </div>
 
         <div className="dashboard-two-col">
-          <DashboardRecentWorkflowsCard />
+          <DashboardJobsCard accessToken={session?.access_token} />
           <DashboardRecentSessionsCard accessToken={session?.access_token} />
         </div>
+
+        <DashboardRecentWorkflowsCard />
 
         {isMobile && (
           <DashboardRecentImagesMobile machineRunning={serverCardPhase === 'running'} />

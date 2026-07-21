@@ -66,3 +66,14 @@ export {
   isFailoverRetryable,
   runJobWithFailover,
 } from './failover.js';
+
+export {
+  buildJobListItemViewModel,
+  buildJobListViewModels,
+  isMissingCpJobsRelation,
+  jobUiStatusBadgeClass,
+  jobUiStatusLabel,
+  resolveJobUiStatus,
+} from './job-attempt-display.js';
+
+export { listUserJobDashboardItems } from './list-user-jobs.js';
