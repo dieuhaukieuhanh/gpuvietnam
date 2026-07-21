@@ -10,6 +10,7 @@ import DashboardRecentWorkflowsCard from '@/components/dashboard/DashboardRecent
 import DashboardRecentSessionsCard from '@/components/dashboard/DashboardRecentSessionsCard';
 import DashboardJobsCard from '@/components/dashboard/DashboardJobsCard';
 import DualRunSafetyCard from '@/components/dashboard/DualRunSafetyCard';
+import CpWorkspaceDuringBootCard from '@/components/dashboard/CpWorkspaceDuringBootCard';
 import DashboardRecentImagesMobile from '@/components/dashboard/DashboardRecentImagesMobile';
 import {
   DashboardSupportActiveBanner,
@@ -120,8 +121,10 @@ function openingBootStatusMessage(
         : 'Đang mở phiên làm việc';
   }
 
-  if (!eta || stage === 'FAILED') return `${action}...`;
-  return `${action} · ${eta}`;
+  if (!eta || stage === 'FAILED') {
+    return `${action} · bạn có thể soạn bài trên Control Plane bên dưới`;
+  }
+  return `${action} · ${eta} · soạn bài trên CP không cần chờ GPU`;
 }
 
 const WORKSPACE_PREFIX_LABELS: Record<string, string> = {
@@ -1994,7 +1997,7 @@ export default function DashboardOverview({
             {serverCardPhase === 'opening' && canCancelBoot && (
               <>
                 <button type="button" className="btn btn-success btn-lg" disabled>
-                  {isCancellingBoot ? 'Đang hủy...' : 'Đang khởi tạo...'}
+                  {isCancellingBoot ? 'Đang hủy...' : 'GPU đang khởi động...'}
                 </button>
                 <button
                   type="button"
@@ -2004,13 +2007,39 @@ export default function DashboardOverview({
                 >
                   Hủy khởi tạo
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-lg"
+                  onClick={() => {
+                    document.getElementById('cp-workspace-panel')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  }}
+                >
+                  Soạn trên Control Plane
+                </button>
               </>
             )}
 
             {serverCardPhase === 'opening' && !canCancelBoot && (
-              <button type="button" className="btn btn-success btn-lg" disabled>
-                Đang khởi tạo...
-              </button>
+              <>
+                <button type="button" className="btn btn-success btn-lg" disabled>
+                  GPU đang khởi động...
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-lg"
+                  onClick={() => {
+                    document.getElementById('cp-workspace-panel')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  }}
+                >
+                  Soạn trên Control Plane
+                </button>
+              </>
             )}
 
             {serverCardPhase === 'stopping' && (
@@ -2135,6 +2164,14 @@ export default function DashboardOverview({
             />
           </div>
         </div>
+
+        {(serverCardPhase === 'opening' ||
+          (serverCardPhase === 'running' && !machineSessionView?.actions.canOpenComfy)) && (
+          <CpWorkspaceDuringBootCard
+            accessToken={session?.access_token}
+            mode={serverCardPhase === 'opening' ? 'opening' : 'waiting_comfy'}
+          />
+        )}
 
         <div className="dashboard-two-col">
           <DashboardJobsCard accessToken={session?.access_token} />

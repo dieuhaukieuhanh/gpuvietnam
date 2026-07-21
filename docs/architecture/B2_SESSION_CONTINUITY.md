@@ -61,6 +61,7 @@ Invariant: CP không gọi Comfy API; chỉ mint/rebind proxy token.
 - [x] Save snapshot → restore document  
 - [x] Rebind plan + API  
 - [x] Lịch sử Job CP trên trang Lịch sử  
+- [x] **CP usable while GPU boots** — `CpWorkspaceDuringBootCard` trên dashboard lúc `opening` (soạn/lưu workflow + snapshot; Comfy vẫn gated bởi `canOpenComfy`)
 
 Apply migration khi sẵn sàng: `node scripts/run-migrations.mjs` (0046).
 
