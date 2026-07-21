@@ -185,6 +185,12 @@ export const DEFAULT_GPU_PRICING_CONFIG = {
       cta: 'Chọn Studio',
     },
   ],
+  dualRun: {
+    customerMultiplier: 1.65,
+    hardCapMultiplier: 1.9,
+    multiplierMin: 1.5,
+    multiplierMax: 1.8,
+  },
 };
 
 export function getDefaultGpuPricingConfig() {

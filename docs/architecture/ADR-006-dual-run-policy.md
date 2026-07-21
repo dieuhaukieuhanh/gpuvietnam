@@ -41,7 +41,8 @@ Job (execution_policy = dual_run)
 
 - Higher GPU cost while both run.  
 - Billing must cap customer charge (see policy module; product ≤ ~1.9× single).  
-- Requires capacity for two hosts; otherwise fall back to single.
+- Requires capacity for **two distinct hosts**; Attempt B excludes host A (+ bad-host TTL). Otherwise fall back to single.
+- Customer price multiplier is Admin-editable (`gpu_pricing_config.dualRun.customerMultiplier`, default 1.65; hard cap default 1.9).
 
 ### Non-goals
 

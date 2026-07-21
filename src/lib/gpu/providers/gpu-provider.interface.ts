@@ -11,6 +11,9 @@ export interface CreateInstanceParams {
   env?: Record<string, string>;
   diskSize?: number;
   port?: number;
+  plan?: string;
+  /** Dual-run / Render an toàn — skip these host keys (same host as Attempt A, etc.). */
+  excludeHostKeys?: string[];
 }
 
 export interface SubmitWorkflowParams {

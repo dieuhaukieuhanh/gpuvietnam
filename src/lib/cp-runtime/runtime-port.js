@@ -27,7 +27,9 @@
  * @property {string} imageSpecRef
  * @property {'ready' | 'provisioning' | 'starting'} status
  * @property {string | null} [machineId]
+ * @property {string | null} [instanceId]
  * @property {string | null} [provider]
+ * @property {string | null} [hostKey]
  */
 
 /**

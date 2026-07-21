@@ -2123,6 +2123,10 @@ export default function DashboardOverview({
             <DualRunSafetyCard
               accessToken={session?.access_token}
               planKey={displayPlan?.planKey ?? normalizePlanKey(subscription?.plan ?? '')}
+              activeGpuLine={
+                (machineSessionView?.machine as { gpu_line?: string } | null | undefined)
+                  ?.gpu_line ?? null
+              }
             />
             <DashboardStorageSummaryCard
               accessToken={session?.access_token}

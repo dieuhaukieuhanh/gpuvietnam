@@ -69,16 +69,21 @@ type NumberInputProps = {
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
 };
 
-function NumberInput({ label, value, onChange, disabled }: NumberInputProps) {
+function NumberInput({ label, value, onChange, disabled, min = 0, max, step }: NumberInputProps) {
   return (
     <label className="gpu-edit-label">
       <span>{label}</span>
       <input
         className="gpu-edit-field mono"
         type="number"
-        min={0}
+        min={min}
+        max={max}
+        step={step}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
         disabled={disabled}
@@ -210,6 +215,13 @@ export default function AdminGpuPricingPanel() {
     setDraft((prev) => ({
       ...prev,
       section: { ...prev.section, [field]: value },
+    }));
+  };
+
+  const updateDualRun = (patch: Partial<GpuPricingConfig['dualRun']>) => {
+    setDraft((prev) => ({
+      ...prev,
+      dualRun: { ...prev.dualRun, ...patch },
     }));
   };
 
@@ -409,6 +421,38 @@ export default function AdminGpuPricingPanel() {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="gpu-edit-section card">
+        <h3 className="gpu-edit-section-title">Render an toàn (dual-run)</h3>
+        <p className="stat-sub" style={{ marginTop: 0, marginBottom: 12, lineHeight: 1.6 }}>
+          Hệ số giá so với phiên 1 GPU. Ví dụ <strong>1.5</strong> = bằng 1.5 lần giá gốc,{' '}
+          <strong>1.65</strong> = 1.65 lần. Trần cứng không cho vượt quá mức đã hứa với khách.
+        </p>
+        <div className="gpu-edit-grid-3">
+          <NumberInput
+            label="Hệ số giá (× giá gốc)"
+            value={draft.dualRun?.customerMultiplier ?? 1.65}
+            onChange={(v) => updateDualRun({ customerMultiplier: v })}
+            min={1}
+            max={3}
+            step={0.01}
+          />
+          <NumberInput
+            label="Trần tối đa (×)"
+            value={draft.dualRun?.hardCapMultiplier ?? 1.9}
+            onChange={(v) => updateDualRun({ hardCapMultiplier: v })}
+            min={1}
+            max={5}
+            step={0.01}
+          />
+        </div>
+        <p className="stat-sub" style={{ marginTop: 8, lineHeight: 1.6 }}>
+          Hiện tại: khách thấy khoảng{' '}
+          <strong>{Number(draft.dualRun?.customerMultiplier ?? 1.65).toFixed(2)}×</strong> giá phiên
+          thường (tối đa{' '}
+          <strong>{Number(draft.dualRun?.hardCapMultiplier ?? 1.9).toFixed(2)}×</strong>).
+        </p>
       </div>
 
       <div className="gpu-edit-preview-wrap">

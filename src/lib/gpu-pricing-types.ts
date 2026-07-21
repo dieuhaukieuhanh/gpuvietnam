@@ -46,4 +46,13 @@ export type GpuPricingConfig = {
   };
   billingToggles: { mode: BillingMode; label: string }[];
   plans: GpuPlanConfig[];
+  /** Render an toàn (dual-run) — hệ số giá so với 1 GPU. */
+  dualRun: {
+    /** Ví dụ 1.5 hoặc 1.65 — khách trả = giá phiên đơn × hệ số này. */
+    customerMultiplier: number;
+    /** Trần cứng (mặc định 1.9). */
+    hardCapMultiplier: number;
+    multiplierMin?: number;
+    multiplierMax?: number;
+  };
 };

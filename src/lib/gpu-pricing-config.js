@@ -1,5 +1,6 @@
 import { DEFAULT_GPU_PRICING_CONFIG, DEFAULT_BILLING_VALIDITY, getDefaultGpuPricingConfig } from '@/lib/gpu-pricing-defaults';
 import { applyRuntimeBillingValidity, applyRuntimeGpuPlans, formatCurrency } from '@/lib/gpu-pricing';
+import { normalizeDualRunBilling } from '@/lib/cp-runtime/dual-run-policy';
 
 const PLAN_KEYS = ['starter', 'pro', 'studio'];
 const BILLING_MODES = ['hourly', 'combo1', 'combo2'];
@@ -316,6 +317,7 @@ export function normalizeGpuPricingConfig(raw) {
     },
     billingToggles,
     plans,
+    dualRun: normalizeDualRunBilling(source.dualRun ?? defaults.dualRun),
   });
 }
 

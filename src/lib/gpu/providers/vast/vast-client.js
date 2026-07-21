@@ -17,6 +17,7 @@ import {
   readVastGpuPricePerHour,
 } from './vast-offer-sanity.js';
 import { rememberVastBadHost, resolveVastHostKey, isVastHostExcluded } from './vast-bad-host-exclusion.js';
+import { hostKeyIsExcluded } from '../../exclude-host-keys.js';
 import { runVastProvisionGate, classifyVastGateFailReason } from './vast-provision-gate.js';
 import {
   appendProvisionJournal,
@@ -429,7 +430,17 @@ export class VastClient {
   }
 
   /**
-   * @param {{ gpuLine: import('../../domain/gpu-instance').GPULine; region?: string; plan?: string; image?: string; label?: string; env?: Record<string, string>; diskSize?: number; port?: number }} params
+   * @param {{
+   *   gpuLine: import('../../domain/gpu-instance').GPULine;
+   *   region?: string;
+   *   plan?: string;
+   *   image?: string;
+   *   label?: string;
+   *   env?: Record<string, string>;
+   *   diskSize?: number;
+   *   port?: number;
+   *   excludeHostKeys?: string[];
+   * }} params
    */
   async createInstance(params) {
     const offerList = await this.searchOffers(params.gpuLine);
@@ -482,6 +493,12 @@ export class VastClient {
           if (hostKey && isVastHostExcluded(hostKey.split('|')[0])) {
             console.warn(
               `[vast/createInstance] Skipping excluded bad host ${hostKey} (offer ${offerId})`,
+            );
+            return true;
+          }
+          if (hostKey && hostKeyIsExcluded(hostKey, params.excludeHostKeys)) {
+            console.warn(
+              `[vast/createInstance] Skipping dual-run excluded host ${hostKey} (offer ${offerId})`,
             );
             return true;
           }

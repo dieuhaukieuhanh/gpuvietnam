@@ -42,8 +42,10 @@ eligibility (plan Pro/Studio + ≥2 hosts)
 
 ## Billing (app layer, not SCB core)
 
-- Customer band ~1.5–1.8×; **hard cap 1.9×** single equivalent.  
-- Loser billed only until cancel.  
+- Admin sets **customerMultiplier** (e.g. 1.5 hoặc 1.65× giá gốc) + **hardCapMultiplier** in Edit giá GPU.  
+- Attempt B **bắt buộc khác host** A (`excludeHostKeys` wired into Vast/Clore Lớp 1).  
+- GPU thứ 2 = **cùng loại GPU gói đang dùng** (`resolveDualRunGpuLine`).  
+- Pre-check capacity ≥2 distinct hosts before enable.  
 - No dual surcharge if eligibility fails (single fallback).
 
 ---

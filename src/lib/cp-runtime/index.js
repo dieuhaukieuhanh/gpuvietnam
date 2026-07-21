@@ -105,13 +105,29 @@ export {
 export {
   DUAL_RUN_BILLING,
   DUAL_RUN_UX_COPY_VI,
+  applyDualRunPriceMultiplier,
+  assertDistinctHosts,
+  buildDualRunCostWarning,
   buildDualRunUxState,
   estimateDualRunCustomerCharge,
   evaluateDualRunEligibility,
   isDualRunAllowedForPlan,
+  mergeExcludeHostKeys,
+  normalizeDualRunBilling,
+  normalizeHostKey,
+  resolveDualRunBilling,
 } from './dual-run-policy.js';
 
 export {
+  countDistinctHosts,
+  evaluateDualRunCapacity,
+  physicalHostId,
+  probeDualRunDistinctHostCount,
+  resolveDualRunGpuLine,
+} from './dual-run-capacity.js';
+
+export {
+  resolveHostKeyFromCreateResult,
   runJobWithDualRun,
   selectDualRunWinner,
 } from './dual-run.js';

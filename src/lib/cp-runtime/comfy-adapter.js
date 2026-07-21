@@ -25,6 +25,7 @@ import {
   buildManifestEntry,
   buildResultManifest,
 } from './storage-paths.js';
+import { normalizeHostKey } from './dual-run-policy.js';
 
 /**
  * @typedef {import('./runtime-port.js').RuntimePort} RuntimePort
@@ -34,6 +35,20 @@ import {
  * @typedef {import('./runtime-port.js').RuntimePortFetchParams} RuntimePortFetchParams
  * @typedef {import('./runtime-port.js').RuntimePortDestroyParams} RuntimePortDestroyParams
  */
+
+/**
+ * @param {Record<string, unknown>} meta
+ * @param {{ machineId?: string | null; instanceId?: string | null; provider?: string | null }} ids
+ */
+function provisionedHostKey(meta, ids) {
+  return normalizeHostKey(
+    meta.hostKey ??
+      meta.host_key ??
+      meta.host_id ??
+      ids.machineId ??
+      ids.instanceId,
+  );
+}
 
 /**
  * @typedef {object} ComfyAdapterRuntimeRecord
@@ -242,6 +257,9 @@ export function createComfyRuntimePort(deps = {}) {
           instanceId =
             provisioned.instanceId != null ? String(provisioned.instanceId) : instanceId;
           provider = provisioned.provider != null ? String(provisioned.provider) : provider;
+          if (provisioned.hostKey != null) {
+            meta.hostKey = String(provisioned.hostKey);
+          }
           if (provisioned.imageSpecRef) imageSpecRef = String(provisioned.imageSpecRef);
           if (provisioned.status) status = provisioned.status;
         }
@@ -300,13 +318,18 @@ export function createComfyRuntimePort(deps = {}) {
           await deps.onRuntimeReady(record);
         }
 
+        const hostKey =
+          provisionedHostKey(meta, { machineId, instanceId, provider }) ?? null;
+
         return {
           runtimeId,
           endpointUrl: record.endpointUrl,
           imageSpecRef,
           status: record.status === 'ready' ? 'ready' : /** @type {'provisioning' | 'starting'} */ (record.status),
           machineId,
+          instanceId,
           provider,
+          hostKey,
         };
       } catch (error) {
         throw mapComfyError(error, 'UNAVAILABLE');
@@ -532,7 +555,8 @@ export function createComfyRuntimePort(deps = {}) {
 /**
  * CP-style orchestration for one Job Attempt via Port only (smoke / 1.5).
  * opts: userId, jobId?, attemptId?, requiredImageSpecRef, workflowSnapshot,
- * createMetadata?, gpuLine?, pollMs?, timeoutMs?, inputManifest?, shouldAbort?
+ * createMetadata?, gpuLine?, pollMs?, timeoutMs?, inputManifest?, shouldAbort?,
+ * beforeCreate?, afterCreate?
  *
  * @param {RuntimePort} port
  * @param {object} opts
@@ -545,6 +569,10 @@ export async function runJobAttemptViaRuntimePort(port, opts) {
   const pollMs = Math.max(10, Number(opts.pollMs ?? 50));
   const timeoutMs = Math.max(pollMs, Number(opts.timeoutMs ?? 15_000));
   const shouldAbort = typeof opts.shouldAbort === 'function' ? opts.shouldAbort : null;
+
+  if (typeof opts.beforeCreate === 'function') {
+    await opts.beforeCreate();
+  }
 
   const created = await port.create({
     userId,
@@ -560,6 +588,10 @@ export async function runJobAttemptViaRuntimePort(port, opts) {
       'RUNTIME_NOT_READY',
       `Runtime not ready after create: ${created.status}`,
     );
+  }
+
+  if (typeof opts.afterCreate === 'function') {
+    await opts.afterCreate(created);
   }
 
   if (shouldAbort?.()) {

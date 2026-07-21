@@ -25,6 +25,7 @@ import {
   isCloreHostExcluded,
   rememberCloreBadHost,
 } from './clore-bad-host-exclusion.js';
+import { hostKeyIsExcluded } from '../../exclude-host-keys.js';
 import {
   runCloreProvisionGate,
   classifyCloreGateFailReason,
@@ -825,6 +826,7 @@ export class CloreClient {
    *   diskSize?: number;
    *   port?: number;
    *   onProgress?: (step: string) => void | Promise<void>;
+   *   excludeHostKeys?: string[];
    * }} params
    */
   async createInstance(params) {
@@ -848,6 +850,7 @@ export class CloreClient {
    *   diskSize?: number;
    *   port?: number;
    *   onProgress?: (step: string) => void | Promise<void>;
+   *   excludeHostKeys?: string[];
    * }} params
    */
   async _createInstanceInner(params) {
@@ -938,6 +941,12 @@ export class CloreClient {
           if (hostKey && isCloreHostExcluded(hostKey)) {
             console.info(
               `[clore/createInstance] Skipping excluded bad host ${hostKey} (offer ${offerId})`,
+            );
+            return true;
+          }
+          if (hostKey && hostKeyIsExcluded(hostKey, params.excludeHostKeys)) {
+            console.info(
+              `[clore/createInstance] Skipping dual-run excluded host ${hostKey} (offer ${offerId})`,
             );
             return true;
           }

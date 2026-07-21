@@ -112,28 +112,40 @@ function startFakeComfyServer(options = {}) {
 }
 
 /**
- * Alternating endpoints: 1st rent → A, 2nd → B.
- * @param {{ urlA: string; urlB: string }} urls
+ * Alternating endpoints: 1st rent → A, 2nd → B (distinct host keys).
+ * @param {{ urlA: string; urlB: string; sameHost?: boolean }} urls
  */
 function createDualFakeProvider(urls) {
-  /** @type {Map<string, { id: string; endpointUrl: string }>} */
+  /** @type {Map<string, { id: string; endpointUrl: string; hostKey: string }>} */
   const instances = new Map();
   /** @type {string[]} */
   const created = [];
   /** @type {string[]} */
   const destroyed = [];
+  /** @type {string[][]} */
+  const excludeCalls = [];
   let n = 0;
 
   return {
     created,
     destroyed,
-    async createInstance() {
+    excludeCalls,
+    async createInstance(params = {}) {
+      const excludeHostKeys = Array.isArray(params.excludeHostKeys)
+        ? params.excludeHostKeys.map(String)
+        : [];
+      excludeCalls.push(excludeHostKeys);
       n += 1;
-      const id = `dual-gpu-${n === 1 ? 'A' : 'B'}`;
+      const branch = n === 1 ? 'A' : 'B';
+      const id = `dual-gpu-${branch}`;
+      const hostKey = urls.sameHost ? 'shared-host' : `host-${branch}`;
+      if (excludeHostKeys.map((k) => k.toLowerCase()).includes(hostKey.toLowerCase())) {
+        throw new Error(`host ${hostKey} excluded`);
+      }
       const endpointUrl = n === 1 ? urls.urlA : urls.urlB;
       created.push(id);
-      instances.set(id, { id, endpointUrl });
-      return { id, providerName: 'fake', endpointUrl };
+      instances.set(id, { id, endpointUrl, hostKey });
+      return { id, providerName: 'fake', endpointUrl, hostKey };
     },
     async getInstanceStatus(instanceId) {
       const row = instances.get(instanceId);
@@ -156,17 +168,39 @@ describe('cp-runtime dual-run policy (B3.1 / B3.3)', () => {
       evaluateDualRunEligibility({ enabled: true, planKey: 'pro', availableHostCount: 1 }).ok,
       false,
     );
+    assert.equal(
+      evaluateDualRunEligibility({
+        enabled: true,
+        planKey: 'pro',
+        hostKeyA: 'host-1',
+        hostKeyB: 'host-1',
+      }).ok,
+      false,
+    );
 
     const charge = estimateDualRunCustomerCharge({
       winnerMinutes: 60,
       loserMinutes: 50,
       singleRatePerMinute: 100,
     });
-    assert.ok(charge.cappedCharge <= 60 * 100 * DUAL_RUN_BILLING.hardCapMultiplier);
-    assert.ok(charge.effectiveMultiplier <= DUAL_RUN_BILLING.hardCapMultiplier);
+    assert.equal(charge.cappedCharge, 60 * 100 * DUAL_RUN_BILLING.customerMultiplier);
+    assert.equal(charge.effectiveMultiplier, DUAL_RUN_BILLING.customerMultiplier);
 
-    const ux = buildDualRunUxState({ planKey: 'pro', enabled: true, availableHostCount: 3 });
+    const custom = estimateDualRunCustomerCharge(
+      { winnerMinutes: 60, loserMinutes: 0, singleRatePerMinute: 100 },
+      { customerMultiplier: 1.5, hardCapMultiplier: 1.9 },
+    );
+    assert.equal(custom.cappedCharge, 60 * 100 * 1.5);
+
+    const ux = buildDualRunUxState({
+      planKey: 'pro',
+      enabled: true,
+      availableHostCount: 3,
+      billing: { customerMultiplier: 1.65, hardCapMultiplier: 1.9 },
+    });
     assert.equal(ux.canEnable, true);
+    assert.equal(ux.requireDistinctHosts, true);
+    assert.match(ux.costWarning, /1\.65/);
     assert.match(ux.costWarning, /1\.9/);
   });
 
@@ -219,6 +253,50 @@ describe('cp-runtime dual-run orchestrator (B3.2)', () => {
       assert.ok(result.loser);
       assert.ok(['cancelled', 'superseded', 'failed'].includes(String(result.loser?.status)));
       assert.equal(provider.created.length, 2);
+      assert.equal(result.hostKeyA, 'host-a');
+      assert.equal(result.hostKeyB, 'host-b');
+      assert.notEqual(result.hostKeyA, result.hostKeyB);
+      assert.ok(provider.excludeCalls[1]?.includes('host-a'));
+    } finally {
+      await comfyA.close().catch(() => {});
+      await comfyB.close().catch(() => {});
+    }
+  });
+
+  it('Attempt B excludes host A (same host cannot be rented twice)', async () => {
+    const comfyA = await startFakeComfyServer({ delayHistoryMs: 50 });
+    const comfyB = await startFakeComfyServer({ delayHistoryMs: 50 });
+    const provider = createDualFakeProvider({
+      urlA: comfyA.baseUrl,
+      urlB: comfyB.baseUrl,
+      sameHost: true,
+    });
+    try {
+      const bundle = createProviderBackedComfyRuntimePort({
+        provider,
+        registryStore: createMemoryRuntimeRegistryStore(),
+        waitTimeoutMs: 2000,
+        pollMs: 15,
+        putObject: async ({ key }) => key,
+      });
+
+      const result = await runJobWithDualRun(bundle, {
+        userId: 'user_same_host',
+        requiredImageSpecRef: SPEC_ID_V3,
+        gpuLine: 'rtx4090_1x',
+        planKey: 'pro',
+        availableHostCount: 5,
+        forceDual: true,
+        workflowSnapshot: { ...COMFY_SMOKE_WORKFLOW },
+        pollMs: 20,
+        timeoutMs: 5000,
+      });
+
+      assert.equal(result.mode, 'dual_run');
+      assert.equal(result.winner.branch, 'A');
+      const branchB = result.attempts.find((a) => a.branch === 'B');
+      assert.equal(branchB?.ok, false);
+      assert.ok(provider.excludeCalls[1]?.includes('shared-host'));
     } finally {
       await comfyA.close().catch(() => {});
       await comfyB.close().catch(() => {});

@@ -24,12 +24,16 @@ import { createMemoryRuntimeRegistryStore } from './runtime-registry-store.js';
  *   diskSize?: number;
  *   port?: number;
  *   env?: Record<string, string>;
+ *   excludeHostKeys?: string[];
  * }) => Promise<{
  *   id: string;
  *   providerName?: string;
  *   providerId?: string;
  *   gpuLine?: string;
  *   endpointUrl?: string | null;
+ *   hostKey?: string | null;
+ *   host_id?: string | null;
+ *   machine_id?: string | null;
  *   metadata?: Record<string, unknown>;
  * }>} createInstance
  * @property {(instanceId: string) => Promise<void>} destroyInstance
@@ -144,10 +148,24 @@ export function createProviderRuntimeBindings(deps) {
 
     let instance;
     try {
+      const meta =
+        params.metadata && typeof params.metadata === 'object'
+          ? /** @type {Record<string, unknown>} */ (params.metadata)
+          : {};
+      const excludeHostKeys = Array.isArray(meta.excludeHostKeys)
+        ? meta.excludeHostKeys.map((k) => String(k)).filter(Boolean)
+        : [];
       instance = await provider.createInstance({
         gpuLine,
         image,
         label: `cp-a-${String(params.attemptId).replace(/-/g, '').slice(0, 24)}`,
+        excludeHostKeys,
+        plan:
+          meta.planKey != null
+            ? String(meta.planKey)
+            : meta.plan != null
+              ? String(meta.plan)
+              : undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -245,7 +263,15 @@ export function createProviderRuntimeBindings(deps) {
       runtimeId,
       endpointUrl,
       instanceId,
-      machineId: null,
+      machineId: instance.machineId != null ? String(instance.machineId) : null,
+      hostKey:
+        instance.hostKey != null
+          ? String(instance.hostKey)
+          : instance.metadata?.host_id != null
+            ? String(instance.metadata.host_id)
+            : instance.metadata?.hostKey != null
+              ? String(instance.metadata.hostKey)
+              : instanceId,
       provider: providerName,
       imageSpecRef,
       status: /** @type {const} */ ('ready'),

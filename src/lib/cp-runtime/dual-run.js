@@ -1,12 +1,19 @@
 /**
- * Dual-run orchestrator — Job → Attempt A + Attempt B in parallel (B3.2).
+ * Dual-run orchestrator — Job → Attempt A + Attempt B (B3.2).
  * Winner = first Attempt with durable Plane B outputs; loser cancelled.
+ * Attempt B must rent a different host than Attempt A (product: Render an toàn).
  */
 
 import { randomUUID } from 'node:crypto';
 import { runJobAttemptViaRuntimePort } from './comfy-adapter.js';
 import { RuntimePortError } from './runtime-port.js';
-import { evaluateDualRunEligibility } from './dual-run-policy.js';
+import {
+  assertDistinctHosts,
+  evaluateDualRunEligibility,
+  mergeExcludeHostKeys,
+  normalizeHostKey,
+} from './dual-run-policy.js';
+import { resolveDualRunGpuLine } from './dual-run-capacity.js';
 
 /**
  * Pure winner selection among finished branch results.
@@ -44,7 +51,30 @@ export function selectDualRunWinner(branches) {
 }
 
 /**
- * Run dual-run Job: two parallel Attempts; first durable success wins.
+ * @param {{
+ *   hostKey?: string | null;
+ *   machineId?: string | null;
+ *   instanceId?: string | null;
+ *   provider?: string | null;
+ * }} created
+ * @param {Record<string, unknown>} [meta]
+ */
+export function resolveHostKeyFromCreateResult(created, meta = {}) {
+  return normalizeHostKey(
+    created?.hostKey ??
+      meta.hostKey ??
+      meta.host_key ??
+      meta.host_id ??
+      created?.machineId ??
+      created?.instanceId ??
+      meta.machineId ??
+      meta.instanceId,
+  );
+}
+
+/**
+ * Run dual-run Job: two Attempts; first durable success wins.
+ * B waits for A's host key then rents with excludeHostKeys (distinct hosts).
  *
  * @param {ReturnType<typeof import('./provider-runtime-bind.js').createProviderBackedComfyRuntimePort>} bundle
  * @param {{
@@ -53,8 +83,10 @@ export function selectDualRunWinner(branches) {
  *   requiredImageSpecRef: string;
  *   workflowSnapshot: Record<string, unknown>;
  *   gpuLine?: string;
+ *   activeGpuLine?: string | null;
  *   planKey?: string | null;
  *   availableHostCount?: number | null;
+ *   badHostKeys?: string[];
  *   pollMs?: number;
  *   timeoutMs?: number;
  *   inputManifest?: object;
@@ -67,6 +99,18 @@ export async function runJobWithDualRun(bundle, opts) {
   const userId = String(opts.userId);
   const jobId = String(opts.jobId ?? randomUUID());
   const dualGroupId = randomUUID();
+  const badHostKeys = mergeExcludeHostKeys(opts.badHostKeys ?? []);
+  const gpuLine = resolveDualRunGpuLine({
+    activeGpuLine: opts.activeGpuLine,
+    gpuLine: opts.gpuLine,
+    planKey: opts.planKey,
+  });
+  if (!gpuLine) {
+    throw new RuntimePortError(
+      'INVALID_ARGUMENT',
+      'Dual-run requires gpuLine from active package / running machine',
+    );
+  }
 
   const eligibility = evaluateDualRunEligibility({
     enabled: true,
@@ -81,7 +125,7 @@ export async function runJobWithDualRun(bundle, opts) {
       jobId,
       requiredImageSpecRef: opts.requiredImageSpecRef,
       workflowSnapshot: opts.workflowSnapshot,
-      gpuLine: opts.gpuLine,
+      gpuLine,
       pollMs: opts.pollMs,
       timeoutMs: opts.timeoutMs,
       inputManifest: opts.inputManifest,
@@ -110,8 +154,14 @@ export async function runJobWithDualRun(bundle, opts) {
   const attemptIdA = String(opts.attemptIds?.[0] ?? randomUUID());
   const attemptIdB = String(opts.attemptIds?.[1] ?? randomUUID());
 
-  /** @type {{ winnerAttemptId: string | null }} */
-  const race = { winnerAttemptId: null };
+  /** @type {{ winnerAttemptId: string | null; hostKeyA: string | null; hostKeyB: string | null }} */
+  const race = { winnerAttemptId: null, hostKeyA: null, hostKeyB: null };
+
+  /** @type {(key: string) => void} */
+  let resolveHostA = () => {};
+  const hostKeyAReady = new Promise((resolve) => {
+    resolveHostA = resolve;
+  });
 
   /**
    * @param {'A' | 'B'} branch
@@ -125,27 +175,82 @@ export async function runJobWithDualRun(bundle, opts) {
       userId,
       attemptNumber,
       status: 'pending',
-      metadata: { dual_run: true, branch, dualGroupId },
+      metadata: { dual_run: true, branch, dualGroupId, requireDistinctHosts: true },
     });
 
     const startedAtMs = Date.now();
 
     try {
+      /** @type {Record<string, unknown>} */
+      const createMetadata = {
+        attemptNumber,
+        dual_run: true,
+        branch,
+        dualGroupId,
+        requireDistinctHosts: true,
+        planKey: opts.planKey ?? null,
+        plan: opts.planKey ?? null,
+        excludeHostKeys: badHostKeys,
+      };
+
       const result = await runJobAttemptViaRuntimePort(port, {
         userId,
         jobId,
         attemptId,
         requiredImageSpecRef: opts.requiredImageSpecRef,
         workflowSnapshot: opts.workflowSnapshot,
-        gpuLine: opts.gpuLine,
+        gpuLine,
         pollMs: opts.pollMs,
         timeoutMs: opts.timeoutMs,
         inputManifest: opts.inputManifest,
-        createMetadata: {
-          attemptNumber,
-          dual_run: true,
-          branch,
-          dualGroupId,
+        createMetadata,
+        beforeCreate: async () => {
+          if (branch !== 'B') return;
+          const hostA = await hostKeyAReady;
+          if (!hostA) {
+            throw new RuntimePortError(
+              'UNAVAILABLE',
+              'Dual-run branch B: Attempt A did not publish a host key',
+              { retryable: true },
+            );
+          }
+          race.hostKeyA = hostA;
+          createMetadata.excludeHostKeys = mergeExcludeHostKeys([...badHostKeys, hostA]);
+        },
+        afterCreate: async (created) => {
+          const hostKey = resolveHostKeyFromCreateResult(created, {
+            hostKey: created.hostKey,
+            machineId: created.machineId,
+            instanceId: created.instanceId,
+          });
+          if (!hostKey) {
+            throw new RuntimePortError(
+              'UNAVAILABLE',
+              `Dual-run branch ${branch}: provider did not return a host key`,
+              { retryable: true, details: { attemptId, branch } },
+            );
+          }
+          if (branch === 'A') {
+            race.hostKeyA = hostKey;
+            resolveHostA(hostKey);
+            return;
+          }
+          race.hostKeyB = hostKey;
+          const distinct = assertDistinctHosts(race.hostKeyA, hostKey);
+          if (!distinct.ok) {
+            await port.destroy({
+              runtimeId: created.runtimeId,
+              reason: 'dual_run_same_host_rejected',
+            });
+            throw new RuntimePortError('UNAVAILABLE', distinct.message || 'same host', {
+              retryable: true,
+              details: {
+                reason: distinct.reason,
+                hostKeyA: distinct.hostKeyA,
+                hostKeyB: distinct.hostKeyB,
+              },
+            });
+          }
         },
         shouldAbort: () =>
           race.winnerAttemptId != null && race.winnerAttemptId !== attemptId,
@@ -177,9 +282,14 @@ export async function runJobWithDualRun(bundle, opts) {
         finishedAtMs,
         outputCount,
         result,
+        hostKey: branch === 'A' ? race.hostKeyA : race.hostKeyB,
         durationMs: finishedAtMs - startedAtMs,
       };
     } catch (error) {
+      if (branch === 'A' && race.hostKeyA == null) {
+        // Unblock B so it can fail cleanly instead of hanging forever.
+        resolveHostA('');
+      }
       const code = error instanceof RuntimePortError ? error.code : null;
       const cancelled = code === 'CANCELLED';
       await registryStore.upsertAttempt({
@@ -199,6 +309,7 @@ export async function runJobWithDualRun(bundle, opts) {
         outputCount: 0,
         errorCode: code,
         error,
+        hostKey: branch === 'A' ? race.hostKeyA : race.hostKeyB,
         durationMs: Date.now() - startedAtMs,
       };
     }
@@ -224,12 +335,20 @@ export async function runJobWithDualRun(bundle, opts) {
     throw new RuntimePortError(
       'EXECUTION_FAILED',
       `Dual-run Job ${jobId}: both Attempts failed`,
-      { details: { dualGroupId, branches: settled.map((s) => ({
-        branch: s.branch,
-        attemptId: s.attemptId,
-        ok: s.ok,
-        errorCode: s.errorCode ?? null,
-      })) } },
+      {
+        details: {
+          dualGroupId,
+          hostKeyA: race.hostKeyA,
+          hostKeyB: race.hostKeyB,
+          branches: settled.map((s) => ({
+            branch: s.branch,
+            attemptId: s.attemptId,
+            ok: s.ok,
+            errorCode: s.errorCode ?? null,
+            hostKey: s.hostKey ?? null,
+          })),
+        },
+      },
     );
   }
 
@@ -242,6 +361,9 @@ export async function runJobWithDualRun(bundle, opts) {
     dualGroupId,
     jobId,
     userId,
+    gpuLine,
+    hostKeyA: race.hostKeyA,
+    hostKeyB: race.hostKeyB,
     winner: {
       branch: selection.winner.branch,
       attemptId: selection.winner.attemptId,
@@ -249,6 +371,7 @@ export async function runJobWithDualRun(bundle, opts) {
       runtimeId: winnerFull?.result?.runtimeId ?? null,
       outputManifest: winnerFull?.result?.outputManifest ?? null,
       finishedAtMs: selection.winner.finishedAtMs,
+      hostKey: winnerFull?.hostKey ?? null,
     },
     loser: loserFull
       ? {
@@ -261,6 +384,7 @@ export async function runJobWithDualRun(bundle, opts) {
               ? 'cancelled'
               : 'failed',
           errorCode: loserFull.errorCode ?? null,
+          hostKey: loserFull.hostKey ?? null,
         }
       : null,
     selectionReason: selection.reason,
@@ -272,6 +396,7 @@ export async function runJobWithDualRun(bundle, opts) {
       outputCount: s.outputCount,
       errorCode: s.errorCode ?? null,
       durationMs: s.durationMs,
+      hostKey: s.hostKey ?? null,
     })),
     outputManifest: winnerFull?.result?.outputManifest ?? null,
   };
