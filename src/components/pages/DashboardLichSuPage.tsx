@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import DashboardShell from '@/components/dashboard/DashboardShell';
 import HistoryPanel from '@/components/dashboard/HistoryPanel';
+import CpJobHistoryCard from '@/components/dashboard/CpJobHistoryCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
 import { routes } from '@/lib/routes';
@@ -28,6 +29,7 @@ export default function DashboardLichSuPage() {
       </Head>
       <DashboardShell user={user} activeTab="history" title="Lịch sử phiên">
         <HistoryPanel accessToken={session?.access_token} />
+        <CpJobHistoryCard accessToken={session?.access_token} />
       </DashboardShell>
     </>
   );

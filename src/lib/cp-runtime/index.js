@@ -77,3 +77,27 @@ export {
 } from './job-attempt-display.js';
 
 export { listUserJobDashboardItems } from './list-user-jobs.js';
+
+export {
+  createCpWorkflow,
+  getCpWorkflow,
+  listCpWorkflows,
+  toWorkflowClientSyncPayload,
+  upsertCpWorkflowDocument,
+} from './workflow-sot.js';
+
+export {
+  listProjectSnapshots,
+  restoreProjectSnapshot,
+  saveProjectSnapshot,
+} from './project-snapshot.js';
+
+export {
+  buildSessionRestoreViewModel,
+  loadSessionRestoreContext,
+} from './session-restore.js';
+
+export {
+  buildRuntimeRebindPlan,
+  rebindComfyProxyToRuntime,
+} from './runtime-rebind.js';

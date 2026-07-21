@@ -71,11 +71,11 @@ Hủy Runtime giữa chừng → máy mới → Attempt 2 chạy lại → outpu
 
 | Step | Việc | Deliverable | Xong khi |
 |------|------|-------------|----------|
-| 2.1 | Workflow SoT trên Control Plane | Persist/sync graph & settings về CP | Mất máy A không mất bài đang soạn |
-| 2.2 | Session Restore UX (thông báo máy mới / job chạy lại) | **Session Restore Demo** | Khách không bắt đầu lại Project từ zero |
-| **2.2.5** | **Project Snapshot** — user Save → CP lưu snapshot (nền cho restore nhanh + versioning sau) | Snapshot API/model + “Save” flow | Restore từ snapshot ổn định, tái lập được |
-| 2.3 | Rebind proxy / Runtime URL theo Runtime mới | Proxy/token rebind spec + behavior | Endpoint/`work.*` trỏ đúng máy hiện tại |
-| 2.4 | History sản phẩm = Job/Attempt trên CP | History UI/API từ CP | Xem lại run cũ sau đổi máy (không phụ thuộc `/history` Comfy) |
+| 2.1 | Workflow SoT trên Control Plane | [B2_SESSION_CONTINUITY.md](./B2_SESSION_CONTINUITY.md) · `cp_workflows` (**0046**) · `/api/cp/workflows` | Mất máy A không mất bài đang soạn |
+| 2.2 | Session Restore UX (thông báo máy mới / job chạy lại) | `SessionRestoreBanner` + `/api/cp/session-restore` | Khách không bắt đầu lại Project từ zero |
+| **2.2.5** | **Project Snapshot** — user Save → CP lưu snapshot | `project_snapshots` + `/api/cp/snapshots` Save/Restore | Restore từ snapshot ổn định, tái lập được |
+| 2.3 | Rebind proxy / Runtime URL theo Runtime mới | `runtime-rebind.js` + `POST /api/cp/runtime-rebind` | Endpoint/`work.*` trỏ đúng máy hiện tại |
+| 2.4 | History sản phẩm = Job/Attempt trên CP | `CpJobHistoryCard` trên `/dashboard/lich-su` | Xem lại run cũ sau đổi máy (không phụ thuộc `/history` Comfy) |
 
 ### Definition of Done — B2
 

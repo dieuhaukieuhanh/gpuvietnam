@@ -478,6 +478,16 @@
       "depends_on": [
         "0043"
       ]
+    },
+    {
+      "id": "0046",
+      "file": "supabase/cp-runtime-v2-b2-session.sql",
+      "category": "migration",
+      "description": "B2 session continuity: cp_workflows, project_snapshots, jobs.cp_workflow_id",
+      "idempotent": true,
+      "depends_on": [
+        "0043"
+      ]
     }
   ],
   "seeds": [

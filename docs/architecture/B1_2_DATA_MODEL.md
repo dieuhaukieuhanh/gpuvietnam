@@ -56,7 +56,8 @@ User
 2. GPU death ⇒ mark Attempt `failed` ⇒ create new Attempt (no CUDA/queue resume).  
 3. `jobs.workflow_snapshot` holds the document used for execution; editor may keep evolving `workflows.document`.  
 4. `image_spec_ref` on Runtime/Attempt + `jobs.required_image_spec_ref` → [RuntimeImageSpec.md](./RuntimeImageSpec.md) (B1.3.5 parity).  
-5. Control Plane APIs will use **service_role**; RLS policies match existing token tables.
+5. Catalog `public.workflows` ≠ Architecture Workflow SoT — use **`cp_workflows`** (B2 / migration **0046**).  
+6. Control Plane APIs will use **service_role**; RLS policies match existing token tables.
 
 ---
 
