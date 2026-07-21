@@ -458,6 +458,16 @@
         "0019",
         "0021"
       ]
+    },
+    {
+      "id": "0044",
+      "file": "supabase/cp-runtime-v2-storage-assets.sql",
+      "category": "migration",
+      "description": "Architecture v2.0 CP durable asset catalog cp_assets (B1.3 Storage Spec Plane B)",
+      "idempotent": true,
+      "depends_on": [
+        "0043"
+      ]
     }
   ],
   "seeds": [
