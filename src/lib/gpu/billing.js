@@ -40,67 +40,21 @@ function isInventoryRowUsable(row) {
 
 
 /**
-
- * CORE LOGIC order: gift (expiring soonest) → combo → hourly.
-
+ * Burn / pick order: soonest `valid_until` first (any gift / hourly / combo).
  * @param {Record<string, unknown>} a
-
  * @param {Record<string, unknown>} b
-
  */
-
 function compareBillablePlanPriority(a, b) {
-
-  const tier = (row) => {
-
-    if (row.plan_type === 'gift') return 0;
-
-    if (row.plan_type === 'combo') return 1;
-
-    if (row.plan_type === 'hourly') return 2;
-
-    return 3;
-
-  };
-
-
-
-  const tierDiff = tier(a) - tier(b);
-
-  if (tierDiff !== 0) return tierDiff;
-
-
-
-  if (a.plan_type === 'gift' && b.plan_type === 'gift') {
-
-    const aExpiry = a.valid_until ? new Date(String(a.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
-
-    const bExpiry = b.valid_until ? new Date(String(b.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
-
+  const aExpiry = a.valid_until ? new Date(String(a.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
+  const bExpiry = b.valid_until ? new Date(String(b.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
+  if (Number.isFinite(aExpiry) && Number.isFinite(bExpiry) && aExpiry !== bExpiry) {
     return aExpiry - bExpiry;
-
   }
 
-
-
-  return 0;
-
+  return Number(a.id ?? 0) - Number(b.id ?? 0);
 }
 
 
-
-/**
-
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
-
- * @param {string} userId
-
- */
-
-/**
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {string} userId
- */
 export async function fetchOrderedBillablePlansForUser(supabaseAdmin, userId) {
   const { data: rows, error } = await supabaseAdmin
     .from('user_plan_inventory')
@@ -423,6 +377,8 @@ async function buildRemainingSnapshot(supabaseAdmin, userId, machine, anchor, pr
     walletBalance: resolvedWalletBalance,
     sessions: resolvedSessions,
     providerRunningVerified,
+    // Scope Remaining / out-of-credit to the machine's package (Starter/Pro/Studio).
+    machine: machine ?? null,
   };
   profEnd(computeSpan);
 
@@ -501,80 +457,43 @@ export async function repairUserBillingState(supabaseAdmin, userId) {
  */
 
 export async function linkMachineToBillingSession(supabaseAdmin, machine, sessionId, startedAt, inventoryId) {
-
   const now = new Date().toISOString();
-
   /** @type {Record<string, unknown>[]} */
-
   const attempts = [
-
     {
-
       billing_started_at: startedAt,
-
       gpu_session_id: sessionId,
-
       ...(inventoryId ? { billing_inventory_id: inventoryId } : {}),
-
       updated_at: now,
-
     },
-
     {
-
       billing_started_at: startedAt,
-
       gpu_session_id: sessionId,
-
       updated_at: now,
-
     },
-
     {
-
       billing_started_at: startedAt,
-
       updated_at: now,
-
     },
-
   ];
 
-
-
   let lastError = null;
-
   for (const patch of attempts) {
-
     const { error } = await supabaseAdmin.from('machines').update(patch).eq('id', machine.id);
-
     if (!error) return;
-
     lastError = error;
-
-    if (error.code !== '22P02') break;
-
+    const code = String(error.code ?? '');
+    const msg = String(error.message ?? '');
+    const retryable =
+      code === '22P02' ||
+      code === 'PGRST204' ||
+      /could not find .* column/i.test(msg);
+    if (!retryable) break;
   }
 
-
-
   if (lastError) throw lastError;
-
 }
 
-
-
-/**
-
- * Resolve when billing started for an active machine.
-
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
-
- * @param {string} userId
-
- * @param {Record<string, unknown> | null | undefined} machine
-
- */
 
 async function repairCorruptRunningSessionAnchor(supabaseAdmin, linkedSession) {
   if (!linkedSession || String(linkedSession.status ?? '') !== 'running') {

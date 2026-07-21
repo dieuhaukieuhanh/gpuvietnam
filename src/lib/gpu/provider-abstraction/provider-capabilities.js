@@ -50,13 +50,29 @@ export function defineProviderCapabilities(overrides) {
   };
 }
 
+/** Marketplace providers registered in the orchestration layer. */
+export const MARKETPLACE_PROVIDER_IDS = Object.freeze(['clore', 'vast', 'salad', 'runpod']);
+
+export const CLORE_CAPABILITIES = defineProviderCapabilities({
+  supportsSpot: true,
+  supportsReserved: false,
+  supportsDocker: true,
+  startupLatency: 'medium',
+  billingGranularity: 'hourly',
+  gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx5090_1x', 'rtx4090_2x'],
+  regions: ['global'],
+  maxDuration: null,
+  pricingModel: 'spot_hourly',
+  implemented: true,
+});
+
 export const VAST_CAPABILITIES = defineProviderCapabilities({
   supportsSpot: true,
   supportsReserved: false,
   supportsDocker: true,
   startupLatency: 'medium',
   billingGranularity: 'hourly',
-  gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx4090_2x'],
+  gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx5090_1x', 'rtx4090_2x'],
   regions: [], // populated at runtime via listRegions()
   maxDuration: '3d',
   pricingModel: 'spot_hourly',
@@ -67,31 +83,21 @@ export const SALAD_CAPABILITIES = defineProviderCapabilities({
   supportsSpot: true,
   supportsDocker: true,
   startupLatency: 'low',
+  billingGranularity: 'hourly',
+  gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx5090_1x', 'rtx4090_2x'],
+  regions: [],
   pricingModel: 'spot_hourly',
+  implemented: false,
 });
 
-export const TENSORDOCK_CAPABILITIES = defineProviderCapabilities({
+export const RUNPOD_CAPABILITIES = defineProviderCapabilities({
   supportsSpot: true,
   supportsReserved: true,
-  startupLatency: 'medium',
-  pricingModel: 'reserved_hourly',
-});
-
-export const INTERDATA_CAPABILITIES = defineProviderCapabilities({
-  supportsSpot: false,
-  supportsReserved: true,
-  startupLatency: 'high',
-  pricingModel: 'reserved_hourly',
-});
-
-export const GPUVIETNAM_INTERNAL_CAPABILITIES = defineProviderCapabilities({
-  supportsSpot: false,
-  supportsReserved: true,
   supportsDocker: true,
-  startupLatency: 'low',
-  billingGranularity: 'session',
-  pricingModel: 'internal',
-  gpuTypes: ['rtx4090_1x'],
-  regions: ['vietnam'],
-  maxDuration: null,
+  startupLatency: 'medium',
+  billingGranularity: 'hourly',
+  gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx5090_1x', 'rtx4090_2x'],
+  regions: [],
+  pricingModel: 'spot_hourly',
+  implemented: false,
 });

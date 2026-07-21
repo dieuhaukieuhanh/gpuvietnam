@@ -15,11 +15,13 @@ CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users view own notifications" ON public.notifications;
 CREATE POLICY "Users view own notifications"
 ON public.notifications FOR SELECT
 TO authenticated
 USING (user_id = auth.uid() OR user_id IS NULL);
 
+DROP POLICY IF EXISTS "Users mark read" ON public.notifications;
 CREATE POLICY "Users mark read"
 ON public.notifications FOR UPDATE
 TO authenticated

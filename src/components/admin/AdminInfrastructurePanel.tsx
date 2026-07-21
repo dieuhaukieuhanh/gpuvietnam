@@ -2,24 +2,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_INFRASTRUCTURE_FILTERS,
   INFRA_GPU_LINE_FILTERS,
+  INFRA_PING_FILTERS,
   INFRA_PROVIDERS,
-  INFRA_REGION_FILTERS,
   INFRA_STATUS_FILTERS,
+  INFRA_UPTIME_FILTERS,
+  PING_BUCKET_LABELS,
+  PING_THRESHOLD_MS,
+  UPTIME_BUCKET_LABELS,
+  UPTIME_THRESHOLD,
   type GpuStockStatus,
   type InfrastructureFilters,
   type InfrastructureGpuRow,
-  UPTIME_THRESHOLD,
   filterInfrastructureRows,
   formatGpuLineLabel,
-  formatUptime7d,
+  formatPingMs,
 } from '@/lib/infrastructure-shared';
 import { formatVndPerHour } from '@/lib/currency';
 import { adminFetch } from '@/lib/admin-session';
 
 export type { GpuStockStatus, InfrastructureGpuRow };
 
-/** 3 giờ — tự động gọi lại API */
-const AUTO_REFRESH_MS = 10_800_000;
+/** Số phút giữa các lần tự cập nhật — lấy từ env, mặc định 15 phút. */
+const REFRESH_MINUTES = Number(process.env.NEXT_PUBLIC_INFRA_REFRESH_MINUTES ?? 15);
+const AUTO_REFRESH_MS = Number.isFinite(REFRESH_MINUTES) && REFRESH_MINUTES > 0
+  ? REFRESH_MINUTES * 60 * 1000
+  : 15 * 60 * 1000;
 
 const STATUS_LABELS: Record<GpuStockStatus, string> = {
   stable: 'Ổn định',
@@ -65,17 +72,31 @@ type InfrastructureTableRowProps = {
 function InfrastructureTableRow({ row }: InfrastructureTableRowProps) {
   const unavailable = row.available <= 0 || row.status === 'unavailable';
   const gpuLabel = formatGpuLineLabel(row.gpu, row.vram);
+  const uptimeLabel = UPTIME_BUCKET_LABELS[row.uptime_bucket] ?? row.uptime_bucket;
+  const pingLabel = PING_BUCKET_LABELS[row.ping_bucket] ?? formatPingMs(row.ping_ms);
 
   return (
     <tr className={unavailable ? 'infra-row-unavailable' : ''}>
       <td>
         <span className="fw-600">{row.provider}</span>
-        {row.provider === 'RunPod' && (
-          <span className="infra-provider-tag">★ chính</span>
-        )}
       </td>
       <td className="mono fw-600">{gpuLabel}</td>
-      <td className="text-muted">{row.region}</td>
+      <td>
+        {unavailable ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <span className="text-green">{uptimeLabel}</span>
+        )}
+      </td>
+      <td>
+        {unavailable ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <span className="mono" title={formatPingMs(row.ping_ms)}>
+            {pingLabel}
+          </span>
+        )}
+      </td>
       <td>
         {unavailable ? (
           <span className="text-red">—</span>
@@ -96,13 +117,6 @@ function InfrastructureTableRow({ row }: InfrastructureTableRowProps) {
               máy online
             </span>
           </>
-        )}
-      </td>
-      <td>
-        {unavailable ? (
-          <span className="text-muted">—</span>
-        ) : (
-          <span className="text-green">{formatUptime7d(row.uptime_7d)}</span>
         )}
       </td>
       <td className="mono">
@@ -176,14 +190,26 @@ function InfrastructureFilterBar({
 
         <select
           className="infra-filter-select"
-          value={filters.region}
-          aria-label="Lọc region"
-          onChange={(e) => onChange({ ...filters, region: e.target.value })}
+          value={filters.uptime}
+          aria-label="Lọc uptime"
+          onChange={(e) => onChange({ ...filters, uptime: e.target.value })}
         >
-          <option value="all">Region: Tất cả</option>
-          {INFRA_REGION_FILTERS.map((region) => (
-            <option key={region} value={region}>
-              {region}
+          {INFRA_UPTIME_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              Uptime: {item.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="infra-filter-select"
+          value={filters.ping}
+          aria-label="Lọc ping"
+          onChange={(e) => onChange({ ...filters, ping: e.target.value })}
+        >
+          {INFRA_PING_FILTERS.map((item) => (
+            <option key={item.value} value={item.value}>
+              Ping: {item.label}
             </option>
           ))}
         </select>
@@ -307,6 +333,9 @@ export default function AdminInfrastructurePanel() {
               Cập nhật lần cuối: {formatLastUpdated(lastUpdated)}
             </span>
           )}
+          <span className="infra-refresh-interval">
+            Tự động cập nhật mỗi {REFRESH_MINUTES} phút
+          </span>
         </div>
       </div>
 
@@ -336,8 +365,10 @@ export default function AdminInfrastructurePanel() {
 
           <div className="card" style={{ marginBottom: 16 }}>
             <p className="stat-sub" style={{ lineHeight: 1.6, marginTop: 0 }}>
-              Mỗi dòng = 1 nhà cung cấp + 1 dòng GPU + 1 Region — giá TB tính riêng trong Region
-              đó · Uptime 7D ≥ {UPTIME_THRESHOLD}% · Tự động cập nhật mỗi 3 giờ
+              Mỗi dòng = 1 nhà cung cấp + 1 dòng GPU + 1 mức Uptime + 1 mức Ping — giá TB tính
+              riêng trong nhóm đó · Cùng bộ lọc provision (disk/RAM/CUDA/VRAM theo gói · ping ≤{' '}
+              {PING_THRESHOLD_MS}ms · uptime ≥ {UPTIME_THRESHOLD}% · currency Clore) · Tự động cập
+              nhật mỗi {REFRESH_MINUTES} phút
             </p>
           </div>
 
@@ -366,7 +397,7 @@ export default function AdminInfrastructurePanel() {
           <div className="card-no-pad infra-provider-section">
             <div className="card-header-row">
               <span className="stat-label" style={{ marginBottom: 0 }}>
-                GPU sẵn sàng — Region Châu Á
+                GPU sẵn sàng (toàn cầu) — Uptime ≥ {UPTIME_THRESHOLD}% · Ping ≤ {PING_THRESHOLD_MS}ms
               </span>
             </div>
             <div className="table-wrap">
@@ -375,9 +406,9 @@ export default function AdminInfrastructurePanel() {
                   <tr>
                     <th>Nhà cung cấp</th>
                     <th>Dòng GPU</th>
-                    <th>Region</th>
+                    <th>Uptime</th>
+                    <th>Ping</th>
                     <th>Số lượng</th>
-                    <th>Uptime 7D</th>
                     <th>Giá TB 10 rẻ nhất</th>
                     <th>Giá VNĐ</th>
                     <th>Trạng thái</th>
@@ -391,7 +422,7 @@ export default function AdminInfrastructurePanel() {
                   ) : (
                     filteredItems.map((row) => (
                       <InfrastructureTableRow
-                        key={`${row.provider}-${row.gpu}-${row.vram}-${row.region}`}
+                        key={`${row.provider}-${row.gpu}-${row.vram}-${row.uptime_bucket}-${row.ping_bucket}`}
                         row={row}
                       />
                     ))
@@ -405,12 +436,17 @@ export default function AdminInfrastructurePanel() {
             <div className="stat-label">Quy tắc tính giá & trạng thái</div>
             <ul className="infra-rules-list">
               <li>
-                Mỗi dòng duy nhất theo Provider + GPU + Region — giá TB 10 rẻ nhất tính trong
-                Region đó.
+                Mỗi dòng duy nhất theo Provider + GPU + Uptime + Ping — giá TB 10 rẻ nhất tính trong
+                nhóm đó.
               </li>
               <li>
-                Chỉ Region Châu Á · Uptime 7D ≥ {UPTIME_THRESHOLD}% — sắp xếp giá tăng dần, lấy
-                trung bình 10 GPU rẻ nhất (hoặc toàn bộ nếu &lt;10).
+                3 dòng GPU: RTX 3090 (Starter) / RTX 4090 1x (Pro) / RTX 5090 (Studio) — cùng hard
+                filters với provision (disk tối thiểu theo gói, VRAM/CUDA theo gói, RAM ≥ 16GB khi
+                có báo cáo) · Uptime ≥ {UPTIME_THRESHOLD}% · Ping ≤ {PING_THRESHOLD_MS}ms.
+              </li>
+              <li>
+                Uptime: &gt;99% · 98.5%–99% · 98%–98.5% · Ping: &lt;50 · 50–100 · 100–200 · 200–250
+                ms.
               </li>
               <li>
                 <span className="badge badge-green">Ổn định</span> ≥ 20 máy ·{' '}

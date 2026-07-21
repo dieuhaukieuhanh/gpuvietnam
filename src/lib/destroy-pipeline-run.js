@@ -182,6 +182,8 @@ async function markMachineDestroyed(supabaseAdmin, machine) {
  *   clearMachineBillingFields?: (client: unknown, machineId: string) => Promise<void>;
  *   backupBeforeStop?: (client: unknown, machine: Record<string, unknown>, userId: string, reason: string) => Promise<boolean>;
  *   notifyBackupStarted?: (client: unknown, opts: { userId: string }) => Promise<void>;
+ *   revokeBackupTokensForMachine?: (client: unknown, machineId: string) => Promise<{ revoked: number }>;
+ *   revokeBackupTokensForSubscription?: (client: unknown, subscriptionId: string) => Promise<{ revoked: number }>;
  *   onStep?: (step: string) => void;
  * }} deps
  * @param {{
@@ -246,6 +248,20 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     // (W8–W10) are correctly skipped — they already ran on the prior pass
     // that destroyed the machine, and re-running them would be redundant.
     await markSubscriptionOffline(supabaseAdmin, userId);
+    try {
+      if (typeof deps.revokeBackupTokensForMachine === 'function') {
+        await deps.revokeBackupTokensForMachine(supabaseAdmin, String(machine.id));
+      }
+      const subId = machine.subscription_id ? String(machine.subscription_id) : '';
+      if (subId && typeof deps.revokeBackupTokensForSubscription === 'function') {
+        await deps.revokeBackupTokensForSubscription(supabaseAdmin, subId);
+      }
+      if (typeof deps.revokeComfyAccessTokensForMachine === 'function') {
+        await deps.revokeComfyAccessTokensForMachine(supabaseAdmin, String(machine.id));
+      }
+    } catch (error) {
+      console.warn('[destroy-pipeline] revoke backup tokens (already destroyed) failed:', error);
+    }
     return {
       destroyed: true,
       outcome: DESTROY_PIPELINE_OUTCOME.ALREADY_DESTROYED,
@@ -266,7 +282,8 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   let backupSuccess = null;
   if (shouldRunBackup(machine, input) && deps.backupBeforeStop) {
     trace(DESTROY_PIPELINE_STEP.BACKUP);
-    if (input.notifyBackupStart !== false && deps.notifyBackupStarted) {
+    // Opt-in only: "đang lưu dữ liệu" is shown on the server card, not the bell.
+    if (input.notifyBackupStart === true && deps.notifyBackupStarted) {
       try {
         await deps.notifyBackupStarted(supabaseAdmin, { userId });
       } catch (error) {
@@ -326,27 +343,43 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     try {
       await deps.gpuService.destroyInstance(instanceId);
     } catch (error) {
-      console.warn('[destroy-pipeline] provider destroy failed:', error);
-      return {
-        destroyed: false,
-        outcome: DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED,
-        lastStep: DESTROY_PIPELINE_STEP.PROVIDER_DESTROY,
-        machine,
-        session: sessionRow,
-        settlement: null,
-        verify: null,
-        backupSuccess,
-        reason: destroyReason,
-        retryable: true,
-        billingResult: null,
-        metrics,
-        stepTrace,
-      };
+      // Cancel may have applied despite a flaky/rate-limited response — re-check
+      // before failing the stop so the customer is not left with a live billable GPU.
+      const postFailVerify = await verifyDestroyed(instanceId, verifyPort, { port });
+      const postFailOutcome = mapDestroyedVerifyOutcome(postFailVerify);
+      if (postFailOutcome === 'destroyed') {
+        console.warn(
+          '[destroy-pipeline] provider destroy errored but verify shows destroyed — continuing',
+          error instanceof Error ? error.message : error,
+        );
+        verifyResult = postFailVerify;
+      } else {
+        console.warn('[destroy-pipeline] provider destroy failed:', error);
+        return {
+          destroyed: false,
+          outcome: DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED,
+          lastStep: DESTROY_PIPELINE_STEP.PROVIDER_DESTROY,
+          machine,
+          session: sessionRow,
+          settlement: null,
+          verify: postFailVerify,
+          backupSuccess,
+          reason: destroyReason,
+          retryable: true,
+          billingResult: null,
+          metrics,
+          stepTrace,
+        };
+      }
     }
   }
 
-  trace(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED);
-  verifyResult = await verifyDestroyed(instanceId, verifyPort, { port });
+  if (!verifyResult) {
+    trace(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED);
+    verifyResult = await verifyDestroyed(instanceId, verifyPort, { port });
+  } else {
+    trace(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED);
+  }
   const verifyOutcome = mapDestroyedVerifyOutcome(verifyResult);
 
   if (verifyOutcome === 'still_running') {
@@ -437,8 +470,21 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     }
 
     if (settlementResult?.state === 'ERROR') {
+      // Provider is already verified destroyed and the session is closed.
+      // Still clear the machine projection so the dashboard does not stay
+      // stuck on "Đang chạy" while settlement is retried by reconciliation.
+      try {
+        await clearBillingFields(supabaseAdmin, String(machine.id));
+        await markMachineDestroyed(supabaseAdmin, machine);
+        await markSubscriptionOffline(supabaseAdmin, userId);
+      } catch (cleanupError) {
+        console.warn(
+          '[destroy-pipeline] cleanup after settlement failure failed:',
+          cleanupError,
+        );
+      }
       return {
-        destroyed: false,
+        destroyed: true,
         outcome: DESTROY_PIPELINE_OUTCOME.SETTLEMENT_FAILED,
         lastStep: DESTROY_PIPELINE_STEP.SETTLEMENT,
         machine,
@@ -486,6 +532,21 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   await clearBillingFields(supabaseAdmin, String(machine.id));
   await markMachineDestroyed(supabaseAdmin, machine);
   await markSubscriptionOffline(supabaseAdmin, userId);
+
+  try {
+    if (typeof deps.revokeBackupTokensForMachine === 'function') {
+      await deps.revokeBackupTokensForMachine(supabaseAdmin, String(machine.id));
+    }
+    const subId = machine.subscription_id ? String(machine.subscription_id) : '';
+    if (subId && typeof deps.revokeBackupTokensForSubscription === 'function') {
+      await deps.revokeBackupTokensForSubscription(supabaseAdmin, subId);
+    }
+    if (typeof deps.revokeComfyAccessTokensForMachine === 'function') {
+      await deps.revokeComfyAccessTokensForMachine(supabaseAdmin, String(machine.id));
+    }
+  } catch (error) {
+    console.warn('[destroy-pipeline] revoke backup tokens failed:', error);
+  }
 
   trace(DESTROY_PIPELINE_STEP.COMPLETE);
 

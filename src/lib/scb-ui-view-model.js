@@ -127,6 +127,16 @@ export function mergeMachineSessionViewOnPoll(prev, next, options = {}) {
     return prev;
   }
 
+  // Hour top-up / wrong subscription pick must not flash the idle "Mở phiên" card.
+  if (
+    prevPhase === 'running' &&
+    nextPhase === 'idle' &&
+    prev.machine?.id &&
+    (!next.machine || String(next.machine.id) === String(prev.machine.id))
+  ) {
+    return prev;
+  }
+
   if (prevPhase === 'stopping' && (nextPhase === 'opening' || nextPhase === 'running')) {
     return prev;
   }

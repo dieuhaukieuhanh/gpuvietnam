@@ -1,0 +1,18 @@
+# GPUVietnam Official Image v1.0 — pinned custom nodes
+# Format: profile<TAB>dir_name<TAB>git_url<TAB>commit_sha
+# profile: common = both v3 and v4; v4 = v4 only
+# Do not use branch names — SHAs only. Update this file for any Official Pack change.
+
+common	ComfyUI-Manager	https://github.com/ltdrdata/ComfyUI-Manager.git	e3ea3e154a568d765b6464401582ef08cc0260f4
+common	ComfyUI-Impact-Pack	https://github.com/ltdrdata/ComfyUI-Impact-Pack.git	429d0159ad429e64d2b3916e6e7be9c22d025c3c
+common	ComfyUI-Impact-Subpack	https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git	50c7b71a6a224734cc9b21963c6d1926816a97f1
+common	ComfyUI-KJNodes	https://github.com/kijai/ComfyUI-KJNodes.git	e27a505b3ba6ce42687fe00500deda103d9d6071
+common	ComfyUI_essentials	https://github.com/cubiq/ComfyUI_essentials.git	9d9f4bedfc9f0321c19faf71855e228c93bd0dc9
+common	ComfyUI_IPAdapter_plus	https://github.com/cubiq/ComfyUI_IPAdapter_plus.git	a0f451a5113cf9becb0847b92884cb10cbdec0ef
+common	comfyui_controlnet_aux	https://github.com/Fannovel16/comfyui_controlnet_aux.git	e8b689a513c3e6b63edc44066560ca5919c0576e
+common	ComfyUI_UltimateSDUpscale	https://github.com/ssitu/ComfyUI_UltimateSDUpscale.git	a5547db9e1d07d3318bb21e9e9c474f4c1e9c8df
+common	ComfyUI-Florence2	https://github.com/kijai/ComfyUI-Florence2.git	9ece3de914214c5f581d725167bc9d0eeb0d1120
+common	ComfyUI-RMBG	https://github.com/1038lab/ComfyUI-RMBG.git	7f0668e2f5127c0fbf11e346b33ce45d6dc34bf7
+common	ComfyUI-Custom-Scripts	https://github.com/pythongosssss/ComfyUI-Custom-Scripts.git	609f3afaa74b2f88ef9ce8d939626065e3247469
+v4	ComfyUI-AnimateDiff-Evolved	https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved.git	d8d163cd90b1111f6227495e3467633676fbb346
+v4	ComfyUI-VideoHelperSuite	https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git	4ee72c065db22c9d96c2427954dc69e7b908444b

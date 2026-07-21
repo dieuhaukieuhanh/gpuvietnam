@@ -166,6 +166,18 @@ describe('FK fallback — read-path resilience for projection drift', () => {
     );
   });
 
+  it('loadBootstrapContext scopes primary inventory to machine package', () => {
+    const source = readFileSync(path.join(__dirname, 'session-start.js'), 'utf8');
+    assert.ok(
+      source.includes('selectPrimaryBillablePlanForMachine'),
+      'bootstrap must not use global gift-first plans[0] across packages',
+    );
+    assert.ok(
+      source.includes('machine.subscription_id'),
+      'bootstrap must load subscription by machine.subscription_id when present',
+    );
+  });
+
   it('openBillableSession W4 — writer-side FK reuse when machine.gpu_session_id is NULL', () => {
     const source = readFileSync(path.join(__dirname, 'session-start.js'), 'utf8');
     assert.ok(

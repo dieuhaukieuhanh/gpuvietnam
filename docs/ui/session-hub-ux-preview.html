@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPUVietnam - Session Hub UX Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-primary: #0A0A0F;
+      --bg-card: #16161F;
+      --bg-secondary: #111118;
+      --border: #1E1E2E;
+      --text-primary: #F1F1F5;
+      --text-secondary: #9898A8;
+      --text-muted: #6B6B7B;
+      --accent-blue: #4F8EF7;
+      --accent-green: #10B981;
+      --accent-red: #EF4444;
+      --accent-orange: #F59E0B;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Inter, system-ui, sans-serif; background: var(--bg-primary); color: var(--text-primary); }
+    .preview-shell { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    .preview-header { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .preview-header h1 { font-size: 22px; margin-bottom: 6px; }
+    .preview-header p { color: var(--text-secondary); font-size: 14px; max-width: 720px; }
+    .preview-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; align-items: center; }
+    .preview-toolbar label { font-size: 12px; color: var(--text-muted); }
+    .phase-btn { border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); padding: 8px 14px; border-radius: 999px; font-size: 12px; font-weight: 500; cursor: pointer; }
+    .phase-btn:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+    .phase-btn.active { background: rgba(79,142,247,.15); border-color: var(--accent-blue); color: var(--accent-blue); }
+    .viewport-toggle { margin-left: auto; display: flex; gap: 6px; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .card-title { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(107,107,123,.15); color: var(--text-secondary); }
+    .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+    .status-badge.online { background: rgba(16,185,129,.12); color: var(--accent-green); }
+    .status-badge.online .dot { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+    .status-badge.starting { background: rgba(245,158,11,.12); color: var(--accent-orange); }
+    .status-badge.starting .dot { background: var(--accent-orange); animation: pulse 1.2s infinite; }
+    .status-badge.offline { background: rgba(239,68,68,.12); color: var(--accent-red); }
+    .status-badge.offline .dot { background: var(--accent-red); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .session-hub { margin-bottom: 16px; }
+    .session-hub-body { padding: 20px 18px 18px; }
+    .hub-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .hub-chip { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px; }
+    .hub-workspace { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .hub-workspace-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+    .hub-timer-block { text-align: center; padding: 16px 0 20px; }
+    .hub-timer { font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+    .hub-timer.muted { opacity: .35; }
+    .hub-timer.paused { color: var(--accent-orange); }
+    .hub-timer-label { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .hub-timer-note { font-size: 12px; color: var(--accent-blue); margin-top: 6px; }
+    .hub-stats { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: center; font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
+    .hub-stats strong { color: var(--accent-blue); }
+    .boot-timeline { max-width: 420px; margin: 0 auto 20px; }
+    .boot-step { display: flex; gap: 12px; padding: 8px 0; font-size: 13px; color: var(--text-muted); }
+    .boot-step.done { color: var(--accent-green); }
+    .boot-step.active { color: var(--text-primary); font-weight: 500; }
+    .boot-icon { width: 22px; text-align: center; flex-shrink: 0; }
+    .boot-progress { height: 3px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 16px; }
+    .boot-progress-fill { height: 100%; width: 40%; background: linear-gradient(90deg,var(--accent-blue),#8B5CF6); animation: indeterminate 1.8s ease-in-out infinite; }
+    @keyframes indeterminate { 0%{transform:translateX(-100%)} 100%{transform:translateX(250%)} }
+    .hub-message { text-align: center; font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; padding: 10px 14px; background: rgba(79,142,247,.06); border-radius: var(--radius-md); border: 1px solid rgba(79,142,247,.15); }
+    .hub-message.warn { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.2); color: var(--accent-orange); }
+    .hub-message.error { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.2); color: var(--accent-red); }
+    .hub-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .btn { border: none; border-radius: var(--radius-md); font-size: 14px; font-weight: 600; padding: 12px 22px; cursor: pointer; font-family: inherit; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent-green); color: #fff; }
+    .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-danger { background: var(--accent-red); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+    .alert-stack { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .alert { padding: 10px 12px; border-radius: var(--radius-md); font-size: 12px; }
+    .alert.danger { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25); color: #fca5a5; }
+    .alert.warning { background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.25); color: #fcd34d; }
+    .bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .credit-body, .perf-body { padding: 16px 18px; }
+    .credit-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .credit-spec { font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; }
+    .progress-bar { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 8px; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg,var(--accent-blue),#8B5CF6); }
+    .credit-caption { font-size: 12px; color: var(--text-muted); }
+    .credit-compact { font-size: 13px; color: var(--text-secondary); padding: 12px 18px; border-top: 1px solid var(--border); background: rgba(79,142,247,.04); }
+    .perf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .perf-item .value { font-size: 28px; font-weight: 700; }
+    .perf-item .label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    .perf-empty { font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px 0; }
+    .preview-note { margin-top: 24px; padding: 14px 16px; background: var(--bg-card); border: 1px dashed var(--border); border-radius: var(--radius-md); font-size: 12px; color: var(--text-muted); }
+    .preview-note code { background: var(--bg-secondary); padding: 1px 6px; border-radius: 4px; color: var(--accent-blue); }
+    .preview-canvas.mobile { max-width: 390px; margin: 0 auto; }
+    .preview-canvas.mobile .bottom-row { grid-template-columns: 1fr; }
+    .preview-canvas.mobile .hub-timer { font-size: 40px; }
+    .preview-canvas.mobile .hub-actions { flex-direction: column; }
+    .preview-canvas.mobile .hub-actions .btn { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <div class="preview-header">
+      <h1>Session Hub - UX Preview</h1>
+      <p>Mock tĩnh cho thiết kế mới. Timer chỉ chạy khi <strong>running + billingStarted</strong>. Chọn phase để xem layout.</p>
+      <div class="preview-toolbar">
+        <label>Phase:</label>
+        <button class="phase-btn" data-phase="idle">idle</button>
+        <button class="phase-btn" data-phase="opening-gpu">opening (GPU)</button>
+        <button class="phase-btn" data-phase="opening-comfy">opening (Comfy)</button>
+        <button class="phase-btn active" data-phase="running">running</button>
+        <button class="phase-btn" data-phase="running-pending-bill">running (chưa bill)</button>
+        <button class="phase-btn" data-phase="disconnected">disconnected</button>
+        <button class="phase-btn" data-phase="stopping">stopping</button>
+        <button class="phase-btn" data-phase="error">error</button>
+        <div class="viewport-toggle">
+          <button class="phase-btn active" data-viewport="desktop">Desktop</button>
+          <button class="phase-btn" data-viewport="mobile">Mobile</button>
+        </div>
+      </div>
+    </div>
+    <div class="preview-canvas" id="canvas">
+      <div class="card session-hub">
+        <div class="card-header">
+          <span class="card-title">SESSION HUB</span>
+          <span class="status-badge online" id="hub-badge"><span class="dot"></span><span id="hub-badge-text">Đang chạy</span></span>
+        </div>
+        <div class="session-hub-body">
+          <div class="hub-meta">
+            <span class="hub-chip">📦 Studio · RTX 4090</span>
+            <span class="hub-chip">🧩 juggernautXL</span>
+          </div>
+          <div class="hub-workspace">🎨 Anime</div>
+          <div class="hub-workspace-sub" id="hub-workspace-sub">Workspace đã khóa trong phiên</div>
+          <div id="hub-content"></div>
+          <div class="alert-stack" id="alert-stack"></div>
+        </div>
+        <div class="credit-compact" id="credit-compact" style="display:none">📦 Studio · còn <strong>8.4h</strong> trong gói · phiên này ~0.35h</div>
+      </div>
+      <div class="bottom-row">
+        <div class="card" id="credit-card">
+          <div class="card-header"><span class="card-title">GÓI &amp; GIỜ</span><span style="font-size:12px;color:var(--accent-blue)">Đổi gói →</span></div>
+          <div class="credit-body">
+            <div class="credit-name">Studio</div>
+            <div class="credit-spec">🖥️ RTX 4090 · 24GB VRAM</div>
+            <div class="progress-bar"><div class="progress-fill" style="width:72%"></div></div>
+            <div class="credit-caption">Còn <strong style="color:var(--accent-blue)">8.4h</strong> / 12h · 📅 15/08/2026</div>
+          </div>
+        </div>
+        <div class="card" id="perf-card">
+          <div class="card-header"><span class="card-title">HIỆU SUẤT REALTIME</span><span class="status-badge online"><span class="dot"></span> Live</span></div>
+          <div class="perf-body" id="perf-body"></div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-note">
+      <strong>Mapping server (khi code):</strong> phase/actions ← <code>machineSessionView</code> · timer/remaining ← <code>billingView</code> · VRAM/comfy ← infra poll.
+      Mở file trực tiếp trong browser (double-click hoặc kéo vào Chrome).
+    </div>
+  </div>
+  <script src="./session-hub-ux-preview.js"></script>
+</body>
+</html>

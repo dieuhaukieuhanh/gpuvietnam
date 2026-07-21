@@ -1,5 +1,6 @@
 import {
   getComboPackage,
+  getGpuLabel,
   getPlanConfig,
   getPlanKeyFromName,
   getPlanNameFromKey,
@@ -13,13 +14,30 @@ import { loadScbRemainingForUser } from '@/lib/gpu/remaining-consumer';
 import { profStart, profEnd, prof } from '@/lib/prof';
 
 export const PROACTIVE_RENEW_HOURS_THRESHOLD = 10;
-export const PROACTIVE_RENEW_BONUS_RATE = 0.05;
 export const AUTO_RENEW_BONUS_RATE = 0.03;
 
 function normalizePlanKey(value) {
-  const key = getPlanKeyFromName(value) ?? value;
-  if (key === 'starter' || key === 'pro' || key === 'studio') return key;
-  return 'pro';
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const fromName = getPlanKeyFromName(raw);
+  if (fromName === 'starter' || fromName === 'pro' || fromName === 'studio') {
+    return fromName;
+  }
+
+  const lower = raw.toLowerCase();
+  if (lower === 'starter' || lower === 'pro' || lower === 'studio') return lower;
+
+  // Fuzzy match on common labels (order matters: starter before pro).
+  if (/\bstarter\b/i.test(raw) || /\brtx\s*3090\b/i.test(raw)) return 'starter';
+  if (/\bstudio\b/i.test(raw) || /\b2\s*x\s*rtx\s*4090\b/i.test(raw) || /\brtx\s*4090\s*2x\b/i.test(raw)) {
+    return 'studio';
+  }
+  if (/\bpro\b/i.test(raw) || /\brtx\s*4090\b/i.test(raw)) return 'pro';
+
+  console.warn('[normalizePlanKey] unrecognized plan value, refusing silent pro fallback:', raw);
+  return null;
 }
 
 function roundHours(value) {
@@ -55,6 +73,7 @@ function isRowUsable(row) {
  */
 export function computeRenewQuote(planName, billing, hoursRemaining, options = {}) {
   const planKey = normalizePlanKey(planName);
+  if (!planKey) return null;
   const combo = getComboPackage(planKey, billing);
   if (!combo || billing === 'hourly') {
     return null;
@@ -64,11 +83,11 @@ export function computeRenewQuote(planName, billing, hoursRemaining, options = {
   const comboBonus = combo.bonus;
   const remaining = hoursRemaining ?? 0;
   const isAutoRenew = Boolean(options.isAutoRenew);
-  const bonusRate =
-    isAutoRenew || remaining <= PROACTIVE_RENEW_HOURS_THRESHOLD
-      ? AUTO_RENEW_BONUS_RATE
-      : PROACTIVE_RENEW_BONUS_RATE;
-  const renewBonus = Math.max(1, Math.floor(baseHours * bonusRate));
+  const qualifiesForAutoRenewBonus =
+    isAutoRenew && remaining >= PROACTIVE_RENEW_HOURS_THRESHOLD;
+  const renewBonus = qualifiesForAutoRenewBonus
+    ? Math.max(1, Math.floor(baseHours * AUTO_RENEW_BONUS_RATE))
+    : 0;
   const totalHours = baseHours + comboBonus + renewBonus;
   const price = getPlanPriceVnd(planName, billing);
 
@@ -80,28 +99,37 @@ export function computeRenewQuote(planName, billing, hoursRemaining, options = {
     comboBonus,
     renewBonus,
     totalHours,
-    bonusRate,
-    bonusLabel: isAutoRenew || remaining <= PROACTIVE_RENEW_HOURS_THRESHOLD ? '3%' : '5%',
+    bonusRate: qualifiesForAutoRenewBonus ? AUTO_RENEW_BONUS_RATE : 0,
+    bonusLabel: qualifiesForAutoRenewBonus ? '3%' : null,
     price,
     validityDays: combo.days,
   };
 }
 
 /**
- * Map dashboard/me subscription row for inventory sync prefetch (skip duplicate SELECT).
- * @param {Record<string, unknown> | null | undefined} subscription
+ * Map dashboard/me subscription row(s) for inventory sync prefetch (skip duplicate SELECT).
+ * @param {Record<string, unknown> | Record<string, unknown>[] | null | undefined} subscription
  */
 export function subscriptionPrefetchForInventorySync(subscription) {
-  if (!subscription || subscription.status !== 'active') return null;
-  return {
-    id: subscription.id,
-    plan: subscription.plan,
-    billing: subscription.billing,
-    hours_total: subscription.hours_total,
-    hours_used: subscription.hours_used,
-    status: subscription.status,
-    expires_at: subscription.expires_at,
-  };
+  if (subscription == null) return undefined;
+  const list = Array.isArray(subscription) ? subscription : [subscription];
+  return list
+    .filter((row) => row && row.status === 'active')
+    .map((row) => ({
+      id: row.id,
+      plan: row.plan,
+      billing: row.billing,
+      hours_total: row.hours_total,
+      hours_used: row.hours_used,
+      status: row.status,
+      expires_at: row.expires_at,
+    }));
+}
+
+function normalizeSubscriptionsPrefetch(prefetched) {
+  if (prefetched === undefined) return undefined;
+  if (!prefetched) return [];
+  return Array.isArray(prefetched) ? prefetched : [prefetched];
 }
 
 /**
@@ -145,17 +173,20 @@ function sortInventoryRows(rows) {
   });
 }
 
-async function loadSubscriptionForInventorySync(supabaseAdmin, userId, prefetched) {
-  if (prefetched !== undefined) return prefetched;
-  const { data } = await supabaseAdmin
+async function loadSubscriptionsForInventorySync(supabaseAdmin, userId, prefetched) {
+  const normalized = normalizeSubscriptionsPrefetch(prefetched);
+  if (normalized !== undefined) return normalized;
+
+  const { data, error } = await supabaseAdmin
     .from('subscriptions')
     .select('id, plan, billing, hours_total, hours_used, status, expires_at')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data;
+    .order('expires_at', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
 }
 
 async function loadGrantsForInventorySync(supabaseAdmin, userId, prefetched) {
@@ -177,30 +208,41 @@ async function loadInventoryRowsForSync(supabaseAdmin, userId) {
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {string} userId
- * @param {{ subscription?: Record<string, unknown>|null, grants?: Record<string, unknown>[] }} [options]
+ * @param {{ subscription?: Record<string, unknown>|Record<string, unknown>[]|null, subscriptions?: Record<string, unknown>[], grants?: Record<string, unknown>[] }} [options]
  */
 export async function syncUserPlanInventory(supabaseAdmin, userId, options = {}) {
-  const [subscription, existing, grants] = await Promise.all([
+  const subscriptionPrefetch =
+    options.subscriptions !== undefined ? options.subscriptions : options.subscription;
+
+  const [subscriptions, existing, grants] = await Promise.all([
     prof('Load User Plan', () =>
-      loadSubscriptionForInventorySync(supabaseAdmin, userId, options.subscription),
+      loadSubscriptionsForInventorySync(supabaseAdmin, userId, subscriptionPrefetch),
     ),
     prof('Load Inventory', () => loadInventoryRowsForSync(supabaseAdmin, userId)),
     prof('Load Usage', () => loadGrantsForInventorySync(supabaseAdmin, userId, options.grants)),
   ]);
 
   const computeSpan = profStart('Compute');
-  const existingByKey = new Map(
-    existing.map((row) => [
-      row.grant_id ? `gift:${row.grant_id}` : `sub:${row.subscription_id ?? 'main'}`,
-      row,
-    ]),
-  );
+  const existingByKey = new Map();
+  for (const row of existing) {
+    const key = row.grant_id ? `gift:${row.grant_id}` : `sub:${row.subscription_id ?? 'main'}`;
+    // Keep the newest / first seen row; later duplicates are expired below.
+    if (!existingByKey.has(key)) existingByKey.set(key, row);
+  }
 
   const upserts = [];
   let hasActive = existing.some((row) => row.is_active);
 
-  if (subscription) {
+  for (const subscription of subscriptions) {
     const planKey = normalizePlanKey(subscription.plan);
+    if (!planKey) {
+      console.warn(
+        '[syncUserPlanInventory] skip subscription with unrecognized plan:',
+        subscription.id,
+        subscription.plan,
+      );
+      continue;
+    }
     const planType = subscription.billing === 'hourly' ? 'hourly' : 'combo';
     const hoursRemaining = Math.max(
       0,
@@ -226,7 +268,7 @@ export async function syncUserPlanInventory(supabaseAdmin, userId, options = {})
         price_per_hour: getPlanPrice(planKey, 'hourly'),
         valid_from: prev?.valid_from ?? new Date().toISOString(),
         valid_until: subscription.expires_at,
-        is_active: prev?.is_active ?? !hasActive,
+        is_active: prev?.is_active ?? (status === 'active' && !hasActive),
         status,
         source: prev?.source ?? 'purchased',
         grant_id: null,
@@ -246,6 +288,10 @@ export async function syncUserPlanInventory(supabaseAdmin, userId, options = {})
     const key = `gift:${grant.id}`;
     const prev = existingByKey.get(key);
     const planKey = normalizePlanKey(grant.gpu_plan);
+    if (!planKey) {
+      console.warn('[syncUserPlanInventory] skip grant with unrecognized gpu_plan:', grant.id, grant.gpu_plan);
+      continue;
+    }
     let status = 'active';
     if (hoursRemaining <= 0) status = 'depleted';
     else if (grant.expires_at && new Date(grant.expires_at).getTime() <= Date.now()) {
@@ -302,8 +348,10 @@ export async function syncUserPlanInventory(supabaseAdmin, userId, options = {})
   const activeIds = new Set(upserts.map((u) => u.key));
   for (const row of existing) {
     const key = row.grant_id ? `gift:${row.grant_id}` : `sub:${row.subscription_id ?? 'main'}`;
-    if (!activeIds.has(key)) {
-      if (row.status === 'expired' && !row.is_active) continue;
+    const kept = existingByKey.get(key);
+    const isDuplicate = kept && Number(kept.id) !== Number(row.id);
+    if (!activeIds.has(key) || isDuplicate) {
+      if (row.status === 'expired' && !row.is_active && !isDuplicate) continue;
       mutated = true;
       writeOps.push(
         supabaseAdmin
@@ -347,11 +395,27 @@ export async function syncUserPlanInventory(supabaseAdmin, userId, options = {})
 
   const returnSpan = profStart('Return');
   profEnd(returnSpan);
+
+  // Keep backup quota + retention in sync whenever GPU inventory changes.
+  try {
+    const { syncUserBackupEntitlement } = await import('./backup-entitlement.js');
+    await syncUserBackupEntitlement(supabaseAdmin, userId);
+  } catch (err) {
+    console.warn(
+      '[syncUserPlanInventory] syncUserBackupEntitlement failed (non-fatal):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   return inventory;
 }
 
 export function mapInventoryRow(row) {
-  const planKey = normalizePlanKey(row.plan_name);
+  const resolvedKey = normalizePlanKey(row.plan_name);
+  if (!resolvedKey) {
+    console.warn('[mapInventoryRow] unrecognized plan_name, defaulting display to pro:', row.plan_name);
+  }
+  const planKey = resolvedKey ?? 'pro';
   const config = getPlanConfig(planKey);
   const usable = isRowUsable(row);
   const planTypeLabel =
@@ -362,6 +426,7 @@ export function mapInventoryRow(row) {
     planType: row.plan_type,
     planTypeLabel,
     planName: row.plan_name,
+    planKey,
     displayName: config?.name ?? row.plan_name,
     gpu: config?.gpu ?? 'GPU',
     vram: config?.vram ?? '—',
@@ -430,6 +495,11 @@ export async function activateInventoryPlan(supabaseAdmin, userId, inventoryId) 
   if (!target) return { error: 'Không tìm thấy gói.' };
   if (!isRowUsable(target)) return { error: 'Gói này không còn khả dụng.' };
 
+  const planKey = normalizePlanKey(target.plan_name);
+  if (!planKey) {
+    return { error: 'Gói này không xác định được loại (Starter / Pro / Studio).' };
+  }
+
   await supabaseAdmin
     .from('user_plan_inventory')
     .update({ is_active: false })
@@ -437,14 +507,42 @@ export async function activateInventoryPlan(supabaseAdmin, userId, inventoryId) 
 
   const { data: updated, error: updateError } = await supabaseAdmin
     .from('user_plan_inventory')
-    .update({ is_active: true })
+    .update({ is_active: true, plan_name: planKey })
     .eq('id', parsedId)
     .eq('user_id', userId)
     .select('*')
     .single();
 
   if (updateError) throw updateError;
-  return { success: true, plan: mapInventoryRow(updated) };
+
+  // Keep the machine-driving subscription aligned with the selected inventory tier,
+  // so start-machine / dashboard always provision the matching GPU.
+  const planName = getPlanNameFromKey(planKey) ?? planKey;
+  const gpuLabel = getGpuLabel(planKey);
+  const subscriptionId = updated.subscription_id ?? null;
+
+  if (subscriptionId) {
+    const { error: subErr } = await supabaseAdmin
+      .from('subscriptions')
+      .update({ plan: planName, gpu_label: gpuLabel })
+      .eq('id', subscriptionId)
+      .eq('user_id', userId);
+    if (subErr) {
+      console.warn('[activateInventoryPlan] subscription sync failed:', subErr.message);
+    }
+  }
+  // Gift rows (no subscription_id): do not rewrite another subscription's plan/billing.
+  // start-machine resolves GPU from the active inventory planKey.
+
+  console.info('[activateInventoryPlan] activated', {
+    userId,
+    inventoryId: parsedId,
+    planKey,
+    subscriptionId,
+    gpuLabel,
+  });
+
+  return { success: true, plan: mapInventoryRow(updated), planKey, gpuLabel };
 }
 
 /**
@@ -478,24 +576,77 @@ export async function deactivateInventoryPlan(supabaseAdmin, userId, inventoryId
  * @param {string} userId
  * @param {{ plan: string; billing: string; previewOnly?: boolean; isAutoRenew?: boolean }} input
  */
-export async function processPlanRenew(supabaseAdmin, userId, input) {
-  await ensureGpuPricingLoaded(supabaseAdmin);
+async function loadRenewTargetSubscription(supabaseAdmin, userId, { subscriptionId, plan, billing }) {
+  if (subscriptionId) {
+    const { data, error } = await supabaseAdmin
+      .from('subscriptions')
+      .select('*')
+      .eq('id', subscriptionId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
 
-  const { plan, billing, previewOnly = false, isAutoRenew = false } = input;
-
-  const { data: subscription } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('subscriptions')
     .select('*')
     .eq('user_id', userId)
-    .eq('status', 'active')
+    .eq('status', 'active');
+
+  if (plan) query = query.eq('plan', plan);
+  if (billing) query = query.eq('billing', billing);
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+export async function processPlanRenew(supabaseAdmin, userId, input) {
+  await ensureGpuPricingLoaded(supabaseAdmin);
+
+  const {
+    plan,
+    billing,
+    subscriptionId,
+    previewOnly = false,
+    isAutoRenew = false,
+  } = input;
+
+  const subscription = await loadRenewTargetSubscription(supabaseAdmin, userId, {
+    subscriptionId,
+    plan,
+    billing,
+  });
+
+  if (!subscription) {
+    return { error: 'Không tìm thấy gói phù hợp để tái tục.' };
+  }
+  if (subscription.status !== 'active') {
+    return { error: 'Gói này không còn hoạt động, không thể tái tục.' };
+  }
+
+  const resolvedPlan = plan ?? subscription.plan;
+  const resolvedBilling = billing ?? subscription.billing;
+
+  // Validate the picked subscription matches the requested plan/billing
+  // (defensive — prevents conflating hours into a wrong payment package).
+  const subPlanKey = normalizePlanKey(subscription.plan);
+  const requestedPlanKey = normalizePlanKey(resolvedPlan);
+  if (subPlanKey !== requestedPlanKey || subscription.billing !== resolvedBilling) {
+    return {
+      error:
+        'Gói thanh toán được chọn không khớp với yêu cầu tái tục. Vui lòng tải lại trang và thử lại.',
+    };
+  }
 
   const remainingRead = await loadScbRemainingForUser(supabaseAdmin, userId);
   const hoursRemaining = remainingRead.hoursRemaining ?? 0;
 
-  const quote = computeRenewQuote(plan ?? subscription?.plan, billing ?? subscription?.billing, hoursRemaining, {
+  const quote = computeRenewQuote(resolvedPlan, resolvedBilling, hoursRemaining, {
     isAutoRenew,
   });
 
@@ -520,6 +671,7 @@ export async function processPlanRenew(supabaseAdmin, userId, input) {
       price: quote.price,
       transferNote: buildRenewTransferNote(userId),
       quote,
+      subscriptionId: subscription.id,
     };
   }
 
@@ -530,32 +682,47 @@ export async function processPlanRenew(supabaseAdmin, userId, input) {
       walletBalance,
       balanceAfter: walletBalance - quote.price,
       quote,
+      subscriptionId: subscription.id,
     };
   }
 
   const newBalance = walletBalance - quote.price;
   const quota = getPlanQuota(quote.planName, quote.billing);
-  const newHoursTotal = Number(subscription?.hours_total ?? 0) + quote.totalHours;
-  const newExpiresAt = computeExpiresAt(quota.validityDays) ?? subscription?.expires_at;
+  // New combo lot with its own validity — never merge into the existing row
+  // (UI shows one line per purchase; settlement pool still sums them).
+  const newExpiresAt = computeExpiresAt(quota.validityDays);
+  const now = new Date().toISOString();
 
   await supabaseAdmin
     .from('users')
-    .update({ wallet_balance: newBalance, updated_at: new Date().toISOString() })
+    .update({ wallet_balance: newBalance, updated_at: now })
     .eq('id', userId);
 
-  if (subscription) {
-    await supabaseAdmin
-      .from('subscriptions')
-      .update({
-        hours_total: newHoursTotal,
-        hours_used: Number(subscription.hours_used ?? 0),
-        expires_at: newExpiresAt,
-        status: 'active',
-        billing: quote.billing,
-        plan: quote.planName,
-      })
-      .eq('id', subscription.id);
-  }
+  const { data: renewedSub, error: insertErr } = await supabaseAdmin
+    .from('subscriptions')
+    .insert({
+      user_id: userId,
+      plan: subscription.plan,
+      billing: subscription.billing,
+      env_name: subscription.env_name,
+      env_icon: subscription.env_icon,
+      env_desc: subscription.env_desc,
+      gpu_label: subscription.gpu_label ?? getGpuLabel(quote.planName),
+      hours_total: quote.totalHours,
+      hours_used: 0,
+      status: 'active',
+      server_status: 'offline',
+      is_trial: false,
+      transfer_note: isAutoRenew
+        ? `Tự động tái tục ${quote.planName} ${quote.billing}`
+        : `Tái tục ${quote.planName} ${quote.billing}`,
+      expires_at: newExpiresAt,
+      activated_at: now,
+      created_at: now,
+    })
+    .select('id')
+    .single();
+  if (insertErr) throw insertErr;
 
   await supabaseAdmin.from('wallet_transactions').insert({
     user_id: userId,
@@ -574,18 +741,30 @@ export async function processPlanRenew(supabaseAdmin, userId, input) {
     walletBalance: newBalance,
     hoursAdded: quote.totalHours,
     quote,
+    subscriptionId: renewedSub.id,
   };
 }
 
 export function inventoryToSelectorPlan(row) {
   const mapped = typeof row.planName === 'string' ? mapInventoryRow(row) : row;
-  const planKey = normalizePlanKey(mapped.planName ?? mapped.plan_name);
+  const planKey =
+    (mapped.planKey === 'starter' || mapped.planKey === 'pro' || mapped.planKey === 'studio'
+      ? mapped.planKey
+      : null) ?? normalizePlanKey(mapped.planName ?? mapped.plan_name);
+  if (!planKey) {
+    console.warn(
+      '[inventoryToSelectorPlan] cannot resolve plan key from',
+      mapped.planName ?? mapped.plan_name,
+    );
+    return null;
+  }
   const config = getPlanConfig(planKey);
   const hoursRemaining = Number(mapped.hoursRemaining ?? mapped.hours_remaining ?? 0);
 
   return {
     id: String(mapped.id),
     inventoryId: mapped.id,
+    subscriptionId: mapped.subscriptionId ?? mapped.subscription_id ?? null,
     type: mapped.planType === 'gift' ? 'gift' : 'main',
     plan_type: mapped.planType,
     plan: planKey,

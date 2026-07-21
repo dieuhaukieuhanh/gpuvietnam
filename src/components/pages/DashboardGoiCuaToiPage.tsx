@@ -27,7 +27,7 @@ export default function DashboardGoiCuaToiPage() {
         <title>GPUVietnam – Gói của tôi</title>
         <style dangerouslySetInnerHTML={{ __html: styles + myPlanStyles }} />
       </Head>
-      <DashboardShell user={user} activeTab="myPlan" title="Gói của tôi">
+      <DashboardShell user={user} activeTab="myPlan" title="Gói của tôi" mainClassName="main-content main-content--my-plan">
         <MyPlanPanel
           accessToken={session?.access_token}
           subscription={subscription}

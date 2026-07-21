@@ -56,7 +56,7 @@ export async function enqueue(supabaseAdmin, input) {
     priority: input.priority ?? 60,
     machine_id: input.machineId ?? null,
     gpu_session_id: input.gpuSessionId ?? null,
-    provider: input.provider ?? 'vast',
+    provider: input.provider ?? 'clore',
     payload: input.payload ?? {},
     retry_policy: input.retryPolicy ?? DEFAULT_RETRY_POLICY,
     state: MACHINE_OPERATION_STATE.PENDING,

@@ -1,16 +1,17 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
-import { repairUserBillingState, getGpuService } from '@/lib/gpu';
+import { repairUserBillingState, getGpuService, getGpuServiceForMachine } from '@/lib/gpu';
 import { createCorrelationId } from '@/lib/scb-correlation';
-import { getActiveMachineForUser } from '@/lib/machines';
+import { getActiveMachineForUser, pickPreferredActiveSubscription } from '@/lib/machines';
 import { toSyncShape } from '@/lib/machines-drift';
 import { runReadPathProjectionFirst, subscriptionPrefetchFromDashboardRow } from '@/lib/machines-drift-projection';
 import { snapshotToMachineRecord, resolveMachineSessionView } from '@/lib/gpu/machine-session-view';
 import { resolveBillingSessionView } from '@/lib/gpu/billing-session-view';
 import { logArchitectureFreezeStartup } from '@/lib/scb-read-path';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { syncUserPlanInventory, subscriptionPrefetchForInventorySync, grantsPrefetchForInventorySync } from '@/lib/user-plan-inventory';
+import { syncUserPlanInventory, grantsPrefetchForInventorySync } from '@/lib/user-plan-inventory';
 import { billablePlansFromInventoryRows, fetchOrderedBillablePlansForUser } from '@/lib/gpu/billing';
 import { withProf, profStart, profEnd, renderProfTree } from '@/lib/prof';
+import { decideResumeFromLoadedState } from '@/lib/session-resume/index.js';
 
 
 
@@ -47,7 +48,7 @@ export default async function handler(req, res) {
 
 
     const batchSpan = profStart('Supabase parallel batch (profile/subscription/grants)');
-    const [{ data: profile }, { data: activeSubscription }, { data: expiredSubscription }, { count: trialCount }, { data: hourGrantsRaw }] =
+    const [{ data: profile }, { data: activeSubscriptions }, { data: expiredSubscription }, { count: trialCount }, { data: hourGrantsRaw }] =
 
       await Promise.all([
 
@@ -73,9 +74,7 @@ export default async function handler(req, res) {
 
           .order('created_at', { ascending: false })
 
-          .limit(1)
-
-          .maybeSingle(),
+          .limit(20),
 
         supabaseAdmin
 
@@ -209,6 +208,14 @@ export default async function handler(req, res) {
 
 
 
+    const machineSpanEarly = profStart('getActiveMachineForUser (early)');
+    const activeMachineEarly = await getActiveMachineForUser(supabaseAdmin, user.id);
+    profEnd(machineSpanEarly);
+
+    const activeSubscription = pickPreferredActiveSubscription(
+      activeSubscriptions ?? [],
+      activeMachineEarly,
+    );
     const subscription = activeSubscription ?? null;
     let driftSync = null;
 
@@ -228,6 +235,7 @@ export default async function handler(req, res) {
           correlationId,
           source: 'dashboard_me',
           subscription: subscriptionPrefetchFromDashboardRow(subscription),
+          machine: activeMachineEarly,
         }),
       );
       profEnd(syncSpan);
@@ -266,9 +274,17 @@ export default async function handler(req, res) {
           : null;
 
     const machineSpan = profStart('getActiveMachineForUser (call)');
-    let activeMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
-    if (driftSync?.changed) {
-      activeMachine = driftSync.machine ?? null;
+    let activeMachine = activeMachineEarly ?? (await getActiveMachineForUser(supabaseAdmin, user.id));
+    if (driftSync?.changed && driftSync.machine) {
+      activeMachine = driftSync.machine;
+    } else if (
+      driftSync?.changed &&
+      !driftSync.machine &&
+      activeMachineEarly &&
+      ['creating', 'starting', 'running'].includes(String(activeMachineEarly.status ?? ''))
+    ) {
+      // Keep the live session visible if drift falsely nulled it (wrong offline subscription).
+      activeMachine = activeMachineEarly;
     }
     profEnd(machineSpan);
     let inventoryRows = null;
@@ -277,7 +293,6 @@ export default async function handler(req, res) {
       if (!activeMachine) {
         const invSpan = profStart('syncUserPlanInventory (idle)');
         inventoryRows = await syncUserPlanInventory(supabaseAdmin, user.id, {
-          subscription: subscriptionPrefetchForInventorySync(syncedSubscription),
           grants: grantsPrefetchForInventorySync(hourGrantsRaw),
         });
         profEnd(invSpan);
@@ -299,13 +314,13 @@ export default async function handler(req, res) {
       machine: activeMachine,
       machineSessionPhase: machineSessionView?.phase ?? 'idle',
       walletBalance: Number(profile?.wallet_balance ?? 0),
-      gpuService: getGpuService(),
+      gpuService: activeMachine ? getGpuServiceForMachine(activeMachine) : getGpuService(),
       billablePlans: billablePlans,
       subscriptionPackageHours: syncedSubscription?.hours_total ?? null,
       tryOpenBillableSession: Boolean(
         activeMachine &&
           String(activeMachine.status ?? '') === 'running' &&
-          machineSessionView?.phase === 'running',
+          activeMachine.instance_id,
       ),
     });
 
@@ -320,6 +335,13 @@ export default async function handler(req, res) {
             walletBalance: billingView.walletBalance,
           }
         : null;
+
+    const resumeDecision = decideResumeFromLoadedState({
+      subscription: syncedSubscription,
+      machine: activeMachine,
+      liveStatus: null,
+      sessionStatus: null,
+    });
 
     return res.status(200).json({
 
@@ -370,6 +392,28 @@ export default async function handler(req, res) {
       machineSessionView,
 
       billingView,
+
+      sessionResume: {
+        shouldResume: resumeDecision.shouldResume,
+        allowNewProvision: resumeDecision.allowNewProvision,
+        duplicateStartPrevented: resumeDecision.duplicateStartPrevented,
+        currentState: resumeDecision.currentState,
+        progressStep: resumeDecision.progressStep,
+        reason: resumeDecision.reason,
+        machineId: activeMachine?.id != null ? String(activeMachine.id) : null,
+        instanceId: activeMachine?.instance_id != null ? String(activeMachine.instance_id) : null,
+        provider: activeMachine?.provider != null ? String(activeMachine.provider) : null,
+        gpuType: activeMachine?.gpu_type ?? activeMachine?.gpu_line ?? syncedSubscription?.gpu_label ?? null,
+        lease: syncedSubscription
+          ? {
+              leaseId: syncedSubscription.provisioning_lease_id ?? null,
+              expiresAt: syncedSubscription.provisioning_lease_expires_at ?? null,
+              heartbeatAt: syncedSubscription.provisioning_heartbeat_at ?? null,
+              owner: syncedSubscription.provisioning_lease_owner ?? null,
+              startedAt: syncedSubscription.provisioning_started_at ?? null,
+            }
+          : null,
+      },
 
     });
 

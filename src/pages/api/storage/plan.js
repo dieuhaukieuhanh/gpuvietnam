@@ -39,8 +39,8 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     return res.status(200).json({
-      ssdPlanGb: profile?.ssd_plan_gb ?? 20,
-      backupPlanGb: profile?.backup_plan_gb ?? 20,
+      ssdPlanGb: profile?.ssd_plan_gb ?? 50,
+      backupPlanGb: profile?.backup_plan_gb ?? 100,
       walletBalance: Number(profile?.wallet_balance ?? 0),
       pendingUpgrade: pendingUpgrade ?? null,
       rejectedUpgrade: pendingUpgrade ? null : rejectedUpgrade ?? null,

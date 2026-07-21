@@ -1,16 +1,18 @@
 import { buildConsumerEndpoint, isEndpointReadyForTraffic } from '@/lib/endpoint-utils';
 import { readRemainingForMachine } from './billing.js';
-import { getGpuService } from './gpu-service.js';
+import { getGpuService, getGpuServiceForMachine } from './gpu-service.js';
 import { ComfyClient } from './providers/vast/comfy-client.js';
 import { runUnifiedDestroy } from '@/lib/destroy-pipeline';
 import { notifyAfterMachineDestroy } from '@/lib/machine-destroy';
 import {
+  getActiveMachineForUser,
   updateMachineRecord,
 } from '@/lib/machines';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { notifyIdleWarning } from '@/lib/user-notifications';
+import { notifyCreditWarning, notifyIdleWarning } from '@/lib/user-notifications';
 import {
   AUTO_STOP_DECISION,
+  CREDIT_WARN_MINUTES,
   decideAutoStopAction,
   shouldSkipAutoStop,
   shouldStopForOutOfCredit,
@@ -19,10 +21,12 @@ import {
 export {
   AUTO_STOP_MODULE_VERSION,
   AUTO_STOP_DECISION,
+  CREDIT_WARN_MINUTES,
   shouldSkipAutoStop,
   shouldStopForOutOfCredit,
   shouldStopForIdle,
   shouldWarnForIdle,
+  shouldWarnForLowCredit,
   decideAutoStopAction,
 } from './auto-stop-core.js';
 
@@ -189,7 +193,8 @@ export async function syncMachineIdleState(supabaseAdmin, machine, options = {})
  * }} [deps]
  */
 export async function triggerAutoStopDestroy(db, userId, reason, deps = {}) {
-  const gpuService = deps.gpuService ?? getGpuService();
+  const activeMachine = deps.machine ?? (await getActiveMachineForUser(db, userId));
+  const gpuService = deps.gpuService ?? getGpuServiceForMachine(activeMachine);
   const runDestroy = deps.runDestroy ?? runUnifiedDestroy;
   const notify = deps.notify ?? notifyAfterMachineDestroy;
 
@@ -303,8 +308,10 @@ export async function checkAutoStop(supabaseAdmin, machineId, deps = {}) {
     hasActiveJobs,
     idleMinutes,
     idleWarningSent: Boolean(currentMachine.idle_warning_sent),
+    creditWarningSent: Boolean(currentMachine.credit_warning_sent),
     idleStopMinutes: IDLE_STOP_MINUTES,
     idleWarnMinutes: IDLE_WARN_MINUTES,
+    creditWarnMinutes: CREDIT_WARN_MINUTES,
   });
 
   if (decision.decision === AUTO_STOP_DECISION.SKIPPED) {
@@ -324,9 +331,27 @@ export async function checkAutoStop(supabaseAdmin, machineId, deps = {}) {
   }
 
   if (decision.decision === AUTO_STOP_DECISION.WARN) {
+    if (decision.reason === 'low_credit') {
+      await notifyCreditWarning(db, {
+        userId,
+        minutesLeft: decision.remainingMinutes ?? CREDIT_WARN_MINUTES,
+      });
+      try {
+        await updateMachineRecord(db, String(currentMachine.id), { credit_warning_sent: true });
+      } catch (error) {
+        // Column may be missing when migration 0035 is not applied; warning notify still sent.
+        console.warn('[auto-stop] credit_warning_sent update failed (non-fatal):', error);
+      }
+      return {
+        action: 'warned',
+        reason: 'low_credit',
+        remainingMinutes: decision.remainingMinutes,
+      };
+    }
+
     await notifyIdleWarning(db, { userId });
     await updateMachineRecord(db, String(currentMachine.id), { idle_warning_sent: true });
-    return { action: 'warned', idleMinutes: decision.idleMinutes };
+    return { action: 'warned', reason: 'idle', idleMinutes: decision.idleMinutes };
   }
 
   return { action: 'idle', idleMinutes: decision.idleMinutes };

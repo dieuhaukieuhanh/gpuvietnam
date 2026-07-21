@@ -67,7 +67,8 @@ export function isProjectionTrafficReady(machine) {
   if (!machine || String(machine.status ?? '') !== 'running') return false;
   if (!isEndpointResolved(machine)) return false;
   if (!machine.projection_verified_at) return false;
-  if (isProjectionVerificationStale(machine)) return false;
+  // Stale verify only schedules a re-check — do not demote traffic-ready and
+  // rewind the dashboard to "Đang mở phiên" on every F5 after 30s.
   return isProjectionReadyMessage(machine.projection_message);
 }
 

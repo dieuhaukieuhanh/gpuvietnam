@@ -14,13 +14,14 @@ export default async function handler(req, res) {
     const user = await getAuthUserFromRequest(req);
     if (!user) return unauthorized(res);
 
-    const { plan, billing, previewOnly, confirmTransfer } = req.body ?? {};
+    const { plan, billing, subscriptionId, previewOnly, confirmTransfer } = req.body ?? {};
     const supabaseAdmin = getSupabaseAdmin();
 
     if (confirmTransfer) {
       const transferResult = await createPlanRenewTransferRequest(supabaseAdmin, user.id, {
         plan,
         billing,
+        subscriptionId: subscriptionId ?? null,
       });
 
       if (transferResult.error) {
@@ -40,6 +41,7 @@ export default async function handler(req, res) {
     const result = await processPlanRenew(supabaseAdmin, user.id, {
       plan,
       billing,
+      subscriptionId: subscriptionId ?? null,
       previewOnly: Boolean(previewOnly),
       isAutoRenew: false,
     });

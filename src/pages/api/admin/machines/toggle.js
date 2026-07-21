@@ -3,11 +3,20 @@ import { fetchRecentAdminMachineLogs, insertAdminMachineLog } from '@/lib/admin-
 import {
   formatGpuUserMessage,
   getGpuService,
+  getGpuServiceForMachine,
   provisionGpuInstance,
   resolveGpuLineFromPlan,
 } from '@/lib/gpu';
 import { getGpuLabel, getPlanNameFromKey } from '@/lib/gpu-pricing';
 import { buildWorkstationContainerEnv, resolveEnvName } from '@/lib/workstation-env';
+import {
+  issueMachineBackupToken,
+  resolvePresignUploadApiUrl,
+  attachBackupTokenToMachine,
+} from '@/lib/machine-backup-token';
+import { getBackupQuotaStatus } from '@/lib/backup-quota';
+import { createBackupFlushSecret } from '@/lib/backup-container-env';
+import { isAutoBackupEnabledForUser, loadBackupIntervalsByPlan } from '@/lib/backup-auto-policy';
 import { buildConsumerEndpoint } from '@/lib/endpoint-utils';
 import { createCorrelationId } from '@/lib/scb-correlation';
 import { destroyMachineWithBackup, notifyAfterMachineDestroy } from '@/lib/machine-destroy';
@@ -19,6 +28,8 @@ import {
   rollbackProvisionAfterRentFailure,
   syncMachineFromLiveStatus,
   updateSubscriptionServerStatus,
+  claimSubscriptionForProvision,
+  buildProvisionAttemptLabel,
 } from '@/lib/machines';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { activateInventoryPlan } from '@/lib/user-plan-inventory';
@@ -42,6 +53,9 @@ function buildMachineResponse(machine, liveStatus) {
     status: liveStatus?.status ?? machine?.status ?? 'creating',
     comfyUrl: endpoint.comfyUrl,
     message: liveStatus?.message ?? null,
+    /** Admin audit — dual-image v3/v4. Never include on customer APIs. */
+    gpuLine: machine?.gpu_line ?? machine?.gpu_type ?? null,
+    image: machine?.image != null ? String(machine.image) : null,
   };
 }
 
@@ -74,8 +88,8 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
     return { status: 400, body: { error: 'Không tìm thấy subscription active của khách hàng.' } };
   }
 
-  const gpuService = getGpuService();
   const existingMachine = await getActiveMachineForUser(supabaseAdmin, userId);
+  const gpuService = getGpuServiceForMachine(existingMachine);
 
   if (subscription.server_status === 'online' && existingMachine) {
     const liveStatus = await resolveLiveMachineStatus(gpuService, existingMachine);
@@ -107,33 +121,107 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
   }
 
   const planKey = normalizePlanKey(selected.plan);
+  if (!planKey) {
+    return {
+      status: 400,
+      body: {
+        error: 'Không xác định được loại gói (Starter / Pro / Studio).',
+      },
+      machine: existingMachine,
+    };
+  }
   const planName = getPlanNameFromKey(planKey) ?? selected.plan;
   const gpuLine = resolveGpuLineFromPlan(planKey);
+  if (!gpuLine) {
+    return {
+      status: 400,
+      body: {
+        error: 'Không map được cấu hình GPU cho gói ' + planKey + '.',
+      },
+      machine: existingMachine,
+    };
+  }
   const envName = resolveEnvName(subscription.env_name);
+  const claimed = await claimSubscriptionForProvision(supabaseAdmin, subscription.id, {
+    plan: planName,
+    gpu_label: getGpuLabel(planKey),
+  });
 
-  const { data: updated, error: updateError } = await supabaseAdmin
-    .from('subscriptions')
-    .update({
-      server_status: 'provisioning',
-      plan: planName,
-      gpu_label: getGpuLabel(planKey),
-    })
-    .eq('id', subscription.id)
-    .select('id, server_status, plan, gpu_label')
-    .single();
+  if (!claimed) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        alreadyStarting: true,
+        message: 'Máy khách hàng đang được khởi động.',
+      },
+      machine: existingMachine,
+    };
+  }
 
-  if (updateError) throw updateError;
-
+  const updated = claimed;
   const correlationId = createCorrelationId();
+  const provisionLabel = buildProvisionAttemptLabel({
+    userId,
+    subscriptionId: subscription.id,
+    correlationId,
+  });
   let rentedInstanceId = null;
   let insertedMachineId = null;
+
+  /** @type {string | null} */
+  let backupTokenId = null;
+  /** @type {Record<string, string>} */
+  let containerEnv = buildWorkstationContainerEnv(envName);
+  try {
+    const presignUrl = resolvePresignUploadApiUrl();
+    const autoBackupOn = await isAutoBackupEnabledForUser(
+      supabaseAdmin,
+      userId,
+      planKey,
+    );
+    if (presignUrl && autoBackupOn) {
+      const issued = await issueMachineBackupToken(supabaseAdmin, {
+        userId,
+        subscriptionId: subscription.id,
+      });
+      backupTokenId = issued.id;
+      let skipModels = false;
+      try {
+        const q = await getBackupQuotaStatus(supabaseAdmin, userId);
+        skipModels = Boolean(q.skipModels);
+      } catch {
+        /* ignore */
+      }
+      containerEnv = buildWorkstationContainerEnv(envName, {
+        userId,
+        backupToken: issued.token,
+        presignUrl,
+        skipModels,
+        flushSecret: createBackupFlushSecret(),
+        planKey,
+        intervalsByPlan: await loadBackupIntervalsByPlan(supabaseAdmin),
+      });
+    } else if (presignUrl && !autoBackupOn) {
+      console.info(
+        '[admin/machines/toggle] skip backup token: auto backup disabled',
+        { userId, planKey },
+      );
+    }
+  } catch (tokenErr) {
+    console.warn(
+      '[admin/machines/toggle] issueMachineBackupToken failed:',
+      tokenErr instanceof Error ? tokenErr.message : tokenErr,
+    );
+  }
 
   let instance;
   try {
     instance = await provisionGpuInstance(gpuService, {
       gpuLine,
-      label: `gpuvietnam-${userId.slice(0, 8)}`,
-      env: buildWorkstationContainerEnv(envName),
+      plan: planKey,
+      label: provisionLabel,
+      env: containerEnv,
     });
   } catch (gpuError) {
     await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
@@ -144,6 +232,7 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
   }
 
   rentedInstanceId = String(instance.id);
+  const provisionedGpuService = getGpuServiceForMachine(instance);
 
   try {
     const machineRow = mapGpuInstanceToMachineRow(instance, {
@@ -152,10 +241,27 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
       subscriptionId: subscription.id,
       template: envName,
     });
+    const flushSecret =
+      typeof containerEnv.GPUVIETNAM_BACKUP_FLUSH_SECRET === 'string'
+        ? containerEnv.GPUVIETNAM_BACKUP_FLUSH_SECRET.trim()
+        : '';
+    if (flushSecret) {
+      machineRow.backup_flush_secret = flushSecret;
+    }
 
     const machine = await insertMachineRecord(supabaseAdmin, userId, machineRow);
     insertedMachineId = machine.id;
-    const liveStatus = await resolveLiveMachineStatus(gpuService, machine);
+    if (backupTokenId) {
+      try {
+        await attachBackupTokenToMachine(supabaseAdmin, backupTokenId, machine.id);
+      } catch (attachErr) {
+        console.warn(
+          '[admin/machines/toggle] attachBackupTokenToMachine failed:',
+          attachErr instanceof Error ? attachErr.message : attachErr,
+        );
+      }
+    }
+    const liveStatus = await resolveLiveMachineStatus(provisionedGpuService, machine);
     const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, machine, liveStatus);
 
     if (liveStatus.status === 'running') {
@@ -175,7 +281,7 @@ async function adminStartCustomerMachine(supabaseAdmin, userId) {
       planName,
     };
   } catch (error) {
-    await rollbackProvisionAfterRentFailure(supabaseAdmin, gpuService, {
+    await rollbackProvisionAfterRentFailure(supabaseAdmin, provisionedGpuService, {
       userId,
       subscriptionId: subscription.id,
       instanceId: rentedInstanceId,
@@ -265,10 +371,11 @@ export default async function handler(req, res) {
   }
 
   const adminId = resolveAdminId(adminCtx);
-  const gpuService = getGpuService();
 
   try {
     if (action === 'stop') {
+      const activeMachine = await getActiveMachineForUser(supabaseAdmin, userId);
+      const gpuService = getGpuServiceForMachine(activeMachine);
       const stopResult = await adminStopCustomerMachine(supabaseAdmin, gpuService, userId);
       if (stopResult.status >= 400) {
         return res.status(stopResult.status).json(stopResult.body);

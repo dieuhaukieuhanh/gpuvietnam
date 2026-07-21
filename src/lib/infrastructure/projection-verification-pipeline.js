@@ -3,7 +3,7 @@
  * Provider verify → update projection → detect drift → enqueue repair.
  */
 
-import { openBillableSession } from '@/lib/gpu';
+import { getGpuService, getGpuServiceForMachine, openBillableSession } from '@/lib/gpu';
 import { createCorrelationId } from '@/lib/scb-correlation';
 import { isProjectionTrafficReady } from '@/lib/scb-read-path';
 import {
@@ -48,12 +48,17 @@ export async function runProjectionVerificationPipeline(
     machine = null;
   }
 
+  // Resolve the correct provider-specific GPUService from the machine row.
+  // The passed-in gpuService is always the default (Clore); a Vast machine
+  // must be queried through the Vast adapter.
+  const machineGpuService = machine ? getGpuServiceForMachine(machine) : gpuService;
+
   const subscription = await fetchActiveSubscription(supabaseAdmin, userId);
   /** @type {Record<string, unknown>|null} */
   let liveStatus = null;
 
   if (machine?.instance_id) {
-    liveStatus = await resolveLiveMachineStatus(gpuService, machine, {
+    liveStatus = await resolveLiveMachineStatus(machineGpuService, machine, {
       onPvTrace: pvTrace
         ? (checkpoint, payload) => logProjectionVerifyTrace(checkpoint, pvTrace, payload)
         : undefined,
@@ -64,7 +69,7 @@ export async function runProjectionVerificationPipeline(
       if (provisionDrift?.repair) {
         await enqueueSubscriptionMachineDriftRepair(
           supabaseAdmin,
-          gpuService,
+          machineGpuService,
           userId,
           provisionDrift,
           { correlationId, source: `provision_failure:${source}` },
@@ -141,7 +146,7 @@ export async function runProjectionVerificationPipeline(
               supabaseAdmin,
               userId,
               liveStatus.instanceId,
-              gpuService,
+              machineGpuService,
             );
           } catch (billingError) {
             console.warn(
@@ -154,8 +159,8 @@ export async function runProjectionVerificationPipeline(
     }
   }
 
-  const detectResult = await detectSubscriptionMachineDrift(supabaseAdmin, gpuService, userId);
-  await enqueueSubscriptionMachineDriftRepair(supabaseAdmin, gpuService, userId, detectResult, {
+  const detectResult = await detectSubscriptionMachineDrift(supabaseAdmin, machineGpuService, userId);
+  await enqueueSubscriptionMachineDriftRepair(supabaseAdmin, machineGpuService, userId, detectResult, {
     correlationId,
     source: `verify_detect:${source}`,
   });

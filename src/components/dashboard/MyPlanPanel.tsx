@@ -1,23 +1,33 @@
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { BillingMode } from '@/lib/checkout-plans';
-import { BILLING_LABELS } from '@/lib/checkout-plans';
+import { buildBangGiaCheckoutUrl } from '@/lib/checkout-auth';
 import RenewPlanModal from '@/components/dashboard/RenewPlanModal';
+import StorageUpgradeCard from '@/components/dashboard/StorageUpgradeCard';
 import { useGpuPricingConfig } from '@/hooks/useGpuPricingConfig';
 import type { BillingSessionView, DashboardSubscription } from '@/hooks/useDashboard';
 import { notifyUserPlansChanged } from '@/hooks/useUserPlans';
 import { mergeBillingSessionViewOnPoll } from '@/lib/scb-ui-view-model';
-import { formatDisplayHours } from '@/lib/dashboard-session-display';
 import {
   resolvePlanCardHours,
-  resolvePlanCardValidUntil,
+  BILLING_PACKAGE_LABELS,
+  comparePlansByBurnOrder,
+  formatPackageRemainingLine,
+  getPlanNameFromKey,
+  groupInventoryPlansByTier,
+  pickTierActivationTarget,
+  PLAN_ORDER,
+  resolveActiveTierKey,
+  resolveInventoryBillingMode,
+  getTierPurchaseBillingOptions,
 } from '@/lib/plan-card-display';
 import {
   formatCurrency,
   getPlanConfig,
-  getPlanNameFromKey,
   getPlanPrice,
-  PLAN_ORDER,
+  getPlanPurchaseAmount,
+  normalizeHourlyPurchaseHours,
 } from '@/lib/gpu-pricing';
 import { routes } from '@/lib/routes';
 
@@ -73,6 +83,12 @@ type PlanHoursOverlay = {
   validUntil: string | null;
 };
 
+type RenewTarget = {
+  planName: string;
+  billing: BillingMode;
+  subscriptionId: string | null;
+};
+
 function resolveActivePlanHoursOverlay(
   plan: InventoryPlan,
   subscription: DashboardSubscription | null | undefined,
@@ -88,25 +104,8 @@ function resolveActivePlanHoursOverlay(
   return {
     hoursRemaining,
     hoursTotal,
-    validUntil: resolvePlanCardValidUntil(plan.validUntil, subscription?.expires_at ?? null),
+    validUntil: plan.validUntil ?? subscription?.expires_at ?? null,
   };
-}
-
-type RenewTarget = {
-  planName: string;
-  billing: BillingMode;
-};
-
-function formatDate(iso: string | null): string {
-  if (!iso) return 'Không giới hạn';
-  return new Date(iso).toLocaleDateString('vi-VN');
-}
-
-function resolveBilling(plan: InventoryPlan): BillingMode {
-  if (plan.billing === 'hourly' || plan.billing === 'combo1' || plan.billing === 'combo2') {
-    return plan.billing;
-  }
-  return plan.planType === 'hourly' ? 'hourly' : 'combo1';
 }
 
 function canRenew(plan: InventoryPlan): boolean {
@@ -117,156 +116,295 @@ function PlanHero() {
   return (
     <div className="my-plan-hero">
       <h2>📦 Gói của tôi</h2>
-      <p>Quản lý tất cả gói GPU đang sở hữu — chọn gói dùng, tái tục hoặc mua thêm.</p>
+      <p>
+        Chọn gói dịch vụ Starter / Pro / Studio — giờ sắp hết hạn sớm nhất được trừ trước.
+      </p>
     </div>
   );
 }
 
-function NoPlanView({ hasUsedTrial }: { hasUsedTrial: boolean }) {
+const DEFAULT_HOURLY_HOURS = 10;
+
+type PlanPurchaseModalProps = {
+  open: boolean;
+  tierKey: (typeof PLAN_ORDER)[number];
+  onClose: () => void;
+  onConfirm: (billing: BillingMode, hourlyHours?: number) => void;
+};
+
+function PlanPurchaseModal({ open, tierKey, onClose, onConfirm }: PlanPurchaseModalProps) {
+  const tierName = getPlanNameFromKey(tierKey) ?? tierKey;
+  const config = getPlanConfig(tierKey);
+  const options = useMemo(() => getTierPurchaseBillingOptions(tierKey), [tierKey]);
+
+  const [selectedBilling, setSelectedBilling] = useState<BillingMode>('combo1');
+  const [hourlyHours, setHourlyHours] = useState(DEFAULT_HOURLY_HOURS);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedBilling('combo1');
+    setHourlyHours(DEFAULT_HOURLY_HOURS);
+  }, [open, tierKey]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const normalizedHourlyHours = normalizeHourlyPurchaseHours(hourlyHours);
+  const totalAmount = getPlanPurchaseAmount(
+    tierName,
+    selectedBilling,
+    selectedBilling === 'hourly' ? normalizedHourlyHours : undefined,
+  );
+
+  const handleConfirm = () => {
+    if (selectedBilling === 'hourly') {
+      onConfirm('hourly', normalizedHourlyHours);
+      return;
+    }
+    onConfirm(selectedBilling);
+  };
+
   return (
-    <div className="my-plan-panel">
-      <PlanHero />
-      <div className="card my-plan-welcome">
-        <div className="my-plan-welcome-icon">🎉</div>
-        <p className="my-plan-welcome-text">
-          Bạn chưa có gói GPU nào. Chọn gói phù hợp để bắt đầu sáng tạo ngay!
+    <div className="renew-modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="purchase-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="purchase-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 id="purchase-modal-title">Mua {tierName}</h3>
+        <p className="purchase-modal-spec">
+          {config?.gpu ?? 'GPU'} · {config?.vram ?? '—'}
         </p>
-        <div className="my-plan-picker-grid">
-          {PLAN_ORDER.map((planKey) => {
-            const config = getPlanConfig(planKey);
-            const planName = getPlanNameFromKey(planKey);
-            if (!config || !planName) return null;
+        <p className="purchase-modal-hint">Chọn 1 trong 3 hình thức thanh toán</p>
+
+        <div className="purchase-modal-options" role="radiogroup" aria-label="Hình thức thanh toán">
+          {options.map((option) => {
+            const isSelected = selectedBilling === option.billing;
+            const isHourly = option.billing === 'hourly';
             return (
-              <div key={planKey} className="my-plan-picker-card">
-                <div className="my-plan-picker-name">{planName}</div>
-                <div className="my-plan-picker-spec">
-                  {config.gpu} · {config.vram}
+              <label
+                key={option.billing}
+                className={`purchase-option${isSelected ? ' is-selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="purchase-billing"
+                  className="purchase-option-radio"
+                  checked={isSelected}
+                  onChange={() => setSelectedBilling(option.billing as BillingMode)}
+                />
+                <div className="purchase-option-body">
+                  <div className="purchase-option-head">
+                    <span className="purchase-option-title">{option.label}</span>
+                    <span className="purchase-option-sep">:</span>
+                    {isHourly ? (
+                      <span className="purchase-option-hourly-detail">
+                        <input
+                          id="purchase-hourly-hours"
+                          type="number"
+                          min={1}
+                          step={1}
+                          inputMode="numeric"
+                          className="purchase-option-hours-input"
+                          value={hourlyHours}
+                          onClick={(event) => event.stopPropagation()}
+                          onFocus={() => setSelectedBilling('hourly')}
+                          onChange={(event) => {
+                            const next = event.target.value;
+                            if (!next) {
+                              setHourlyHours(0);
+                              return;
+                            }
+                            setHourlyHours(Number(next));
+                          }}
+                          onBlur={() => setHourlyHours(normalizeHourlyPurchaseHours(hourlyHours))}
+                        />
+                        <span className="purchase-option-hours-suffix">h</span>
+                        <span className="purchase-option-detail">{option.validitySuffix}</span>
+                      </span>
+                    ) : (
+                      <span className="purchase-option-detail">{option.detail}</span>
+                    )}
+                  </div>
+                  <div className="purchase-option-price">
+                    <span className="purchase-option-price-label">Đơn giá</span>
+                    <strong>{option.unitPriceLabel}</strong>
+                  </div>
                 </div>
-                <div className="my-plan-picker-price">
-                  {formatCurrency(config.price_per_hour)}/giờ
-                </div>
-                <Link href={routes.bangGia} className="btn btn-secondary btn-sm">
-                  Chọn
-                </Link>
-              </div>
+              </label>
             );
           })}
         </div>
-        {!hasUsedTrial && (
-          <Link href={`${routes.register}?trial=true`} className="my-plan-trial-link">
-            Dùng thử miễn phí 3 giờ
-          </Link>
-        )}
+
+        <p className="purchase-modal-total">
+          Tổng thanh toán: <strong>{formatCurrency(totalAmount)}</strong>
+        </p>
+
+        <div className="renew-modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Hủy
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={selectedBilling === 'hourly' && normalizedHourlyHours < 1}
+            onClick={handleConfirm}
+          >
+            Tiếp tục thanh toán
+          </button>
+        </div>
       </div>
-      <Link href={routes.bangGia} className="my-plan-footer-link">
-        + Mua thêm gói →
-      </Link>
     </div>
   );
 }
 
-type PlanCardProps = {
-  plan: InventoryPlan;
+type ServiceTierCardProps = {
+  tierKey: (typeof PLAN_ORDER)[number];
+  plans: InventoryPlan[];
+  isSelected: boolean;
+  activePlanId: number | null;
   hoursOverlay?: PlanHoursOverlay;
-  otherUsableCount: number;
+  subscription: DashboardSubscription | null | undefined;
+  billingView: BillingSessionView | null | undefined;
   actionBusy: boolean;
-  renewPrice: number;
-  onActivate: (id: number) => void;
-  onDeactivate: (id: number) => void;
+  machineSessionActive: boolean;
+  onSelectTier: (tierKey: (typeof PLAN_ORDER)[number]) => void;
   onRenew: (target: RenewTarget) => void;
+  getRenewPrice: (plan: InventoryPlan) => number;
+  onOpenPurchase: () => void;
 };
 
-function PlanCard({
-  plan,
+function ServiceTierCard({
+  tierKey,
+  plans,
+  isSelected,
+  activePlanId,
   hoursOverlay,
-  otherUsableCount,
+  subscription,
+  billingView,
   actionBusy,
-  renewPrice,
-  onActivate,
-  onDeactivate,
+  machineSessionActive,
+  onSelectTier,
   onRenew,
-}: PlanCardProps) {
-  const billing = resolveBilling(plan);
-  const billingLabel = plan.billing ? BILLING_LABELS[billing] ?? plan.billing : plan.planTypeLabel;
-  const isActiveUsing = plan.isActive && plan.usable;
-  const hoursRemaining = hoursOverlay?.hoursRemaining ?? plan.hoursRemaining;
-  const hoursTotal = hoursOverlay?.hoursTotal ?? plan.hoursTotal;
-  const validUntil = hoursOverlay?.validUntil ?? plan.validUntil;
+  getRenewPrice,
+  onOpenPurchase,
+}: ServiceTierCardProps) {
+  const config = getPlanConfig(tierKey);
+  const tierName = getPlanNameFromKey(tierKey) ?? tierKey;
+  const visiblePlans = useMemo(
+    () => plans.filter((plan) => plan.usable).sort(comparePlansByBurnOrder),
+    [plans],
+  );
+  const hasUsable = visiblePlans.length > 0;
+
+  const resolveLineHours = (plan: InventoryPlan) => {
+    if (plan.id === activePlanId && hoursOverlay) {
+      return {
+        hoursRemaining: hoursOverlay.hoursRemaining,
+        validUntil: hoursOverlay.validUntil,
+      };
+    }
+    if (plan.isActive && plan.usable) {
+      const overlay = resolveActivePlanHoursOverlay(plan, subscription, billingView);
+      return {
+        hoursRemaining: overlay.hoursRemaining,
+        validUntil: overlay.validUntil,
+      };
+    }
+    return {
+      hoursRemaining: plan.hoursRemaining,
+      validUntil: plan.validUntil,
+    };
+  };
 
   return (
-    <div
-      className={`my-plan-inventory-card${isActiveUsing ? ' is-active' : ''}${!plan.usable ? ' is-inactive' : ''}`}
+    <article
+      className={`my-plan-tier-card${isSelected ? ' is-selected' : ''}${!hasUsable ? ' is-empty' : ''}`}
     >
-      <div className="my-plan-inventory-head">
-        <div className="my-plan-inventory-icon">{plan.planTypeLabel.split(' ')[0]}</div>
-        <div>
-          <div className="my-plan-inventory-title">
-            {plan.displayName}
-            <span className="my-plan-inventory-gpu">
-              {plan.gpu} · {plan.vram}
-            </span>
-          </div>
-          <div className="my-plan-inventory-meta">
-            Còn lại {formatDisplayHours(hoursRemaining)}
-            {hoursTotal > 0 ? ` / ${formatDisplayHours(hoursTotal)}` : ''}
-            {' · '}
-            Hạn: {formatDate(validUntil)}
-          </div>
-        </div>
-        <span
-          className={`my-plan-inventory-badge${isActiveUsing ? ' active' : plan.usable ? ' ready' : ' muted'}`}
-        >
-          {plan.statusBadge}
+      <label className="my-plan-tier-select">
+        <input
+          type="radio"
+          name="my-plan-active-tier"
+          className="my-plan-tier-radio"
+          checked={isSelected}
+          disabled={actionBusy || !hasUsable || machineSessionActive}
+          onChange={() => onSelectTier(tierKey)}
+        />
+        <span className="my-plan-tier-head">
+          <span className="my-plan-tier-name">{tierName}</span>
+          <span className="my-plan-tier-spec">
+            {config?.gpu ?? 'GPU'} · {config?.vram ?? '—'}
+          </span>
         </span>
-      </div>
+      </label>
+      {machineSessionActive && !isSelected && hasUsable && (
+        <p className="stat-sub" style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)' }}>
+          🔒 Tắt máy để đổi sang gói này
+        </p>
+      )}
 
-      <div className="my-plan-inventory-tags">
-        <span className="my-plan-inventory-tag">{plan.planTypeLabel}</span>
-        {plan.billing && plan.planType === 'combo' && (
-          <span className="my-plan-inventory-tag">{billingLabel}</span>
+      <div className="my-plan-tier-tree" role="list">
+        {visiblePlans.length === 0 ? (
+          <p className="my-plan-tier-empty">Chưa có gói thanh toán</p>
+        ) : (
+          visiblePlans.map((plan) => {
+            const billing = resolveInventoryBillingMode(plan);
+            const label = BILLING_PACKAGE_LABELS[billing] ?? billing;
+            const { hoursRemaining, validUntil } = resolveLineHours(plan);
+
+            return (
+              <div
+                key={plan.id}
+                className={`my-plan-tier-line${plan.isActive ? ' is-active-line' : ''}`}
+                role="listitem"
+              >
+                <span className="my-plan-tier-package">{label}</span>
+                <span className="my-plan-tier-sep">:</span>
+                <span className="my-plan-tier-remaining">
+                  {formatPackageRemainingLine(hoursRemaining, validUntil)}
+                </span>
+                {canRenew(plan) && (
+                  <button
+                    type="button"
+                    className="my-plan-tier-renew"
+                    disabled={actionBusy}
+                    onClick={() => {
+                      if (billing !== 'combo1' && billing !== 'combo2') return;
+                      onRenew({
+                        planName: plan.planName,
+                        billing,
+                        subscriptionId: plan.subscriptionId,
+                      });
+                    }}
+                  >
+                    Tái tục
+                    {getRenewPrice(plan) > 0 ? ` · ${formatCurrency(getRenewPrice(plan))}` : ''}
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
-      {plan.usable && (
-        <div className="my-plan-inventory-actions">
-          {!plan.isActive && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={actionBusy}
-              onClick={() => onActivate(plan.id)}
-            >
-              ▶️ Dùng gói này
-            </button>
-          )}
-          {plan.isActive && otherUsableCount > 0 && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              disabled={actionBusy}
-              onClick={() => onDeactivate(plan.id)}
-            >
-              ⏸️ Dừng dùng
-            </button>
-          )}
-          {canRenew(plan) && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm my-plan-renew-btn"
-              disabled={actionBusy}
-              onClick={() =>
-                onRenew({
-                  planName: plan.planName,
-                  billing: billing as BillingMode,
-                })
-              }
-            >
-              🔄 Tái tục{renewPrice > 0 ? ` · ${formatCurrency(renewPrice)}` : ''}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+      <button
+        type="button"
+        className="my-plan-tier-buy"
+        onClick={onOpenPurchase}
+      >
+        Mua {tierName}
+      </button>
+    </article>
   );
 }
 
@@ -276,6 +414,7 @@ export default function MyPlanPanel({
   billingView: billingViewProp,
   onBillingRefresh,
 }: MyPlanPanelProps) {
+  const router = useRouter();
   useGpuPricingConfig();
   const [plansData, setPlansData] = useState<PlansResponse | null>(null);
   const [hasUsedTrial, setHasUsedTrial] = useState(false);
@@ -285,6 +424,7 @@ export default function MyPlanPanel({
   const [error, setError] = useState('');
   const [actionBusy, setActionBusy] = useState(false);
   const [renewTarget, setRenewTarget] = useState<RenewTarget | null>(null);
+  const [purchaseTarget, setPurchaseTarget] = useState<(typeof PLAN_ORDER)[number] | null>(null);
   const [toast, setToast] = useState('');
 
   const loadPlans = useCallback(async () => {
@@ -366,7 +506,7 @@ export default function MyPlanPanel({
         setToast(data.error ?? 'Không đổi được gói.');
         return;
       }
-      setToast('Đã chọn gói đang dùng.');
+      setToast('Đã chọn gói dịch vụ.');
       notifyUserPlansChanged();
       await onBillingRefresh?.({ silent: true });
       await loadPlans();
@@ -377,53 +517,59 @@ export default function MyPlanPanel({
     }
   };
 
-  const handleDeactivate = async (inventoryId: number) => {
-    if (!accessToken) return;
-    setActionBusy(true);
-    try {
-      const res = await fetch('/api/user/plans/activate', {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ inventoryId, action: 'deactivate' }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setToast(data.error ?? 'Không dừng được gói.');
-        return;
-      }
-      setToast('Đã dừng dùng gói này.');
-      notifyUserPlansChanged();
-      await onBillingRefresh?.({ silent: true });
-      await loadPlans();
-    } catch {
-      setToast('Lỗi mạng.');
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const activePlan = plansData?.activePlan ?? null;
-  const usablePlans = plansData?.usable ?? [];
-  const inactivePlans = plansData?.inactive ?? [];
-  const otherUsableCount = Math.max(0, usablePlans.length - 1);
   const subscription = subscriptionProp ?? meSubscription;
   const billingView = billingViewProp ?? meBillingView;
+  const activePlan = plansData?.activePlan ?? null;
+  const allItems = plansData?.items ?? [];
+
+  const machineSessionActive =
+    billingView?.phase === 'running' ||
+    billingView?.phase === 'opening' ||
+    billingView?.phase === 'stopping' ||
+    billingView?.phase === 'disconnected';
+
+  const groupedByTier = useMemo(() => groupInventoryPlansByTier(allItems), [allItems]);
+  const activeTierKey = useMemo(
+    () => resolveActiveTierKey(groupedByTier, activePlan),
+    [groupedByTier, activePlan],
+  );
   const activePlanHoursOverlay =
     activePlan != null
       ? resolveActivePlanHoursOverlay(activePlan, subscription, billingView)
       : undefined;
 
-  const getRenewPrice = useCallback(
-    (plan: InventoryPlan) => {
-      if (!canRenew(plan)) return 0;
-      const billing = resolveBilling(plan);
-      return getPlanPrice(plan.planName, billing);
-    },
-    [],
-  );
+  const getRenewPrice = useCallback((plan: InventoryPlan) => {
+    if (!canRenew(plan)) return 0;
+    const billing = resolveInventoryBillingMode(plan);
+    if (billing !== 'combo1' && billing !== 'combo2' && billing !== 'hourly') return 0;
+    return getPlanPrice(plan.planName, billing);
+  }, []);
+
+  const handleSelectPurchase = (
+    tierKey: (typeof PLAN_ORDER)[number],
+    billing: BillingMode,
+    hourlyHours?: number,
+  ) => {
+    const tierName = getPlanNameFromKey(tierKey) ?? tierKey;
+    setPurchaseTarget(null);
+    void router.push(buildBangGiaCheckoutUrl(tierName, billing, hourlyHours, { additional: true }));
+  };
+
+  const handleSelectTier = async (tierKey: (typeof PLAN_ORDER)[number]) => {
+    if (machineSessionActive) {
+      setToast('Vui lòng tắt máy trước khi đổi gói dịch vụ.');
+      return;
+    }
+    const target = pickTierActivationTarget(groupedByTier[tierKey]);
+    if (!target) {
+      setToast('Chưa có gói khả dụng cho mức này.');
+      return;
+    }
+    if (target.isActive) return;
+    const plan = groupedByTier[tierKey].find((row) => row.id === target.id);
+    if (!plan?.id) return;
+    await handleActivate(plan.id);
+  };
 
   if (loading) {
     return (
@@ -446,71 +592,64 @@ export default function MyPlanPanel({
     );
   }
 
-  if (!plansData?.items?.length) {
-    return <NoPlanView hasUsedTrial={hasUsedTrial} />;
-  }
+  const hasAnyUsablePlan = allItems.some((item) => item.usable);
 
   return (
     <div className="my-plan-panel">
       <PlanHero />
 
-      {activePlan && (
-        <div className="my-plan-active-highlight">
-          <div className="my-plan-active-label">Gói đang dùng</div>
-          <PlanCard
-            plan={activePlan}
-            hoursOverlay={activePlanHoursOverlay}
-            otherUsableCount={otherUsableCount}
+      {machineSessionActive && (
+        <div className="my-plan-session-lock-note" style={{ padding: '8px 12px', marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', background: 'var(--bg-elevated, rgba(255,255,255,0.04))', borderRadius: 8 }}>
+          🔒 Phiên làm việc đang mở — cần <strong>tắt máy</strong> trước khi đổi Gói dịch vụ (vì mỗi gói dùng loại GPU khác nhau).
+        </div>
+      )}
+
+      {!hasAnyUsablePlan && (
+        <div className="card my-plan-welcome my-plan-welcome-compact">
+          <p className="my-plan-welcome-text">
+            Bạn chưa có gói GPU nào. Chọn gói dịch vụ bên dưới hoặc mua thêm để bắt đầu.
+          </p>
+          {!hasUsedTrial && (
+            <Link href={`${routes.register}?trial=true`} className="my-plan-trial-link">
+              Dùng thử miễn phí 3 giờ
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="my-plan-tier-grid">
+        {PLAN_ORDER.map((tierKey) => (
+          <ServiceTierCard
+            key={tierKey}
+            tierKey={tierKey}
+            plans={groupedByTier[tierKey]}
+            isSelected={activeTierKey === tierKey}
+            activePlanId={activePlan?.id ?? null}
+            hoursOverlay={activeTierKey === tierKey ? activePlanHoursOverlay : undefined}
+            subscription={subscription}
+            billingView={billingView}
             actionBusy={actionBusy}
-            renewPrice={getRenewPrice(activePlan)}
-            onActivate={handleActivate}
-            onDeactivate={handleDeactivate}
+            machineSessionActive={machineSessionActive}
+            onSelectTier={handleSelectTier}
             onRenew={setRenewTarget}
+            getRenewPrice={getRenewPrice}
+            onOpenPurchase={() => setPurchaseTarget(tierKey)}
           />
-        </div>
-      )}
+        ))}
+      </div>
 
-      {usablePlans.filter((p) => !p.isActive).length > 0 && (
-        <div className="my-plan-section">
-          <h3 className="my-plan-section-title">Gói sẵn sàng</h3>
-          {usablePlans
-            .filter((p) => !p.isActive)
-            .map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                otherUsableCount={usablePlans.length - 1}
-                actionBusy={actionBusy}
-                renewPrice={getRenewPrice(plan)}
-                onActivate={handleActivate}
-                onDeactivate={handleDeactivate}
-                onRenew={setRenewTarget}
-              />
-            ))}
-        </div>
-      )}
+      <StorageUpgradeCard className="my-plan-storage-upgrade" />
 
-      {inactivePlans.length > 0 && (
-        <div className="my-plan-section my-plan-section-inactive">
-          <h3 className="my-plan-section-title">Gói đã hết / hết hạn</h3>
-          {inactivePlans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              otherUsableCount={0}
-              actionBusy={actionBusy}
-              renewPrice={getRenewPrice(plan)}
-              onActivate={handleActivate}
-              onDeactivate={handleDeactivate}
-              onRenew={setRenewTarget}
-            />
-          ))}
-        </div>
+      {purchaseTarget && (
+        <PlanPurchaseModal
+          open={Boolean(purchaseTarget)}
+          tierKey={purchaseTarget}
+          onClose={() => setPurchaseTarget(null)}
+          onConfirm={(billing, hourlyHours) =>
+            handleSelectPurchase(purchaseTarget, billing, hourlyHours)
+          }
+        />
       )}
-
-      <Link href={routes.bangGia} className="btn btn-secondary my-plan-buy-more">
-        + Mua thêm gói
-      </Link>
 
       {renewTarget && accessToken && (
         <RenewPlanModal
@@ -518,6 +657,7 @@ export default function MyPlanPanel({
           accessToken={accessToken}
           planName={renewTarget.planName}
           billing={renewTarget.billing}
+          subscriptionId={renewTarget.subscriptionId}
           onClose={() => setRenewTarget(null)}
           onSuccess={() => {
             setToast('Tái tục thành công!');

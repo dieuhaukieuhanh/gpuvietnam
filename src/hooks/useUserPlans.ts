@@ -13,6 +13,7 @@ export type UserInventoryPlan = {
   planType: 'combo' | 'hourly' | 'gift';
   planTypeLabel: string;
   planName: string;
+  planKey?: 'starter' | 'pro' | 'studio';
   displayName: string;
   gpu: string;
   vram: string;
@@ -58,14 +59,16 @@ export function getInventoryPlanBadge(plan: UserInventoryPlan): string {
 
 export function useUserPlans(accessToken: string | undefined) {
   const [displayPlan, setDisplayPlan] = useState<UserInventoryPlan | null>(null);
+  const [usablePlans, setUsablePlans] = useState<UserInventoryPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadPlans = useCallback(async (options?: { silent?: boolean }) => {
     if (!accessToken) {
       setDisplayPlan(null);
+      setUsablePlans([]);
       setLoading(false);
-      return;
+      return null;
     }
 
     if (!options?.silent) {
@@ -82,13 +85,19 @@ export function useUserPlans(accessToken: string | undefined) {
       if (!res.ok) {
         setError(data.error ?? 'Không tải được gói.');
         setDisplayPlan(null);
-        return;
+        setUsablePlans([]);
+        return null;
       }
 
-      setDisplayPlan(resolveDisplayPlan(data));
+      const nextDisplay = resolveDisplayPlan(data);
+      setDisplayPlan(nextDisplay);
+      setUsablePlans(data.usable ?? []);
+      return nextDisplay;
     } catch {
       setError('Không tải được gói.');
       setDisplayPlan(null);
+      setUsablePlans([]);
+      return null;
     } finally {
       if (!options?.silent) {
         setLoading(false);
@@ -124,5 +133,5 @@ export function useUserPlans(accessToken: string | undefined) {
     };
   }, [accessToken, loadPlans]);
 
-  return { displayPlan, loading, error, reload: loadPlans };
+  return { displayPlan, usablePlans, loading, error, reload: loadPlans };
 }

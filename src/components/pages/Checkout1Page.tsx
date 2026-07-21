@@ -31,7 +31,9 @@ type SelectedEnv = {
 
 function planButtonClass(plan: Plan): string {
   if (plan.featured) return 'btn btn-primary btn-full plan-cta';
-  if (plan.name === 'Studio') return 'btn btn-outline-purple btn-full plan-cta';
+  if (plan.planKey === 'studio' || plan.name === 'Studio' || plan.name === 'AI Studio') {
+    return 'btn btn-outline-purple btn-full plan-cta';
+  }
   return 'btn btn-secondary btn-full plan-cta';
 }
 
@@ -208,36 +210,31 @@ export default function Checkout1Page() {
 
                 return (
                   <div
-                    key={plan.name}
+                    key={plan.planKey ?? plan.name}
                     className={planCardClass(plan, activePlan)}
-                    id={`plan-${plan.name}`}
+                    id={`plan-${plan.planKey ?? plan.name}`}
                   >
-                    {plan.featured && <div className="badge">⭐ Phổ biến nhất</div>}
-                    <div className="plan-icon">{plan.icon}</div>
-                    <div className="plan-name">{plan.name}</div>
-                    <div className="plan-tagline">{plan.tagline}</div>
-                    <div style={{ marginBottom: '20px' }}>
+                    <div className="plan-card-head">
+                      {plan.featured && <div className="badge">⭐ Phổ biến nhất</div>}
+                      <div className="plan-title-row">
+                        <div className="plan-icon">{plan.icon}</div>
+                        <div className="plan-name">{plan.name}</div>
+                      </div>
+                      <div className="plan-tagline">{plan.tagline}</div>
+                    </div>
+
+                    <div className="plan-audience-block">
                       <p className="plan-label">Đối tượng phù hợp</p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      <div className="plan-audience-list">
                         {plan.bestForAudience.map((audience) => (
-                          <span
-                            key={audience.label}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              background: 'rgba(79, 142, 247, 0.08)',
-                              padding: '3px 10px',
-                              borderRadius: '14px',
-                              fontSize: '11px',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {audience.icon} {audience.label}
-                          </span>
+                          <div key={audience.label} className="plan-audience-item">
+                            <span aria-hidden>{audience.icon}</span>
+                            <span>{audience.label}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
+
                     <div className="plan-price-row">
                       <div className="plan-price">
                         {pricing.price}
@@ -245,7 +242,8 @@ export default function Checkout1Page() {
                       </div>
                       <div className="plan-price-note">{pricing.note}</div>
                     </div>
-                    <div>
+
+                    <div className="plan-bestfor-block">
                       <p className="plan-label">Phù hợp để làm</p>
                       <ul className="plan-list">
                         {plan.bestFor.map((item) => (
@@ -262,10 +260,12 @@ export default function Checkout1Page() {
                         )}
                       </ul>
                     </div>
+
                     <div className="plan-real-output">
                       <strong>GPU:</strong> {plan.gpuLabel}
                     </div>
-                    <div>
+
+                    <div className="plan-features-block">
                       <p className="plan-label">Tính năng</p>
                       <ul className="plan-list">
                         {plan.features.map((feature) => (
@@ -278,9 +278,10 @@ export default function Checkout1Page() {
                         ))}
                       </ul>
                     </div>
+
                     <div className="plan-trust">
                       <p className="plan-label" style={{ marginBottom: '8px' }}>
-                        Tại sao yên tâm
+                        {plan.trustTitle || 'Tại sao yên tâm'}
                       </p>
                       <ul>
                         {plan.trust.map((item) => (
@@ -288,13 +289,55 @@ export default function Checkout1Page() {
                         ))}
                       </ul>
                     </div>
-                    <button
-                      type="button"
-                      className={planButtonClass(plan)}
-                      onClick={() => selectPlan(plan.name)}
-                    >
-                      {activePlan === plan.name ? 'Bỏ chọn' : plan.cta}
-                    </button>
+
+                    <div className="plan-card-footer">
+                      {plan.upgradeTitle ? (
+                        <div className="plan-upgrade">
+                          <p className="plan-label" style={{ marginBottom: '8px' }}>
+                            {plan.upgradeTitle}
+                          </p>
+                          {plan.upgradeIntro ? (
+                            <p
+                              style={{
+                                fontSize: '12px',
+                                color: 'var(--text-secondary)',
+                                marginBottom: '8px',
+                              }}
+                            >
+                              {plan.upgradeIntro}
+                            </p>
+                          ) : null}
+                          {plan.upgradeItems?.length ? (
+                            <ul className="plan-list" style={{ marginBottom: '8px' }}>
+                              {plan.upgradeItems.map((item) => (
+                                <li key={item}>
+                                  <span className="check-icon">•</span>
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {plan.upgradeFooter ? (
+                            <p
+                              style={{
+                                fontSize: '12px',
+                                color: 'var(--text-secondary)',
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {plan.upgradeFooter}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        className={planButtonClass(plan)}
+                        onClick={() => selectPlan(plan.name)}
+                      >
+                        {activePlan === plan.name ? 'Bỏ chọn' : plan.cta}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

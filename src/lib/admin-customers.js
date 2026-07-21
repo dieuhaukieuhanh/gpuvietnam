@@ -10,6 +10,12 @@ import {
   detectCustomerAnomalies,
   getAnomalyLevel,
 } from '@/lib/customer-anomalies';
+import {
+  loadBackupAutoPolicy,
+  resolveAutoBackupEnabled,
+  normalizeAutoBackupOverride,
+} from '@/lib/backup-auto-policy';
+import { normalizeBackupPlanKey } from '@/lib/backup-entitlement';
 
 /** @typedef {import('@/lib/admin-customers-shared').AdminCustomerRow} AdminCustomerRow */
 /** @typedef {import('@/lib/admin-customers-shared').CustomerStats} CustomerStats */
@@ -159,6 +165,7 @@ export function enrichCustomerRow(raw) {
     plan: capitalizePlan(raw.plan),
     hoursLeft,
     totalHours: Number(raw.totalHours ?? 0),
+    daysLeft: raw.daysLeft ?? null,
     lastAccess,
     workflow: raw.workflow ?? '—',
     model: raw.model ?? '—',
@@ -176,11 +183,31 @@ export function enrichCustomerRow(raw) {
     currentSessionDuration,
     sessionStartedAt: isOnline ? sessionStartedAt : null,
     currentTemplate: isOnline ? stripTemplateLabel(currentTemplate) : null,
+    currentProvider: isOnline ? (raw.currentProvider ?? null) : null,
+    runtimeImage: isOnline ? (raw.runtimeImage ?? null) : null,
+    gpuLine: isOnline ? (raw.gpuLine ?? null) : null,
+    opsDegraded: isOnline ? Boolean(raw.opsDegraded) : false,
+    sshOk: isOnline && typeof raw.sshOk === 'boolean' ? raw.sshOk : null,
     machinesRunning,
     outputCount,
     status: 'hasHours',
     anomalies: [],
     anomalyLevel: 'none',
+    autoBackupOverride: normalizeAutoBackupOverride(raw.autoBackupOverride ?? null),
+    autoBackupEnabled:
+      raw.autoBackupEnabled != null
+        ? Boolean(raw.autoBackupEnabled)
+        : resolveAutoBackupEnabled({
+            planKey: raw.plan,
+            userOverride: raw.autoBackupOverride,
+          }).enabled,
+    autoBackupSource: String(
+      raw.autoBackupSource ??
+        resolveAutoBackupEnabled({
+          planKey: raw.plan,
+          userOverride: raw.autoBackupOverride,
+        }).source,
+    ),
   };
 
   row.realtimeStatus = getRealtimeStatus({ isOnline, hoursLeft, hasActivePlan });
@@ -371,7 +398,7 @@ async function fetchRunningMachinesByUser(supabaseAdmin, userIds) {
 
   const { data, error } = await supabaseAdmin
     .from('machines')
-    .select('user_id, status, template, started_at')
+    .select('user_id, status, template, started_at, provider, gpu_line, image')
     .in('user_id', userIds)
     .eq('status', 'running');
 
@@ -400,6 +427,12 @@ function resolveOnlineState(userId, sessions, activeSub, runningMachines) {
       isOnline: true,
       sessionStartedAt: machine.started_at ?? null,
       currentTemplate: machine.template ?? activeSub?.env_name ?? null,
+      currentProvider: machine.provider ?? null,
+      /** Admin audit only — ComfyUI image tag (v3/v4). */
+      runtimeImage: machine.image ?? null,
+      gpuLine: machine.gpu_line ?? null,
+      opsDegraded: machine.ops_degraded === true,
+      sshOk: typeof machine.ssh_ok === 'boolean' ? machine.ssh_ok : null,
       machinesRunning,
     };
   }
@@ -410,6 +443,11 @@ function resolveOnlineState(userId, sessions, activeSub, runningMachines) {
       isOnline: true,
       sessionStartedAt: runningSession.started_at ?? null,
       currentTemplate: runningSession.template ?? activeSub?.env_name ?? null,
+      currentProvider: null,
+      runtimeImage: null,
+      gpuLine: null,
+      opsDegraded: false,
+      sshOk: null,
       machinesRunning: machinesRunning || 1,
     };
   }
@@ -419,6 +457,11 @@ function resolveOnlineState(userId, sessions, activeSub, runningMachines) {
       isOnline: true,
       sessionStartedAt: activeSub.activated_at ?? activeSub.created_at ?? null,
       currentTemplate: activeSub.env_name ?? null,
+      currentProvider: null,
+      runtimeImage: null,
+      gpuLine: null,
+      opsDegraded: false,
+      sshOk: null,
       machinesRunning: machinesRunning || 1,
     };
   }
@@ -427,6 +470,11 @@ function resolveOnlineState(userId, sessions, activeSub, runningMachines) {
     isOnline: false,
     sessionStartedAt: null,
     currentTemplate: null,
+    currentProvider: null,
+    runtimeImage: null,
+    gpuLine: null,
+    opsDegraded: false,
+    sshOk: null,
     machinesRunning: 0,
   };
 }
@@ -435,17 +483,35 @@ function resolveOnlineState(userId, sessions, activeSub, runningMachines) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  */
 async function fetchCustomersFromDb(supabaseAdmin) {
-  const { data: users, error: usersError } = await supabaseAdmin
-    .from('users')
-    .select('id, email, full_name, phone, role, created_at')
-    .eq('role', 'user')
-    .order('created_at', { ascending: false });
+  let users;
+  let usersError;
+
+  {
+    const first = await supabaseAdmin
+      .from('users')
+      .select('id, email, full_name, phone, role, created_at, auto_backup_override, backup_entitled_plan')
+      .eq('role', 'user')
+      .order('created_at', { ascending: false });
+    users = first.data;
+    usersError = first.error;
+
+    if (usersError && /auto_backup_override|backup_entitled_plan|schema cache|Could not find/i.test(usersError.message || '')) {
+      const fallback = await supabaseAdmin
+        .from('users')
+        .select('id, email, full_name, phone, role, created_at')
+        .eq('role', 'user')
+        .order('created_at', { ascending: false });
+      users = fallback.data;
+      usersError = fallback.error;
+    }
+  }
 
   if (usersError || !users?.length) return null;
 
   const userIds = users.map((u) => u.id);
+  const autoBackupPolicy = await loadBackupAutoPolicy(supabaseAdmin);
 
-  const [subsRes, sessionsRes, walletRes, runningMachines] = await Promise.all([
+  const [subsRes, sessionsRes, walletRes, runningMachines, inventoryRes] = await Promise.all([
     supabaseAdmin.from('subscriptions').select('*').in('user_id', userIds),
     supabaseAdmin.from('gpu_sessions').select('*').in('user_id', userIds).order('started_at', { ascending: false }),
     supabaseAdmin
@@ -454,6 +520,10 @@ async function fetchCustomersFromDb(supabaseAdmin) {
       .in('user_id', userIds)
       .eq('status', 'completed'),
     fetchRunningMachinesByUser(supabaseAdmin, userIds),
+    supabaseAdmin
+      .from('user_plan_inventory')
+      .select('user_id, plan_name, hours_remaining, hours_total, is_active, status, valid_until, plan_type')
+      .in('user_id', userIds),
   ]);
 
   const subsByUser = new Map();
@@ -461,6 +531,26 @@ async function fetchCustomersFromDb(supabaseAdmin) {
     const list = subsByUser.get(sub.user_id) ?? [];
     list.push(sub);
     subsByUser.set(sub.user_id, list);
+  }
+
+  const activeInventoryByUser = new Map();
+  const usableInventoryByUser = new Map();
+  const nowMs = Date.now();
+  for (const inv of inventoryRes.data ?? []) {
+    if (inv.is_active) {
+      const existing = activeInventoryByUser.get(inv.user_id);
+      if (!existing || new Date(String(existing.valid_until ?? 0)).getTime() < new Date(String(inv.valid_until ?? 0)).getTime()) {
+        activeInventoryByUser.set(inv.user_id, inv);
+      }
+    }
+    if (inv.status === 'active' && inv.valid_until) {
+      const expMs = new Date(String(inv.valid_until)).getTime();
+      if (Number.isFinite(expMs) && expMs > nowMs) {
+        const list = usableInventoryByUser.get(inv.user_id) ?? [];
+        list.push(inv);
+        usableInventoryByUser.set(inv.user_id, list);
+      }
+    }
   }
 
   const sessionsByUser = new Map();
@@ -487,12 +577,48 @@ async function fetchCustomersFromDb(supabaseAdmin) {
 
     const remainingRead = remainingByUser.get(user.id);
     const scbOk = remainingRead?.remaining?.state === REMAINING_STATE_OK;
-    const hoursLeft = scbOk ? Number(remainingRead?.hoursRemaining ?? 0) : 0;
-    const hoursTotal = scbOk
-      ? Number(remainingRead.remaining.totalEntitlementHours ?? 0)
-      : Number(activeSub?.hours_total ?? 0);
+    const activeInventory = activeInventoryByUser.get(user.id);
+    const activeInventoryRemaining = activeInventory
+      ? Math.max(0, Number(activeInventory.hours_remaining ?? 0))
+      : null;
+    const activeInventoryTotal = activeInventory
+      ? Math.max(0, Number(activeInventory.hours_total ?? 0))
+      : null;
+    const hoursLeft =
+      activeInventoryRemaining != null
+        ? activeInventoryRemaining
+        : scbOk
+          ? Number(remainingRead?.hoursRemaining ?? 0)
+          : 0;
+    const hoursTotal =
+      activeInventoryTotal != null && activeInventoryTotal > 0
+        ? activeInventoryTotal
+        : activeSub
+          ? Number(activeSub.hours_total ?? 0)
+          : scbOk
+            ? Number(remainingRead.remaining.totalEntitlementHours ?? 0)
+            : 0;
     const plan = capitalizePlan(activeSub?.plan ?? '—');
     const hasActivePlan = activeSub?.status === 'active' || hoursLeft > 0;
+    const planKey =
+      normalizeBackupPlanKey(user.backup_entitled_plan) ??
+      normalizeBackupPlanKey(activeSub?.plan) ??
+      'starter';
+    const autoBackupOverride = normalizeAutoBackupOverride(user.auto_backup_override);
+    const autoBackup = resolveAutoBackupEnabled({
+      planKey,
+      userOverride: autoBackupOverride,
+      globalStarterPolicy: autoBackupPolicy,
+    });
+
+    const usableInvs = usableInventoryByUser.get(user.id) ?? [];
+    let daysLeft = null;
+    for (const inv of usableInvs) {
+      const expMs = new Date(String(inv.valid_until)).getTime();
+      if (!Number.isFinite(expMs)) continue;
+      const d = Math.max(0, Math.ceil((expMs - nowMs) / (24 * 60 * 60 * 1000)));
+      if (daysLeft == null || d > daysLeft) daysLeft = d;
+    }
 
     const onlineState = resolveOnlineState(user.id, sessions, activeSub, runningMachines);
     const runningSession = sessions.find((s) => s.status === 'running');
@@ -527,6 +653,7 @@ async function fetchCustomersFromDb(supabaseAdmin) {
       plan,
       hoursLeft,
       totalHours: hoursTotal || hoursLeft,
+      daysLeft,
       lastAccess,
       workflow,
       model: lastSession?.gpu_config?.split(' ')?.[0] ?? '—',
@@ -540,8 +667,16 @@ async function fetchCustomersFromDb(supabaseAdmin) {
       isOnline: onlineState.isOnline,
       sessionStartedAt: onlineState.sessionStartedAt,
       currentTemplate: onlineState.currentTemplate,
+      currentProvider: onlineState.currentProvider,
+      runtimeImage: onlineState.runtimeImage,
+      gpuLine: onlineState.gpuLine,
+      opsDegraded: onlineState.opsDegraded === true,
+      sshOk: typeof onlineState.sshOk === 'boolean' ? onlineState.sshOk : null,
       machinesRunning: onlineState.machinesRunning,
       outputCount,
+      autoBackupOverride,
+      autoBackupEnabled: autoBackup.enabled,
+      autoBackupSource: autoBackup.source,
     });
   });
 

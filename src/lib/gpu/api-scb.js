@@ -34,14 +34,21 @@ export function mapRemainingStatusFields(remainingRead) {
   if (!remaining || remaining.state !== REMAINING_STATE_OK) {
     return {
       remainingHours: null,
+      packageRemainingHours: null,
       totalEntitlementHours: null,
       currentSessionElapsedHours: null,
       settledSessionUsageHours: null,
     };
   }
 
+  const packageRemainingHours =
+    remaining.packageRemainingHours != null && Number.isFinite(Number(remaining.packageRemainingHours))
+      ? Number(remaining.packageRemainingHours)
+      : Number(remaining.remainingHours);
+
   return {
     remainingHours: remaining.remainingHours,
+    packageRemainingHours,
     totalEntitlementHours: remaining.totalEntitlementHours,
     currentSessionElapsedHours: remaining.currentSessionElapsedHours,
     settledSessionUsageHours: remaining.settledSessionUsageHours,

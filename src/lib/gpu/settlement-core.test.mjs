@@ -31,46 +31,132 @@ describe('calculateBillableSeconds', () => {
 });
 
 describe('consumption order', () => {
-  const manualGrant = { id: 1, plan_type: 'gift', grant_id: 10, hours_remaining: 5, status: 'active' };
-  const gift = { id: 2, plan_type: 'gift', hours_remaining: 5, status: 'active' };
-  const combo = { id: 3, plan_type: 'combo', hours_remaining: 5, status: 'active' };
-  const hourly = { id: 4, plan_type: 'hourly', price_per_hour: 10000, status: 'active' };
+  const nowMs = Date.parse('2026-07-19T12:00:00.000Z');
+  const manualGrant = {
+    id: 1,
+    plan_type: 'gift',
+    grant_id: 10,
+    hours_remaining: 5,
+    status: 'active',
+    valid_until: '2026-10-01T00:00:00.000Z',
+  };
+  const gift = {
+    id: 2,
+    plan_type: 'gift',
+    hours_remaining: 5,
+    status: 'active',
+    valid_until: '2026-09-01T00:00:00.000Z',
+  };
+  const combo1 = {
+    id: 3,
+    plan_type: 'combo',
+    billing: 'combo1',
+    hours_remaining: 5,
+    status: 'active',
+    valid_until: '2026-08-01T00:00:00.000Z',
+  };
+  const combo2 = {
+    id: 5,
+    plan_type: 'combo',
+    billing: 'combo2',
+    hours_remaining: 5,
+    status: 'active',
+    valid_until: '2026-12-01T00:00:00.000Z',
+  };
+  const hourly = {
+    id: 4,
+    plan_type: 'hourly',
+    billing: 'hourly',
+    price_per_hour: 10000,
+    hours_remaining: 5,
+    status: 'active',
+    valid_until: '2026-07-25T00:00:00.000Z',
+  };
 
-  it('T5 — manual grant before gift before combo before hourly', () => {
-    const ordered = orderPlansForSettlement([hourly, combo, gift, manualGrant]);
-    assert.deepEqual(ordered.map((p) => p.id), [1, 2, 3, 4]);
+  it('T5 — soonest valid_until first across gift / hourly / combo', () => {
+    const ordered = orderPlansForSettlement(
+      [combo2, combo1, hourly, gift, manualGrant],
+      nowMs,
+    );
+    assert.deepEqual(ordered.map((p) => p.id), [4, 3, 2, 1, 5]);
+    assert.ok(compareSettlementPlanPriority(hourly, combo1) < 0);
+    assert.ok(compareSettlementPlanPriority(combo1, gift) < 0);
+    assert.ok(compareSettlementPlanPriority(gift, manualGrant) < 0);
+    assert.ok(compareSettlementPlanPriority(manualGrant, combo2) < 0);
+    // Legacy helper still classifies plan types (not used for burn order).
     assert.equal(settlementPlanTier(manualGrant), 0);
-    assert.equal(settlementPlanTier(gift), 1);
-    assert.equal(settlementPlanTier(combo), 2);
-    assert.equal(settlementPlanTier(hourly), 3);
-    assert.ok(compareSettlementPlanPriority(manualGrant, gift) < 0);
-    assert.ok(compareSettlementPlanPriority(gift, combo) < 0);
-    assert.ok(compareSettlementPlanPriority(combo, hourly) < 0);
+    assert.equal(settlementPlanTier(combo2), 4);
   });
 
-  it('T5 — gift consumed before combo in allocation', () => {
+  it('T5 — soonest expiry wins across different plan types', () => {
+    const soonCombo = {
+      id: 10,
+      plan_type: 'combo',
+      billing: 'combo2',
+      hours_remaining: 2,
+      status: 'active',
+      valid_until: '2026-08-01T00:00:00.000Z',
+    };
+    const laterGift = {
+      id: 11,
+      plan_type: 'gift',
+      hours_remaining: 2,
+      status: 'active',
+      valid_until: '2026-09-01T00:00:00.000Z',
+    };
+    const ordered = orderPlansForSettlement([laterGift, soonCombo], nowMs);
+    assert.deepEqual(ordered.map((p) => p.id), [10, 11]);
+  });
+
+  it('T5 — burns by expiry order (combo before later gift/hourly)', () => {
     const allocation = allocateSettlementCharge({
-      chargeSeconds: 7200,
+      chargeSeconds: 10800,
       plans: [
-        { id: 3, plan_type: 'combo', hours_remaining: 1, status: 'active' },
-        { id: 2, plan_type: 'gift', hours_remaining: 1, status: 'active' },
+        {
+          id: 3,
+          plan_type: 'combo',
+          billing: 'combo1',
+          hours_remaining: 1,
+          status: 'active',
+          valid_until: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 4,
+          plan_type: 'hourly',
+          billing: 'hourly',
+          hours_remaining: 1,
+          status: 'active',
+          subscription_id: 'h1',
+          valid_until: '2026-10-01T00:00:00.000Z',
+        },
+        {
+          id: 2,
+          plan_type: 'gift',
+          hours_remaining: 1,
+          status: 'active',
+          valid_until: '2026-09-01T00:00:00.000Z',
+        },
       ],
       walletBalance: 0,
+      nowMs,
     });
-    assert.equal(allocation.lines.length, 2);
-    assert.equal(allocation.lines[0].source, 'gift');
-    assert.equal(allocation.lines[1].source, 'combo');
-    assert.equal(allocation.chargedSeconds, 7200);
+    assert.equal(allocation.lines.length, 3);
+    assert.equal(allocation.lines[0].source, 'combo');
+    assert.equal(allocation.lines[0].inventoryId, 3);
+    assert.equal(allocation.lines[1].source, 'gift');
+    assert.equal(allocation.lines[2].subscriptionId, 'h1');
+    assert.equal(allocation.chargedSeconds, 10800);
   });
 
-  it('manual grant consumed before gift', () => {
+  it('sooner gift burns before later manual grant', () => {
     const allocation = allocateSettlementCharge({
       chargeSeconds: 3600,
       plans: [gift, manualGrant],
       walletBalance: 0,
+      nowMs,
     });
-    assert.equal(allocation.lines[0].source, 'manual_grant');
-    assert.equal(allocation.lines[0].grantId, 10);
+    assert.equal(allocation.lines[0].source, 'gift');
+    assert.equal(allocation.lines[0].inventoryId, 2);
   });
 });
 
@@ -82,6 +168,31 @@ describe('cap and wallet partial', () => {
     assert.equal(available, 1800);
     assert.equal(capped.chargeSeconds, 1800);
     assert.equal(capped.capAppliedSeconds, 5400);
+  });
+
+  it('T6 — hourly burns prepaid hours before wallet', () => {
+    const plans = [
+      {
+        id: 1,
+        plan_type: 'hourly',
+        price_per_hour: 10000,
+        hours_remaining: 1,
+        subscription_id: 'sub-1',
+        status: 'active',
+      },
+    ];
+    const allocation = allocateSettlementCharge({
+      chargeSeconds: 7200,
+      plans,
+      walletBalance: 20000,
+    });
+    assert.equal(allocation.lines.length, 2);
+    assert.equal(allocation.lines[0].source, 'combo');
+    assert.equal(allocation.lines[0].hours, 1);
+    assert.equal(allocation.lines[0].subscriptionId, 'sub-1');
+    assert.equal(allocation.lines[1].source, 'wallet');
+    assert.equal(allocation.lines[1].hours, 1);
+    assert.equal(allocation.chargedSeconds, 7200);
   });
 
   it('T6 — hourly wallet partial at balance', () => {

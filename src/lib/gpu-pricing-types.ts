@@ -25,12 +25,20 @@ export type GpuPlanConfig = {
   bestFor: string[];
   notFor: string | null;
   features: { text: string; included: boolean }[];
+  trustTitle?: string | null;
   trust: string[];
+  upgradeTitle?: string | null;
+  upgradeIntro?: string | null;
+  upgradeItems?: string[];
+  upgradeFooter?: string | null;
   cta: string;
 };
 
 export type GpuPricingConfig = {
   version: number;
+  billingValidity: {
+    hourlyDays: number;
+  };
   section: {
     title: string;
     subtitle: string;

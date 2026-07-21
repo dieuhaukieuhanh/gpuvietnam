@@ -70,6 +70,12 @@ export async function detectSubscriptionMachineDrift(supabaseAdmin, gpuService, 
     }
 
     if (machine && subscription.server_status === 'offline') {
+      const machineSubId =
+        machine.subscription_id != null ? String(machine.subscription_id) : null;
+      // Newer offline subscription (hour top-up) must not destroy a session owned by another sub.
+      if (machineSubId && machineSubId !== String(subscription.id)) {
+        return buildDetectResult(false, machine, subscription, null, null);
+      }
       if (shouldRepairBootingSubscriptionDrift(machine, subscription.server_status)) {
         return buildDetectResult(
           true,

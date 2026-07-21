@@ -14,9 +14,16 @@ import {
   type BillingMode,
 } from '@/lib/checkout-plans';
 import { DEFAULT_CHECKOUT_ENV } from '@/lib/checkout-auth';
-import { getPlanPrice } from '@/lib/gpu-pricing';
+import {
+  formatComboHoursBreakdown,
+  getPlanPrice,
+  getPlanPurchaseAmount,
+  getPlanQuota,
+  normalizeHourlyPurchaseHours,
+} from '@/lib/gpu-pricing';
 import { getSupabaseBrowser } from '@/lib/supabase-browser';
 import { routes } from '@/lib/routes';
+import { notifyUserPlansChanged } from '@/hooks/useUserPlans';
 import { styles as baseStyles } from '@/styles/pages/trang-chu.styles';
 import { styles as checkoutStyles } from '@/styles/pages/checkout-flow.styles';
 import { styles as planCheckoutStyles } from '@/styles/pages/plan-checkout.styles';
@@ -36,10 +43,13 @@ export default function PlanCheckoutPage() {
       ? router.query.billing
       : 'combo1'
   ) as BillingMode;
+  const hourlyHours =
+    billing === 'hourly' ? normalizeHourlyPurchaseHours(router.query.hours) : null;
+  const isAdditionalPurchase = router.query.additional === '1';
 
   const plan = findCheckoutPlan(planName, plans);
   const pricing = plan.pricing[billing];
-  const amount = getPlanPrice(planName, billing);
+  const amount = getPlanPurchaseAmount(planName, billing, hourlyHours);
 
   const [walletBalance, setWalletBalance] = useState(0);
   const [loadingWallet, setLoadingWallet] = useState(true);
@@ -61,8 +71,14 @@ export default function PlanCheckoutPage() {
 
   const checkoutUrl = useMemo(() => {
     const params = new URLSearchParams({ plan: planName, billing });
+    if (billing === 'hourly' && hourlyHours != null) {
+      params.set('hours', String(hourlyHours));
+    }
+    if (isAdditionalPurchase) {
+      params.set('additional', '1');
+    }
     return `${routes.bangGiaCheckout}?${params.toString()}`;
-  }, [planName, billing]);
+  }, [planName, billing, hourlyHours, isAdditionalPurchase]);
 
   const loadWallet = useCallback(async () => {
     if (!session?.access_token) return;
@@ -82,10 +98,10 @@ export default function PlanCheckoutPage() {
   }, [session?.access_token]);
 
   useEffect(() => {
-    if (planGateLoaded && hasActivePlan) {
+    if (!isAdditionalPurchase && planGateLoaded && hasActivePlan) {
       goToDashboard();
     }
-  }, [planGateLoaded, hasActivePlan, goToDashboard]);
+  }, [isAdditionalPurchase, planGateLoaded, hasActivePlan, goToDashboard]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -104,10 +120,28 @@ export default function PlanCheckoutPage() {
   const purchaseBody = {
     plan: plan.name,
     billing,
+    hours: billing === 'hourly' ? hourlyHours : undefined,
     env: DEFAULT_CHECKOUT_ENV.name,
     icon: DEFAULT_CHECKOUT_ENV.icon,
     desc: DEFAULT_CHECKOUT_ENV.desc,
+    ...(isAdditionalPurchase ? { additional: true } : {}),
   };
+
+  const comboBreakdown =
+    billing === 'hourly'
+      ? null
+      : formatComboHoursBreakdown(planName, billing, { includeReward: false });
+
+  const validityDays = getPlanQuota(planName, billing).validityDays;
+  const validityLabel =
+    validityDays != null ? `Hiệu lực ${validityDays} ngày` : 'Không giới hạn';
+
+  const billingSummaryLabel =
+    billing === 'hourly'
+      ? `Giờ lẻ · ${hourlyHours}h`
+      : comboBreakdown
+        ? `${BILLING_LABELS[billing]} · ${comboBreakdown.line}`
+        : BILLING_CONFIRM_LABELS[billing];
 
   const handlePayWallet = async () => {
     const { data: sessionData } = await getSupabaseBrowser().auth.getSession();
@@ -136,6 +170,7 @@ export default function PlanCheckoutPage() {
         return;
       }
 
+      notifyUserPlansChanged();
       router.push(`${routes.dashboard}?paid=1`);
     } catch {
       setError('Lỗi mạng khi thanh toán.');
@@ -208,8 +243,11 @@ export default function PlanCheckoutPage() {
 
       <main className="plan-checkout-page">
         <div className="container">
-          <Link href={routes.bangGia} className="plan-checkout-back">
-            ← Quay lại Bảng giá
+          <Link
+            href={isAdditionalPurchase ? routes.dashboardGoiCuaToi : routes.bangGia}
+            className="plan-checkout-back"
+          >
+            ← {isAdditionalPurchase ? 'Quay lại Gói của tôi' : 'Quay lại Bảng giá'}
           </Link>
 
           <h1 className="plan-checkout-title">💳 Thanh toán gói {plan.name}</h1>
@@ -225,15 +263,28 @@ export default function PlanCheckoutPage() {
             </div>
             <div className="plan-checkout-summary-row">
               <span>Số giờ sử dụng</span>
-              <strong>{BILLING_CONFIRM_LABELS[billing]}</strong>
+              <strong>{billingSummaryLabel}</strong>
             </div>
+            <div className="plan-checkout-summary-row">
+              <span>Thời hạn</span>
+              <strong>{validityLabel}</strong>
+            </div>
+            {billing === 'hourly' && (
+              <div className="plan-checkout-summary-row">
+                <span>Đơn giá</span>
+                <strong>
+                  {getPlanPrice(planName, 'hourly').toLocaleString('vi-VN')}đ/giờ
+                </strong>
+              </div>
+            )}
             <div className="plan-checkout-summary-row">
               <span>GPU</span>
               <strong>{plan.gpuLabel}</strong>
             </div>
             <div className="plan-checkout-total">
-              {pricing.price}
-              {pricing.unit}
+              {billing === 'hourly'
+                ? `${amount.toLocaleString('vi-VN')}đ`
+                : `${pricing.price}${pricing.unit}`}
             </div>
           </div>
 

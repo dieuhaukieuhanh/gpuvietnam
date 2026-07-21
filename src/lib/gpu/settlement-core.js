@@ -53,32 +53,33 @@ export function calculateBillableSeconds(startedAt, endedAt) {
 }
 
 /**
- * Allocation tier: manual grant → gift → combo → hourly wallet (SCB §6.3 + M6).
+ * Legacy plan-type rank (display/debug only). Burn order no longer uses this —
+ * see {@link compareSettlementPlanPriority} (soonest `valid_until` first).
  * @param {Record<string, unknown>} plan
  * @returns {number}
  */
 export function settlementPlanTier(plan) {
   if (plan?.grant_id != null && plan.grant_id !== '') return 0;
   if (plan?.plan_type === 'gift') return 1;
-  if (plan?.plan_type === 'combo') return 2;
-  if (plan?.plan_type === 'hourly') return 3;
-  return 4;
+  if (plan?.plan_type === 'hourly' || plan?.billing === 'hourly') return 2;
+  if (plan?.billing === 'combo1') return 3;
+  if (plan?.billing === 'combo2') return 4;
+  if (plan?.plan_type === 'combo') return 3;
+  return 5;
 }
 
 /**
+ * Burn soonest-expiring lot first (any gift / hourly / combo).
+ * Missing `valid_until` sorts last; tie-break by inventory id.
  * @param {Record<string, unknown>} a
  * @param {Record<string, unknown>} b
  * @returns {number}
  */
 export function compareSettlementPlanPriority(a, b) {
-  const tierDiff = settlementPlanTier(a) - settlementPlanTier(b);
-  if (tierDiff !== 0) return tierDiff;
-
-  const tier = settlementPlanTier(a);
-  if (tier === 0 || tier === 1) {
-    const aExpiry = a.valid_until ? new Date(String(a.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
-    const bExpiry = b.valid_until ? new Date(String(b.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
-    if (aExpiry !== bExpiry) return aExpiry - bExpiry;
+  const aExpiry = a.valid_until ? new Date(String(a.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
+  const bExpiry = b.valid_until ? new Date(String(b.valid_until)).getTime() : Number.MAX_SAFE_INTEGER;
+  if (Number.isFinite(aExpiry) && Number.isFinite(bExpiry) && aExpiry !== bExpiry) {
+    return aExpiry - bExpiry;
   }
 
   const aId = Number(a.id ?? 0);
@@ -124,6 +125,10 @@ export function computeAvailableEntitlementSeconds(plans, walletBalance, nowMs =
 
   for (const plan of ordered) {
     if (plan.plan_type === 'hourly') {
+      const prepaidHours = Number(plan.hours_remaining ?? 0);
+      if (prepaidHours > 0) {
+        seconds += Math.floor(prepaidHours * 3600);
+      }
       const pricePerHour = Number(plan.price_per_hour ?? 0);
       const balance = Number(walletBalance ?? 0);
       if (pricePerHour > 0 && balance > 0) {
@@ -163,7 +168,7 @@ export function capChargeSeconds(billableSeconds, availableSeconds) {
  */
 
 /**
- * Pure allocation — manual grant → gift → combo → hourly wallet.
+ * Pure allocation — burn lots by soonest `valid_until`, then wallet on hourly rows.
  * @param {{
  *   chargeSeconds: number;
  *   plans: Record<string, unknown>[];
@@ -190,6 +195,28 @@ export function allocateSettlementCharge(input) {
     if (remaining <= 0) break;
 
     if (plan.plan_type === 'hourly') {
+      // Prepaid giờ lẻ (hours_remaining on hourly inventory) before ví.
+      const prepaidHours = Number(plan.hours_remaining ?? 0);
+      if (prepaidHours > 0) {
+        const needHours = remaining / 3600;
+        const useHours = Math.min(prepaidHours, needHours);
+        const useSeconds = Math.floor(useHours * 3600);
+        if (useSeconds > 0) {
+          lines.push({
+            // Subscription-backed burn (same commit path as combo).
+            source: 'combo',
+            seconds: useSeconds,
+            hours: roundHours(useSeconds / 3600),
+            inventoryId: plan.id != null ? Number(plan.id) : null,
+            subscriptionId: plan.subscription_id ? String(plan.subscription_id) : null,
+          });
+          plan.hours_remaining = roundHours(prepaidHours - useHours);
+          remaining -= useSeconds;
+        }
+      }
+
+      if (remaining <= 0) continue;
+
       const pricePerHour = Number(plan.price_per_hour ?? 0);
       if (pricePerHour <= 0 || walletBalance <= 0) continue;
 

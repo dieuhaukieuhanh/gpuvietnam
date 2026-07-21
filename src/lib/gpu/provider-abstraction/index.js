@@ -3,20 +3,21 @@
  */
 
 import { VastProviderAdapter } from '../providers/vast/vast-provider-adapter.js';
-import { createSaladProviderAdapter } from '../providers/stubs/salad-provider-adapter.js';
-import { createTensorDockProviderAdapter } from '../providers/stubs/tensordock-provider-adapter.js';
-import { createInterDataProviderAdapter } from '../providers/stubs/interdata-provider-adapter.js';
-import { createGpuVietnamInternalProviderAdapter } from '../providers/stubs/gpuvietnam-internal-provider-adapter.js';
+import { CloreProviderAdapter } from '../providers/clore/clore-provider-adapter.js';
+import { createSaladProviderAdapter } from '../providers/salad/salad-provider-adapter.js';
+import { createRunpodProviderAdapter } from '../providers/runpod/runpod-provider-adapter.js';
 import { attachWorkflowDelegate, createLegacyGpuProviderBridge } from './legacy-gpu-provider-bridge.js';
 import {
   getDefaultProviderAdapter,
   getDefaultProviderId,
   getProviderAdapter,
+  tryGetProviderAdapter,
   listRegisteredProviders,
   registerProviderAdapter,
   resetProviderRegistryForTests,
   setDefaultProviderAdapter,
 } from './provider-registry.js';
+import { MARKETPLACE_PROVIDER_IDS } from './provider-capabilities.js';
 
 /** @type {boolean} */
 let bootstrapped = false;
@@ -28,10 +29,11 @@ export function bootstrapProviderRegistry() {
   const vastAdapter = new VastProviderAdapter();
   attachWorkflowDelegate(vastAdapter, vastAdapter.legacyProvider);
   registerProviderAdapter(vastAdapter);
+
+  const cloreAdapter = new CloreProviderAdapter();
+  registerProviderAdapter(cloreAdapter);
   registerProviderAdapter(createSaladProviderAdapter());
-  registerProviderAdapter(createTensorDockProviderAdapter());
-  registerProviderAdapter(createInterDataProviderAdapter());
-  registerProviderAdapter(createGpuVietnamInternalProviderAdapter());
+  registerProviderAdapter(createRunpodProviderAdapter());
 }
 
 /**
@@ -55,11 +57,17 @@ export {
   getDefaultProviderAdapter,
   getDefaultProviderId,
   getProviderAdapter,
+  tryGetProviderAdapter,
   listRegisteredProviders,
   registerProviderAdapter,
   resetProviderRegistryForTests,
   setDefaultProviderAdapter,
+  MARKETPLACE_PROVIDER_IDS,
 };
 
 export { isProviderAdapter, PROVIDER_ADAPTER_METHODS } from './provider-interface.js';
 export { defineProviderCapabilities } from './provider-capabilities.js';
+export {
+  cancelOrphanBeforeNextHost,
+  walkRentCandidates,
+} from '../rent-candidate-walk.js';

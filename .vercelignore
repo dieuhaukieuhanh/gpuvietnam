@@ -1,0 +1,20 @@
+# Keep Vercel uploads small — never ship local GPU assets / deps
+local-models
+local-models/**
+node_modules
+.next
+out
+build
+coverage
+logs
+tmp
+.git
+workers/comfy-proxy/node_modules
+workers/**/node_modules
+vendor
+image
+comfyui-extensions
+*.log
+dev-profile*.log
+.env*
+.vercel

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   DEFAULT_CUSTOMER_FILTERS,
   formatSessionDurationShort,
+  formatMachineProviderLabel,
   type AdminCustomerRow,
   type CustomerAnomalySummary,
   type CustomerFilters,
@@ -84,9 +85,38 @@ function liveDurationSeconds(row: AdminCustomerRow, now: number) {
 function OnlineCompactCell({ row, now }: { row: AdminCustomerRow; now: number }) {
   if (row.isOnline) {
     const duration = formatSessionDurationShort(liveDurationSeconds(row, now));
+    const provider = formatMachineProviderLabel(row.currentProvider);
+    const imageTag = row.runtimeImage
+      ? String(row.runtimeImage).match(/:(v\d+)\b/i)?.[1]?.toLowerCase() ?? null
+      : null;
     return (
       <span className="online-compact online-compact-yes">
         🟢 Online · {duration}
+        {provider ? (
+          <span
+            className={`provider-badge provider-badge-${String(row.currentProvider).toLowerCase().startsWith('clore') ? 'clore' : 'vast'}`}
+          >
+            {provider}
+          </span>
+        ) : null}
+        {imageTag ? (
+          <span className="provider-badge" title={row.runtimeImage ?? undefined}>
+            {imageTag}
+            {row.gpuLine ? ` · ${row.gpuLine}` : ''}
+          </span>
+        ) : null}
+        {row.opsDegraded ? (
+          <span
+            className="provider-badge"
+            title={
+              row.sshOk === false
+                ? 'HTTP OK · SSH soft-fail (ops degraded)'
+                : 'Ops degraded'
+            }
+          >
+            ops↓
+          </span>
+        ) : null}
       </span>
     );
   }
@@ -115,20 +145,41 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function autoBackupSourceLabel(source: string) {
+  switch (source) {
+    case 'force_on':
+      return 'Override: bật';
+    case 'force_off':
+      return 'Override: tắt';
+    case 'global_starter':
+      return 'Campaign Starter';
+    default:
+      return 'Theo gói';
+  }
+}
+
 function CustomerExpandPanel({
   row,
   now,
   toggleBusy,
+  autoBackupBusy,
   onRemoteSupport,
   onMachineToggle,
+  onAutoBackupOverride,
 }: {
   row: AdminCustomerRow;
   now: number;
   toggleBusy: boolean;
+  autoBackupBusy: boolean;
   onRemoteSupport: (row: AdminCustomerRow) => void;
   onMachineToggle: (row: AdminCustomerRow, action: MachineToggleAction) => void;
+  onAutoBackupOverride: (
+    row: AdminCustomerRow,
+    override: 'force_on' | 'force_off' | null,
+  ) => void;
 }) {
   const hasRenewed = row.history.length > 1;
+  const overrideValue = row.autoBackupOverride ?? '';
 
   return (
     <div className="customer-expand-inner">
@@ -148,6 +199,46 @@ function CustomerExpandPanel({
           <DetailField label="Phiên/tuần" value={row.sessionsPerWeek} />
           <DetailField label="Tỷ lệ tái tục" value={hasRenewed ? 'Có tái tục' : 'Chưa tái tục'} />
           <DetailField label="Lịch sử gói" value={row.history.join(' → ') || '—'} />
+        </div>
+      </div>
+
+      <div className="customer-expand-grid" style={{ marginTop: 12 }}>
+        <div className="customer-expand-col">
+          <div className="customer-detail-field">
+            <span className="customer-detail-label">Backup tự động</span>
+            <span className="customer-detail-value">
+              <select
+                className="gpu-edit-field"
+                style={{ maxWidth: 280 }}
+                disabled={autoBackupBusy || !row.userId}
+                value={overrideValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  onAutoBackupOverride(
+                    row,
+                    v === 'force_on' || v === 'force_off' ? v : null,
+                  );
+                }}
+              >
+                <option value="">Theo chính sách (gói / campaign)</option>
+                <option value="force_on">Bắt buộc bật</option>
+                <option value="force_off">Bắt buộc tắt</option>
+              </select>
+            </span>
+          </div>
+        </div>
+        <div className="customer-expand-col">
+          <DetailField
+            label="Hiện hiệu lực"
+            value={
+              <span className={row.autoBackupEnabled ? 'text-green' : 'text-muted'}>
+                {row.autoBackupEnabled ? 'Đang bật' : 'Đang tắt'} · {autoBackupSourceLabel(row.autoBackupSource)}
+              </span>
+            }
+          />
+          <div className="stat-sub" style={{ marginTop: 4, fontSize: 12, lineHeight: 1.4 }}>
+            Máy đang chạy chỉ nhận L1 sau khi tắt → bật lại. L2 lúc tắt đọc flag ngay.
+          </div>
         </div>
       </div>
 
@@ -199,9 +290,14 @@ type CustomerRowGroupProps = {
   now: number;
   isExpanded: boolean;
   toggleBusy: boolean;
+  autoBackupBusy: boolean;
   onToggle: () => void;
   onRemoteSupport: (row: AdminCustomerRow) => void;
   onMachineToggle: (row: AdminCustomerRow, action: MachineToggleAction) => void;
+  onAutoBackupOverride: (
+    row: AdminCustomerRow,
+    override: 'force_on' | 'force_off' | null,
+  ) => void;
 };
 
 function CustomerRowGroup({
@@ -209,9 +305,11 @@ function CustomerRowGroup({
   now,
   isExpanded,
   toggleBusy,
+  autoBackupBusy,
   onToggle,
   onRemoteSupport,
   onMachineToggle,
+  onAutoBackupOverride,
 }: CustomerRowGroupProps) {
   const pct = row.totalHours > 0 ? Math.min(100, Math.round((row.hoursLeft / row.totalHours) * 100)) : 0;
   const barColor = progressColor(row.hoursLeft, row.totalHours);
@@ -254,6 +352,11 @@ function CustomerRowGroup({
             </div>
             <span className="mono hours-value">{row.hoursLeft}h</span>
           </div>
+          {row.daysLeft != null && (
+            <div className="stat-sub" style={{ marginTop: 2, fontSize: 11 }}>
+              còn {row.daysLeft} ngày
+            </div>
+          )}
         </td>
         <td className="cell-compact">
           <OnlineCompactCell row={row} now={now} />
@@ -305,8 +408,10 @@ function CustomerRowGroup({
                 row={row}
                 now={now}
                 toggleBusy={toggleBusy}
+                autoBackupBusy={autoBackupBusy}
                 onRemoteSupport={onRemoteSupport}
                 onMachineToggle={onMachineToggle}
+                onAutoBackupOverride={onAutoBackupOverride}
               />
             )}
           </div>
@@ -425,6 +530,7 @@ export default function AdminCustomersPanel() {
   const [machineToggleCustomer, setMachineToggleCustomer] = useState<AdminCustomerRow | null>(null);
   const [machineToggleAction, setMachineToggleAction] = useState<MachineToggleAction | null>(null);
   const [machineToggleBusyUserId, setMachineToggleBusyUserId] = useState<string | null>(null);
+  const [autoBackupBusyUserId, setAutoBackupBusyUserId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
   const toggleExpandedRow = useCallback((rowId: string) => {
@@ -435,6 +541,49 @@ export default function AdminCustomersPanel() {
     setMachineToggleCustomer(row);
     setMachineToggleAction(action);
   }, []);
+
+  const handleAutoBackupOverride = useCallback(
+    async (row: AdminCustomerRow, override: 'force_on' | 'force_off' | null) => {
+      if (!row.userId) {
+        alert('Không có userId — không thể ghi đè auto backup.');
+        return;
+      }
+      setAutoBackupBusyUserId(row.userId);
+      try {
+        const res = await adminFetch('/api/admin/customers/auto-backup', {
+          method: 'PUT',
+          body: JSON.stringify({ userId: row.userId, override }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error ?? 'Cập nhật auto backup thất bại.');
+          return;
+        }
+        setItems((prev) =>
+          prev.map((item) =>
+            item.userId === row.userId
+              ? {
+                  ...item,
+                  autoBackupOverride: data.override ?? null,
+                  autoBackupEnabled: Boolean(data.enabled),
+                  autoBackupSource: String(data.source ?? 'plan_default'),
+                }
+              : item,
+          ),
+        );
+        setToast(
+          data.enabled
+            ? `Auto backup: bật cho ${row.name}`
+            : `Auto backup: tắt cho ${row.name}`,
+        );
+      } catch {
+        alert('Lỗi mạng khi cập nhật auto backup.');
+      } finally {
+        setAutoBackupBusyUserId(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -856,9 +1005,11 @@ export default function AdminCustomersPanel() {
                     now={now}
                     isExpanded={expandedRowId === row.id}
                     toggleBusy={machineToggleBusyUserId === row.userId}
+                    autoBackupBusy={autoBackupBusyUserId === row.userId}
                     onToggle={() => toggleExpandedRow(row.id)}
                     onRemoteSupport={setSupportCustomer}
                     onMachineToggle={openMachineToggle}
+                    onAutoBackupOverride={handleAutoBackupOverride}
                   />
                 ))
               )}

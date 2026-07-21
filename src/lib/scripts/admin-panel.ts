@@ -155,15 +155,15 @@ export function initAdminPanel(): void {
               <select class="form-control" id="quickTopupPlan">
                 <option value="Starter">Starter (RTX 3090)</option>
                 <option value="Pro" selected>Pro (RTX 4090)</option>
-                <option value="Studio">Studio (2x RTX 4090)</option>
+                <option value="Studio">Studio (RTX 5090)</option>
               </select>
             </div>
             <div class="form-group">
               <label>Hình thức</label>
               <select class="form-control" id="quickTopupBilling">
                 <option value="hourly">Theo giờ</option>
-                <option value="combo1" selected>Combo1 (100h+10h · 45 ngày)</option>
-                <option value="combo2">Combo2 (200h+30h · 120 ngày)</option>
+                <option value="combo1" selected>Combo1 (100h+10h · 120 ngày)</option>
+                <option value="combo2">Combo2 (200h+30h · 180 ngày)</option>
               </select>
             </div>
             <div class="form-group">

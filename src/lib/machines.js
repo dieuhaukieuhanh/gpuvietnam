@@ -12,6 +12,15 @@ import {
   shouldResetIdleProvisioningSubscription,
   shouldSkipDeadInstanceDestroyDuringBoot,
 } from './machines-provisioning-sync.js';
+import { resolveMachineImage } from './machines-image-resolve.js';
+
+export {
+  claimSubscriptionForProvision,
+  reclaimStaleProvisionClaim,
+  buildProvisionAttemptLabel,
+} from './machines-provision-claim.js';
+
+export { resolveMachineImage } from './machines-image-resolve.js';
 
 export const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running'];
 
@@ -42,7 +51,7 @@ export function extractEndpointFromMachine(machine) {
 
 /**
  * @param {import('./gpu/domain/gpu-instance').GPUInstance} instance
- * @param {{ gpuLine: string; region?: string; subscriptionId?: string; template?: string }} context
+ * @param {{ gpuLine: string; region?: string; subscriptionId?: string; template?: string; image?: string | null }} context
  */
 export function mapGpuInstanceToMachineRow(instance, context) {
   const endpoint = parseGpuInstanceEndpoint(instance, DEFAULT_GPU_PORT);
@@ -62,7 +71,7 @@ export function mapGpuInstanceToMachineRow(instance, context) {
 
   return {
     instance_id: instance.id,
-    provider: instance.providerId ?? 'vast',
+    provider: instance.providerId ?? 'clore',
     ip_address: endpoint.ip,
     port,
     status,
@@ -71,7 +80,15 @@ export function mapGpuInstanceToMachineRow(instance, context) {
     region: instance.region ?? context.region ?? null,
     subscription_id: context.subscriptionId ?? null,
     template: context.template ?? null,
+    image: resolveMachineImage(instance, context),
     error_message: status === 'error' ? instance.status?.message ?? 'GPU failed' : null,
+    ssh_password:
+      typeof instance.metadata?.sshPassword === 'string' && instance.metadata.sshPassword
+        ? instance.metadata.sshPassword
+        : String(process.env.CLORE_SSH_PASSWORD ?? '').trim() || null,
+    ssh_ok:
+      typeof instance.metadata?.sshOk === 'boolean' ? instance.metadata.sshOk : null,
+    ops_degraded: instance.metadata?.opsDegraded === true,
   };
 }
 
@@ -106,15 +123,36 @@ function projectLiveEndpointFields(parsed, machine) {
  * @param {Record<string, unknown>} row
  */
 export async function insertMachineRecord(supabaseAdmin, userId, row) {
-  const { data, error } = await supabaseAdmin
-    .from('machines')
-    .insert({
-      user_id: userId,
-      ...row,
-      updated_at: new Date().toISOString(),
-    })
-    .select('*')
-    .single();
+  const payload = {
+    user_id: userId,
+    ...row,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data, error } = await supabaseAdmin.from('machines').insert(payload).select('*').single();
+
+  // Soft-fail if optional columns not migrated yet.
+  if (error && /ssh_password|backup_flush_secret|image|ssh_ok|ops_degraded/i.test(error.message || '')) {
+    /** @type {Record<string, unknown>} */
+    let next = { ...payload };
+    if (/ssh_password/i.test(error.message || '') && 'ssh_password' in next) {
+      const { ssh_password: _omit, ...rest } = next;
+      next = rest;
+    }
+    if (/backup_flush_secret/i.test(error.message || '') && 'backup_flush_secret' in next) {
+      const { backup_flush_secret: _omit2, ...rest2 } = next;
+      next = rest2;
+    }
+    if (/image/i.test(error.message || '') && 'image' in next) {
+      const { image: _omit3, ...rest3 } = next;
+      next = rest3;
+    }
+    if (/ssh_ok|ops_degraded/i.test(error.message || '')) {
+      const { ssh_ok: _omit4, ops_degraded: _omit5, ...restOps } = next;
+      next = restOps;
+    }
+    ({ data, error } = await supabaseAdmin.from('machines').insert(next).select('*').single());
+  }
 
   if (error) throw error;
   return data;
@@ -295,7 +333,7 @@ export async function resolveLiveMachineStatus(gpuService, machine, options = {}
       });
     } catch (healthError) {
       const message = healthError instanceof Error ? healthError.message : String(healthError);
-      if (/network|timeout|ECONN/i.test(message)) {
+      if (/network|timeout|ECONN|proxy is starting/i.test(message)) {
         if (isMachineBooting(machine)) {
           return {
             status: 'starting',
@@ -459,9 +497,16 @@ export async function syncMachineFromLiveStatus(supabaseAdmin, machine, live) {
  * @param {'online' | 'offline' | 'provisioning'} serverStatus
  */
 export async function updateSubscriptionServerStatus(supabaseAdmin, subscriptionId, serverStatus) {
+  const { clearedProvisionLeaseFields } = await import('./provision-lease.js');
+  /** @type {Record<string, unknown>} */
+  const patch = { server_status: serverStatus };
+  if (serverStatus !== 'provisioning') {
+    Object.assign(patch, clearedProvisionLeaseFields());
+  }
+
   const { error } = await supabaseAdmin
     .from('subscriptions')
-    .update({ server_status: serverStatus })
+    .update(patch)
     .eq('id', subscriptionId);
 
   if (error) throw error;
@@ -485,17 +530,48 @@ export async function markMachineDestroyedLocal(supabaseAdmin, machine) {
 }
 
 export async function fetchActiveSubscription(supabaseAdmin, userId) {
-  const { data, error } = await supabaseAdmin
-    .from('subscriptions')
-    .select('id, server_status, status, created_at')
-    .eq('user_id', userId)
-    .in('status', ['active', 'provisioning'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: rows, error }, machine] = await Promise.all([
+    supabaseAdmin
+      .from('subscriptions')
+      .select('id, server_status, status, created_at')
+      .eq('user_id', userId)
+      .in('status', ['active', 'provisioning'])
+      .order('created_at', { ascending: false })
+      .limit(20),
+    getActiveMachineForUser(supabaseAdmin, userId),
+  ]);
 
   if (error) throw error;
-  return data;
+  return pickPreferredActiveSubscription(rows ?? [], machine);
+}
+
+/**
+ * Prefer the subscription that owns the live machine / is online.
+ * Newest-created alone is wrong after hour top-up (new offline row hides the session).
+ *
+ * @param {Record<string, unknown>[] | null | undefined} subscriptions
+ * @param {Record<string, unknown> | null | undefined} machine
+ */
+export function pickPreferredActiveSubscription(subscriptions, machine = null) {
+  const list = Array.isArray(subscriptions) ? subscriptions.filter(Boolean) : [];
+  if (list.length === 0) return null;
+
+  const machineSubId =
+    machine?.subscription_id != null ? String(machine.subscription_id) : null;
+  if (machineSubId) {
+    const matched = list.find((row) => String(row.id) === machineSubId);
+    if (matched) return matched;
+  }
+
+  const online = list.find((row) => String(row.server_status ?? '') === 'online');
+  if (online) return online;
+
+  const provisioning = list.find(
+    (row) => String(row.server_status ?? '') === 'provisioning',
+  );
+  if (provisioning) return provisioning;
+
+  return list[0];
 }
 
 /**

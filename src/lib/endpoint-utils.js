@@ -58,6 +58,17 @@ export function isEndpointReadyForTraffic(source, healthOk) {
   return isEndpointResolved(source) && isHealthOk(healthOk);
 }
 
+/**
+ * Build consumer Comfy URL. Port 443 → https (Clore http_pub); 80 → http host-only.
+ * @param {string} ip
+ * @param {number} port
+ */
+export function formatComfyUrl(ip, port) {
+  if (port === 443) return `https://${ip}`;
+  if (port === 80) return `http://${ip}`;
+  return `http://${ip}:${port}`;
+}
+
 export function buildExternalEndpoint(ip, port) {
   const normalizedIp = typeof ip === 'string' && ip.length > 0 ? ip : null;
   const normalizedPort = normalizeExternalPort(port);
@@ -73,7 +84,7 @@ export function buildExternalEndpoint(ip, port) {
   return {
     ip: normalizedIp,
     port: normalizedPort,
-    comfyUrl: `http://${normalizedIp}:${normalizedPort}`,
+    comfyUrl: formatComfyUrl(normalizedIp, normalizedPort),
   };
 }
 
@@ -105,7 +116,7 @@ export function buildConsumerEndpoint(source, healthOk = false) {
   return {
     ip,
     port,
-    comfyUrl: `http://${ip}:${port}`,
+    comfyUrl: formatComfyUrl(/** @type {string} */ (ip), /** @type {number} */ (port)),
   };
 }
 

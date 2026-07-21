@@ -25,6 +25,7 @@ export const styles = `:root {
 
         html {
             overflow-x: hidden;
+            width: 100%;
             max-width: 100%;
         }
 
@@ -33,9 +34,18 @@ export const styles = `:root {
             background-color: var(--bg-primary);
             color: var(--text-primary);
             display: flex;
+            flex-direction: column;
+            width: 100%;
             min-height: 100vh;
             overflow-x: hidden;
             max-width: 100%;
+        }
+
+        #__next {
+            width: 100%;
+            max-width: 100%;
+            flex: 1 1 auto;
+            min-width: 0;
         }
 
         /* ── Header ────────────────────────────── */
@@ -1101,6 +1111,13 @@ export const styles = `:root {
             cursor: pointer;
             transition: all 0.3s;
             box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+            text-decoration: none;
+            box-sizing: border-box;
+        }
+        a.btn-launch {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .btn-launch:hover {
             background: rgba(139, 92, 246, 0.08);
@@ -1141,17 +1158,27 @@ export const styles = `:root {
             background: var(--bg-secondary);
             overflow: hidden;
             margin-bottom: 12px;
+            position: relative;
         }
         .machine-start-progress-fill {
             height: 100%;
-            width: 40%;
+            width: 42%;
             border-radius: 999px;
-            background: linear-gradient(90deg, var(--accent-blue), #60a5fa, var(--accent-blue));
-            animation: machine-start-indeterminate 1.4s ease-in-out infinite;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(96, 165, 250, 0.35) 25%,
+                #93c5fd 50%,
+                rgba(96, 165, 250, 0.35) 75%,
+                transparent 100%
+            );
+            background-size: 200% 100%;
+            animation: machine-start-shimmer 1.35s ease-in-out infinite;
+            will-change: transform;
         }
-        @keyframes machine-start-indeterminate {
-            0% { transform: translateX(-120%); }
-            100% { transform: translateX(320%); }
+        @keyframes machine-start-shimmer {
+            0% { transform: translateX(-130%); }
+            100% { transform: translateX(280%); }
         }
         .machine-toast {
             position: fixed;
@@ -1388,21 +1415,24 @@ export const styles = `:root {
             margin-left: 220px;
             margin-top: 56px;
             padding: 24px;
+            width: calc(100% - 220px);
+            max-width: calc(100% - 220px);
             min-width: 0;
-            max-width: 100%;
             box-sizing: border-box;
             overflow-x: hidden;
         }
         .main-content--models,
         .main-content--workflows,
-        .main-content--storage {
+        .main-content--storage,
+        .main-content--my-plan {
             padding: 24px clamp(16px, 2.5vw, 32px) 40px;
         }
         @media (max-width: 768px) {
             .main-content { padding: 12px 10px; }
             .main-content--models,
             .main-content--workflows,
-            .main-content--storage { padding: 12px 10px 28px; }
+            .main-content--storage,
+            .main-content--my-plan { padding: 12px 10px 28px; }
         }
 
         /* ── Alert Cards ───────────────────────── */
@@ -1436,6 +1466,29 @@ export const styles = `:root {
         .alert-content { flex: 1; min-width: 0; word-break: break-word; }
         .alert-title { font-weight: 600; margin-bottom: 2px; }
         .alert-desc { font-size: 11px; opacity: 0.8; }
+        .support-code-block {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.04);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+        .support-code-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+        .support-code-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 12px;
+        }
+        .support-code-value {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            letter-spacing: 0.02em;
+        }
+        .support-code-hint { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+        .support-code-copy { flex-shrink: 0; }
+        .support-code-inline { font-size: 12px; }
         .alert-close {
             background: none; border: none; color: inherit;
             opacity: 0.5; cursor: pointer; font-size: 16px;
@@ -1503,6 +1556,21 @@ export const styles = `:root {
         }
         .dashboard-server-card--session .dashboard-workspace-meta-slot {
             min-height: 40px;
+        }
+        /* Opening: keep column stretch (subgrid) but pack boot content tighter. */
+        .dashboard-server-card--opening .dashboard-workspace-meta-slot {
+            min-height: 0;
+            margin-top: 6px;
+        }
+        .dashboard-server-card--opening .dashboard-server-badges-slot {
+            min-height: 0;
+            margin-top: 0;
+        }
+        .dashboard-server-card--opening .dashboard-server-actions-slot {
+            margin-top: 12px;
+        }
+        .dashboard-server-card--opening.dashboard-server-card--session .dashboard-workspace-meta-slot {
+            min-height: 0;
         }
         .dashboard-server-badges {
             display: flex;
@@ -1575,6 +1643,39 @@ export const styles = `:root {
             margin-top: 0;
             margin-bottom: 0;
             line-height: 1.5;
+        }
+        .dashboard-workspace-status-hint {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--text-muted);
+            opacity: 0.9;
+        }
+        .dashboard-opening-status {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+        }
+        .dashboard-opening-progress {
+            width: 100%;
+            margin-bottom: 0;
+            height: 4px;
+            background: rgba(148, 163, 184, 0.22);
+        }
+        .dashboard-opening-progress .machine-start-progress-fill {
+            width: 38%;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(59, 130, 246, 0.25) 20%,
+                #60a5fa 45%,
+                #bfdbfe 50%,
+                #60a5fa 55%,
+                rgba(59, 130, 246, 0.25) 80%,
+                transparent 100%
+            );
+            animation: machine-start-shimmer 1.25s ease-in-out infinite;
         }
         .dashboard-workspace-locked {
             font-size: 16px;
@@ -1888,11 +1989,28 @@ export const styles = `:root {
             color: #fcd34d;
         }
         .dashboard-boot-timeline {
-            margin-bottom: 12px;
+            margin-bottom: 0;
+        }
+        .dashboard-boot-timeline--compact .dashboard-boot-eta {
+            margin: 0 0 4px;
+            font-size: 11px;
+        }
+        .dashboard-boot-timeline--compact .dashboard-boot-progress {
+            margin-bottom: 6px;
+            height: 2px;
+        }
+        .dashboard-boot-timeline--compact .dashboard-boot-steps {
+            gap: 0;
         }
         .dashboard-boot-timeline--compact .dashboard-boot-step {
-            padding: 4px 0;
+            padding: 1px 0;
             font-size: 12px;
+            gap: 8px;
+            line-height: 1.35;
+        }
+        .dashboard-boot-timeline--compact .dashboard-boot-step-icon {
+            width: 14px;
+            font-size: 11px;
         }
         .dashboard-boot-progress {
             height: 3px;
@@ -1903,15 +2021,28 @@ export const styles = `:root {
         }
         .dashboard-boot-progress-fill {
             height: 100%;
-            width: 40%;
+            width: 0%;
             background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
             border-radius: 999px;
-            animation: dashboard-boot-indeterminate 1.8s ease-in-out infinite;
+            transition: width 0.45s ease;
         }
-        @keyframes dashboard-boot-indeterminate {
-            0% { transform: translateX(-100%); width: 40%; }
-            50% { width: 55%; }
-            100% { transform: translateX(280%); width: 40%; }
+        .dashboard-boot-eta {
+            font-size: 12px;
+            color: var(--text-muted, #94a3b8);
+            margin: 0 0 8px;
+        }
+        .dashboard-boot-countdown {
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            color: var(--text-primary, #e2e8f0);
+            letter-spacing: 0.02em;
+        }
+        .dashboard-boot-timeline--compact .dashboard-boot-countdown {
+            font-size: 13px;
+        }
+        .dashboard-boot-step--active .dashboard-boot-step-label {
+            color: var(--text-primary, #e2e8f0);
+            font-weight: 600;
         }
         .dashboard-boot-steps {
             display: flex;
@@ -2161,11 +2292,13 @@ export const styles = `:root {
 
         /* ── Model Grid ────────────────────────── */
         .models-lora-panel {
+            display: block;
             width: 100%;
             max-width: 100%;
             box-sizing: border-box;
         }
         .models-lora-panel .model-section-card {
+            display: block;
             width: 100%;
             max-width: 100%;
             box-sizing: border-box;
@@ -2180,17 +2313,20 @@ export const styles = `:root {
         }
         .models-lora-panel .model-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
             width: 100%;
             box-sizing: border-box;
             align-items: stretch;
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1400px) {
+            .models-lora-panel .model-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (max-width: 1000px) {
             .models-lora-panel .model-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
-        @media (max-width: 500px) {
-            .models-lora-panel .model-grid { grid-template-columns: 1fr; }
+        @media (max-width: 560px) {
+            .models-lora-panel .model-grid { grid-template-columns: 1fr; gap: 8px; }
         }
         .model-card {
             background: var(--bg-secondary);
@@ -2213,7 +2349,7 @@ export const styles = `:root {
             position: relative;
             width: 100%;
             aspect-ratio: 16 / 10;
-            min-height: 88px;
+            min-height: 100px;
             background: var(--bg-card);
             flex-shrink: 0;
         }
@@ -2257,7 +2393,7 @@ export const styles = `:root {
             right: 0;
             bottom: 0;
             z-index: 2;
-            padding: 28px 12px 10px;
+            padding: 22px 8px 6px;
             background: linear-gradient(
                 to top,
                 rgba(10, 10, 15, 0.96) 0%,
@@ -2266,10 +2402,10 @@ export const styles = `:root {
             );
         }
         .model-card-overlay .model-name {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 600;
-            margin-bottom: 3px;
-            line-height: 1.3;
+            margin-bottom: 2px;
+            line-height: 1.25;
             color: var(--text-primary);
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -2279,13 +2415,13 @@ export const styles = `:root {
         .model-card-overlay .model-meta-line {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
             flex-wrap: wrap;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .model-card-overlay .model-size,
         .model-card-overlay .model-type-tag {
-            font-size: 10px;
+            font-size: 9px;
             color: rgba(241, 241, 245, 0.72);
         }
         .model-card-overlay .model-type-tag {
@@ -2294,18 +2430,18 @@ export const styles = `:root {
         }
         .model-card-overlay .model-badge {
             display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 9px;
             font-weight: 600;
         }
         .model-badge.system { background: rgba(79, 142, 247, 0.22); color: #93c5fd; }
         .model-badge.mine { background: rgba(139, 92, 246, 0.22); color: #c4b5fd; }
         .model-card .model-actions {
             display: flex;
-            gap: 4px;
+            gap: 3px;
             flex-wrap: wrap;
-            padding: 8px 10px 10px;
+            padding: 5px 6px 6px;
         }
         .models-page-header {
             display: flex;
@@ -3736,6 +3872,9 @@ export const styles = `:root {
         /* ── Mobile / Tablet shell ─────────────── */
         .dashboard-shell {
             min-height: 100vh;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .dashboard-hamburger {
@@ -3920,6 +4059,8 @@ export const styles = `:root {
 
             .dashboard-shell--mobile .main-content {
                 margin-left: 0;
+                width: 100%;
+                max-width: 100%;
             }
 
             .dashboard-shell--mobile .sidebar-logo span:last-child,
@@ -3971,5 +4112,7 @@ export const styles = `:root {
 
             .dashboard-shell--tablet .main-content {
                 margin-left: 64px;
+                width: calc(100% - 64px);
+                max-width: calc(100% - 64px);
             }
         }`;

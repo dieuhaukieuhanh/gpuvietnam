@@ -204,6 +204,9 @@ async function createGrant(supabaseAdmin, adminCtx, body) {
     gpuPlan: plan,
   });
 
+  const { syncUserPlanInventory } = await import('@/lib/user-plan-inventory');
+  await syncUserPlanInventory(supabaseAdmin, userId);
+
   return {
     status: 201,
     body: {
@@ -306,6 +309,9 @@ async function adjustGrant(supabaseAdmin, adminCtx, body) {
   });
 
   if (logErr) throw logErr;
+
+  const { syncUserPlanInventory } = await import('@/lib/user-plan-inventory');
+  await syncUserPlanInventory(supabaseAdmin, updated.user_id);
 
   return {
     status: 200,

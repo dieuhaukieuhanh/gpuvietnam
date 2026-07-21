@@ -3,12 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/ensure-logs-dir.mjs",
     "dev": "next dev",
     "dev:clean": "node scripts/dev-clean.mjs",
+    "prestart": "node scripts/ensure-logs-dir.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test src/lib/gpu/remaining-time.test.mjs src/lib/gpu/session-lifecycle.test.mjs src/lib/gpu/machine-lifecycle.test.mjs src/lib/gpu/machine-lifecycle-persist.test.mjs src/lib/gpu/machine-session-view.test.mjs src/lib/gpu/session-activate.test.mjs src/lib/gpu/session-orphan-close.test.mjs src/lib/gpu/provider-verify.test.mjs src/lib/gpu/billing-m5.test.mjs src/lib/gpu/billing-anchor.test.mjs src/lib/gpu/settlement-core.test.mjs src/lib/gpu/settlement.test.mjs src/lib/gpu/settlement-transaction-rpc.test.mjs src/lib/destroy-pipeline-core.test.mjs src/lib/destroy-pipeline.test.mjs src/lib/gpu/auto-stop-m8.test.mjs src/lib/gpu/api-m9.test.mjs src/lib/gpu/auto-renew-m10.test.mjs src/lib/scb-ui-m11.test.mjs src/lib/dashboard-session-display.test.mjs src/lib/scb-ui-m12.test.mjs src/lib/infrastructure/reconciliation.test.mjs src/lib/infrastructure/machine-operation-core.test.mjs src/lib/infrastructure/machine-operation-policies.test.mjs src/lib/scb-m14.test.mjs src/lib/machines-provisioning-sync.test.mjs src/lib/machines-drift.test.mjs src/lib/machines-drift-projection.test.mjs src/lib/scb-correlation.test.mjs src/lib/scb-read-path.test.mjs src/lib/gpu/provider-abstraction/provider-contract.test.mjs src/lib/gpu/providers/vast/vast-endpoint-resolver.test.mjs src/lib/endpoint-utils.contract.test.mjs",
+    "logs:trace": "node scripts/trace-request.mjs",
+    "provision:journal": "node scripts/summarize-provision-journal.mjs",
+    "diag:clore-restart": "node scripts/diag-clore-http-restart-verify.mjs",
+    "diag:clore-onstart": "node scripts/diag-clore-http-restart-verify.mjs --observe-only",
+    "smoke:apex": "node scripts/smoke-apex-next.mjs",
+
+    "test": "node --test src/lib/logging/logger.test.mjs src/lib/gpu/remaining-time.test.mjs src/lib/gpu/session-lifecycle.test.mjs src/lib/gpu/machine-lifecycle.test.mjs src/lib/gpu/machine-lifecycle-persist.test.mjs src/lib/gpu/machine-session-view.test.mjs src/lib/gpu/session-activate.test.mjs src/lib/gpu/session-orphan-close.test.mjs src/lib/gpu/provider-verify.test.mjs src/lib/gpu/billing-m5.test.mjs src/lib/gpu/billing-anchor.test.mjs src/lib/gpu/settlement-core.test.mjs src/lib/gpu/settlement.test.mjs src/lib/gpu/settlement-transaction-rpc.test.mjs src/lib/destroy-pipeline-core.test.mjs src/lib/destroy-pipeline.test.mjs src/lib/gpu/auto-stop-m8.test.mjs src/lib/gpu/api-m9.test.mjs src/lib/gpu/auto-renew-m10.test.mjs src/lib/scb-ui-m11.test.mjs src/lib/dashboard-session-display.test.mjs src/lib/scb-ui-m12.test.mjs src/lib/infrastructure/reconciliation.test.mjs src/lib/infrastructure/machine-operation-core.test.mjs src/lib/infrastructure/machine-operation-policies.test.mjs src/lib/scb-m14.test.mjs src/lib/machines-provisioning-sync.test.mjs src/lib/machines-provision-claim.test.mjs src/lib/machines-drift.test.mjs src/lib/machines-drift-projection.test.mjs src/lib/scb-correlation.test.mjs src/lib/scb-read-path.test.mjs src/lib/gpu/provider-abstraction/provider-contract.test.mjs src/lib/gpu/providers/vast/vast-endpoint-resolver.test.mjs src/lib/gpu/providers/vast/vast-offer-sanity.test.mjs src/lib/gpu/providers/vast/vast-bad-host-exclusion.test.mjs src/lib/endpoint-utils.contract.test.mjs src/lib/gpu/geo-asia.test.mjs src/lib/infrastructure-metrics.test.mjs src/lib/gpu/providers/clore/clore-client.test.mjs src/lib/gpu/providers/clore/clore-mapper.test.mjs src/lib/machines-public.test.mjs src/lib/machines-image.test.mjs src/lib/gpu/gpu-config-image.test.mjs src/lib/gpu/offer-selection.test.mjs src/lib/machine-backup-token.test.mjs src/lib/machine-backup-token-db.test.mjs src/lib/backup-quota.test.mjs src/lib/backup-entitlement.test.mjs src/lib/machine-backup-http-flush.test.mjs src/lib/backup-presign-rate-limit.test.mjs src/lib/backup-reconcile.test.mjs src/lib/backup-container-env.test.mjs src/lib/stock-models.test.mjs src/lib/comfy-proxy/comfy-proxy.test.mjs",
     "convert": "node scripts/convert-html.mjs",
     "db:user-settings": "node scripts/run-user-settings-sql.mjs",
     "db:user-settings:cli": "npx supabase db query --linked -f supabase/user-settings.sql",
@@ -20,10 +28,14 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/lib-storage": "^3.1085.0",
+    "@aws-sdk/s3-request-presigner": "^3.1085.0",
     "@supabase/supabase-js": "^2.108.2",
     "next": "14.2.35",
+    "pino": "^9.14.0",
     "react": "^18",
     "react-dom": "^18",
+    "rotating-file-stream": "^3.2.9",
     "ssh2": "^1.17.0",
     "xlsx": "^0.18.5"
   },
@@ -33,6 +45,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
+    "pino-pretty": "^13.1.3",
     "typescript": "^5"
   }
 }

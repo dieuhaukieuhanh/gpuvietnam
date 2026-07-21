@@ -13,7 +13,11 @@ import { parseValidSessionStartedMs } from './billing-anchor-core.js';
 
 /**
  * @typedef {Object} EntitlementPlanSnapshot
+ * @property {number|string} [id]
  * @property {EntitlementPlanType} plan_type
+ * @property {string} [plan_name]
+ * @property {string} [planName]
+ * @property {string} [plan]
  * @property {number|string|null} [hours_remaining]
  * @property {number|string|null} [price_per_hour]
  * @property {string|null} [valid_until]
@@ -35,12 +39,15 @@ import { parseValidSessionStartedMs } from './billing-anchor-core.js';
  * @property {number|string|null} [walletBalance]
  * @property {SessionSnapshot[]} [sessions]
  * @property {boolean} [providerRunningVerified]
+ * @property {Record<string, unknown>|null} [machine]
  */
 
 /**
  * @typedef {Object} RemainingBreakdownOk
  * @property {'OK'} state
  * @property {number} remainingHours
+ * @property {number} [packagePoolHours]
+ * @property {number} [packageRemainingHours]
  * @property {number} totalEntitlementHours
  * @property {number} settledSessionUsageHours
  * @property {number} currentSessionElapsedHours
@@ -178,20 +185,192 @@ export function isUsableEntitlementPlan(plan, nowMs) {
   return Number(plan.hours_remaining ?? 0) > 0;
 }
 
+/** @type {Record<string, 'starter'|'pro'|'studio'>} */
+const GPU_LINE_TO_PLAN_KEY = {
+  rtx3090: 'starter',
+  rtx4090_1x: 'pro',
+  rtx4090_2x: 'studio',
+  rtx5090_1x: 'studio',
+};
+
+/**
+ * Normalize Starter/Pro/Studio package key from inventory / subscription labels.
+ * @param {unknown} value
+ * @returns {'starter'|'pro'|'studio'|null}
+ */
+export function normalizeEntitlementPlanKey(value) {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (!raw) return null;
+  if (raw === 'starter' || raw.includes('starter') || raw.includes('3090')) return 'starter';
+  if (
+    raw === 'studio' ||
+    raw.includes('studio') ||
+    raw.includes('5090') ||
+    /2\s*x.*4090|4090.*2\s*x/.test(raw)
+  ) {
+    return 'studio';
+  }
+  if (raw === 'pro' || raw.includes('pro') || raw.includes('4090')) return 'pro';
+  if (raw in GPU_LINE_TO_PLAN_KEY) return GPU_LINE_TO_PLAN_KEY[raw];
+  return null;
+}
+
+/**
+ * Resolve which package (Starter/Pro/Studio) a running machine is consuming.
+ * Prefer subscription-linked inventory when it disagrees with billing_inventory_id
+ * (stale gift burn pointer), then inventory row, then GPU line / plan fields.
+ *
+ * @param {Record<string, unknown> | null | undefined} machine
+ * @param {EntitlementPlanSnapshot[]} [plans]
+ * @returns {'starter'|'pro'|'studio'|null}
+ */
+export function resolveMachinePlanKey(machine, plans = []) {
+  if (!machine || typeof machine !== 'object') return null;
+
+  const list = plans ?? [];
+  const subId =
+    machine.subscription_id != null && String(machine.subscription_id).trim() !== ''
+      ? String(machine.subscription_id)
+      : null;
+  let fromSubscription = null;
+  if (subId) {
+    const matchedSub = list.find((plan) => String(plan.subscription_id ?? '') === subId);
+    fromSubscription = normalizeEntitlementPlanKey(
+      matchedSub?.plan_name ?? matchedSub?.planName ?? matchedSub?.plan,
+    );
+  }
+
+  const inventoryId =
+    machine.billing_inventory_id != null ? Number(machine.billing_inventory_id) : NaN;
+  let fromInventory = null;
+  if (Number.isFinite(inventoryId) && inventoryId > 0) {
+    const matched = list.find((plan) => Number(plan.id) === inventoryId);
+    fromInventory = normalizeEntitlementPlanKey(
+      matched?.plan_name ?? matched?.planName ?? matched?.plan,
+    );
+  }
+
+  // Wrong inventory id must not re-scope Card/remaining to another package.
+  if (fromSubscription && fromInventory && fromSubscription !== fromInventory) {
+    return fromSubscription;
+  }
+  if (fromInventory) return fromInventory;
+  if (fromSubscription) return fromSubscription;
+
+  const fromGpuLine = normalizeEntitlementPlanKey(machine.gpu_line ?? machine.gpu_type);
+  if (fromGpuLine) return fromGpuLine;
+
+  return normalizeEntitlementPlanKey(machine.plan ?? machine.plan_name ?? machine.gpu_label);
+}
+
+/**
+ * Pick the inventory row a session should burn for this machine.
+ * Scopes to the machine's package (subscription / plan key) before gift-first burn order.
+ *
+ * @param {EntitlementPlanSnapshot[]} plans — already burn-ordered
+ * @param {Record<string, unknown> | null | undefined} machine
+ * @param {{ plan?: unknown } | null | undefined} [subscription]
+ * @returns {EntitlementPlanSnapshot | null}
+ */
+export function selectPrimaryBillablePlanForMachine(plans, machine, subscription = null) {
+  const list = Array.isArray(plans) ? plans : [];
+  if (list.length === 0) return null;
+
+  const planKey =
+    normalizeEntitlementPlanKey(subscription?.plan) ||
+    resolveMachinePlanKey(machine, list) ||
+    normalizeEntitlementPlanKey(
+      list.find((p) => p.is_active)?.plan_name ??
+        list.find((p) => p.is_active)?.planName ??
+        list.find((p) => p.is_active)?.plan,
+    );
+
+  const scoped = planKey
+    ? list.filter((plan) => {
+        const key = normalizeEntitlementPlanKey(plan.plan_name ?? plan.planName ?? plan.plan);
+        return key === planKey;
+      })
+    : list;
+  const pool = scoped.length > 0 ? scoped : list;
+
+  const inventoryId =
+    machine?.billing_inventory_id != null ? Number(machine.billing_inventory_id) : NaN;
+  if (Number.isFinite(inventoryId) && inventoryId > 0) {
+    const existing = pool.find((plan) => Number(plan.id) === inventoryId);
+    if (existing) return existing;
+  }
+
+  // `plans` is already soonest-expiry burn-ordered; keep that within the package.
+  return pool[0] ?? null;
+}
+
+/**
+ * Keep only entitlement rows for the machine's active package.
+ * When plan key cannot be resolved, returns all plans (backward compatible).
+ *
+ * @param {EntitlementPlanSnapshot[]} plans
+ * @param {Record<string, unknown> | null | undefined} machine
+ * @returns {EntitlementPlanSnapshot[]}
+ */
+export function filterEntitlementPlansForMachine(plans, machine) {
+  const list = plans ?? [];
+  const planKey = resolveMachinePlanKey(machine, list);
+  if (!planKey) return list;
+
+  const filtered = list.filter((plan) => {
+    const key = normalizeEntitlementPlanKey(plan.plan_name ?? plan.planName ?? plan.plan);
+    return key === planKey;
+  });
+
+  // If inventory rows lack plan_name, avoid emptying entitlement by accident.
+  return filtered.length > 0 ? filtered : list;
+}
+
+/**
+ * Prepaid package hour pool for the (machine-scoped) package:
+ * gift + combo + prepaid giờ lẻ (hourly.hours_remaining). Excludes ví→hourly.
+ *
+ * @param {RemainingSnapshot|{ entitlementPlans?: EntitlementPlanSnapshot[], machine?: Record<string, unknown>|null }} snapshot
+ * @param {RemainingClock} [clock]
+ * @returns {number}
+ */
+export function calculateGiftComboEntitlement(snapshot, clock = systemClock()) {
+  const plans = filterEntitlementPlansForMachine(
+    snapshot.entitlementPlans ?? [],
+    snapshot.machine,
+  );
+  const nowMs = clock.nowMs();
+  let packageHours = 0;
+  for (const plan of plans) {
+    if (!isUsableEntitlementPlan(plan, nowMs)) continue;
+    // Wallet burn is separate; prepaid hours_remaining on hourly counts as package hours.
+    packageHours += Number(plan.hours_remaining ?? 0);
+  }
+  return packageHours;
+}
+
 /**
  * Total entitlement hours at `now`: gift + combo (hour packages) + wallet→hours (hourly plan).
  * Does not subtract settled or running usage.
  *
- * @param {RemainingSnapshot|{ entitlementPlans?: EntitlementPlanSnapshot[], walletBalance?: number|string|null }} snapshot
+ * When `snapshot.machine` is set, only hours for that machine's package
+ * (Starter / Pro / Studio) are counted — other packages do not keep the machine alive.
+ *
+ * @param {RemainingSnapshot|{ entitlementPlans?: EntitlementPlanSnapshot[], walletBalance?: number|string|null, machine?: Record<string, unknown>|null }} snapshot
  * @param {RemainingClock} [clock]
  * @returns {number}
  */
 export function calculateTotalEntitlement(snapshot, clock = systemClock()) {
-  const plans = snapshot.entitlementPlans ?? [];
+  const plans = filterEntitlementPlansForMachine(
+    snapshot.entitlementPlans ?? [],
+    snapshot.machine,
+  );
   const walletBalance = Number(snapshot.walletBalance ?? 0);
   const nowMs = clock.nowMs();
 
-  let giftComboHours = 0;
+  const giftComboHours = calculateGiftComboEntitlement(snapshot, clock);
   /** @type {EntitlementPlanSnapshot|null} */
   let hourlyPlan = null;
 
@@ -199,9 +378,7 @@ export function calculateTotalEntitlement(snapshot, clock = systemClock()) {
     if (!isUsableEntitlementPlan(plan, nowMs)) continue;
     if (plan.plan_type === 'hourly') {
       hourlyPlan = plan;
-      continue;
     }
-    giftComboHours += Number(plan.hours_remaining ?? 0);
   }
 
   let walletHours = 0;
@@ -212,6 +389,7 @@ export function calculateTotalEntitlement(snapshot, clock = systemClock()) {
     }
   }
 
+  // giftComboHours already includes prepaid hourly.hours_remaining; add ví only.
   return giftComboHours + walletHours;
 }
 
@@ -276,6 +454,13 @@ export function resolvePrimaryPlanType(plans, nowMs) {
 
 /**
  * Remaining = TotalEntitlement − SettledSessionUsage − CurrentSessionElapsed (clamped ≥ 0).
+ *
+ * When `snapshot.machine` is set (running session / auto-stop):
+ * - TotalEntitlement is scoped to that machine's package only (Starter/Pro/Studio).
+ * - SettledSessionUsage is **not** subtracted: `hours_remaining` on inventory rows
+ *   is already post-settlement, and past sessions on other packages must not zero out
+ *   the active package. Remaining = packageHours − CurrentSessionElapsed.
+ *
  * Returns {@link RemainingBreakdownInvalid} when session invariants are violated.
  *
  * @param {RemainingSnapshot} snapshot
@@ -296,19 +481,33 @@ export function calculateRemaining(snapshot, clock = systemClock()) {
   }
 
   const nowMs = clock.nowMs();
+  const scopedPlans = filterEntitlementPlansForMachine(
+    snapshot.entitlementPlans ?? [],
+    snapshot.machine,
+  );
   const totalEntitlementHours = calculateTotalEntitlement(snapshot, clock);
-  const settledSessionUsageHours = calculateSettledUsage(snapshot, clock);
+  const packagePoolHours = calculateGiftComboEntitlement(snapshot, clock);
+  const machineScoped = Boolean(snapshot.machine);
+  const settledSessionUsageHours = machineScoped ? 0 : calculateSettledUsage(snapshot, clock);
   const currentSessionElapsedHours = calculateCurrentSessionElapsed(snapshot, clock);
   const rawRemaining =
     totalEntitlementHours - settledSessionUsageHours - currentSessionElapsedHours;
+  // Plan/session card: prepaid package pool (gift+combo+giờ lẻ), no ví.
+  // Fall back to full remaining when pool empty (wallet-only hourly).
+  const rawPackageRemaining =
+    packagePoolHours > 0
+      ? packagePoolHours - settledSessionUsageHours - currentSessionElapsedHours
+      : rawRemaining;
 
   return {
     state: REMAINING_STATE_OK,
     remainingHours: clampRemainingHours(rawRemaining),
+    packagePoolHours,
+    packageRemainingHours: clampRemainingHours(rawPackageRemaining),
     totalEntitlementHours,
     settledSessionUsageHours,
     currentSessionElapsedHours,
-    primaryPlanType: resolvePrimaryPlanType(snapshot.entitlementPlans ?? [], nowMs),
+    primaryPlanType: resolvePrimaryPlanType(scopedPlans, nowMs),
   };
 }
 

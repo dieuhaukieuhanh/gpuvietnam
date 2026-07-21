@@ -74,8 +74,8 @@ export default async function handler(req, res) {
 
     if (profileError) throw profileError;
 
-    const currentSsdGb = profile?.ssd_plan_gb ?? 20;
-    const currentBackupGb = profile?.backup_plan_gb ?? 20;
+    const currentSsdGb = profile?.ssd_plan_gb ?? 50;
+    const currentBackupGb = profile?.backup_plan_gb ?? 100;
 
     if (requestedSsdGb === currentSsdGb && requestedBackupGb === currentBackupGb) {
       return res.status(400).json({ error: 'Gói bộ nhớ không thay đổi.' });

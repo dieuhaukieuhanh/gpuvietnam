@@ -30,6 +30,7 @@ function closedSession(session, overrides = {}) {
  * @param {Record<string, unknown>} initial
  * @param {{
  *   plans?: Record<string, unknown>[];
+ *   machines?: Record<string, unknown>[];
  *   walletBalance?: number;
  *   grants?: Record<string, unknown>[];
  *   subscriptions?: Record<string, unknown>[];
@@ -42,6 +43,7 @@ function createMockSupabase(initial, options = {}) {
   let walletBalance = Number(options.walletBalance ?? 0);
   const grants = (options.grants ?? []).map((g) => ({ ...g }));
   const subscriptions = (options.subscriptions ?? []).map((s) => ({ ...s }));
+  const machines = (options.machines ?? []).map((m) => ({ ...m }));
   /** @type {Record<string, unknown>[]} */
   const walletTx = [];
 
@@ -50,6 +52,7 @@ function createMockSupabase(initial, options = {}) {
     plans,
     grants,
     subscriptions,
+    machines,
     walletTx,
     walletBalance,
     client: {
@@ -85,6 +88,20 @@ function createMockSupabase(initial, options = {}) {
               if (api._filters.id && api._filters.id !== session.id) return null;
               if (api._filters.user_id && api._filters.user_id !== session.user_id) return null;
               return { ...session };
+            }
+            if (table === 'machines') {
+              return (
+                machines.find((m) => {
+                  if (api._filters.id && String(m.id) !== String(api._filters.id)) return false;
+                  if (
+                    api._filters.gpu_session_id &&
+                    String(m.gpu_session_id) !== String(api._filters.gpu_session_id)
+                  ) {
+                    return false;
+                  }
+                  return true;
+                }) ?? null
+              );
             }
             if (table === 'users') {
               return { wallet_balance: walletBalance };
@@ -544,5 +561,59 @@ describe('settleSession', () => {
     });
 
     assert.equal(result.code, SETTLEMENT_ERROR_CODE.SESSION_NOT_CLOSED);
+  });
+
+  it('burns only the session package — Pro does not consume Starter gift', async () => {
+    const MACHINE_ID = '33333333-3333-3333-3333-333333333333';
+    const PRO_SUB = '44444444-4444-4444-4444-444444444444';
+    const mock = createMockSupabase(
+      closedSession({ machine_id: MACHINE_ID }),
+      {
+        machines: [
+          {
+            id: MACHINE_ID,
+            gpu_line: 'rtx4090_1x',
+            billing_inventory_id: 21,
+            subscription_id: PRO_SUB,
+            gpu_session_id: SESSION_ID,
+          },
+        ],
+        plans: [
+          {
+            id: 15,
+            user_id: USER_ID,
+            plan_type: 'gift',
+            plan_name: 'starter',
+            hours_remaining: 10,
+            status: 'active',
+          },
+          {
+            id: 21,
+            user_id: USER_ID,
+            plan_type: 'combo',
+            plan_name: 'pro',
+            billing: 'combo2',
+            hours_remaining: 230,
+            subscription_id: PRO_SUB,
+            status: 'active',
+          },
+        ],
+        subscriptions: [{ id: PRO_SUB, hours_total: 230, hours_used: 0, billing: 'combo2' }],
+        walletBalance: 0,
+      },
+    );
+
+    const result = await settleSession(mock.client, {
+      sessionId: SESSION_ID,
+      userId: USER_ID,
+      providerDestroyedVerified: true,
+    });
+
+    assert.equal(result.state, 'OK');
+    assert.equal(result.sessionId, SESSION_ID);
+    assert.equal(mock.session.settlement_breakdown?.combo?.hours, 1);
+    assert.equal(mock.session.settlement_breakdown?.gift?.hours ?? 0, 0);
+    assert.equal(Number(mock.subscriptions[0].hours_used), 1);
+    assert.equal(Number(mock.plans.find((p) => p.id === 15)?.hours_remaining), 10);
   });
 });

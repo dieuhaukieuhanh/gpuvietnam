@@ -1,4 +1,6 @@
 import { WORKSTATIONS } from '@/lib/workstations';
+import { injectBackupContainerEnv } from './backup-container-env.js';
+import { resolveStockModelsBaseUrl } from './stock-models.js';
 
 /** @typedef {'character-art' | 'commerce-product' | 'video-ai'} WorkstationSlug */
 
@@ -85,23 +87,42 @@ export function resolveWorkstationSlug(envName) {
 
 /**
  * @param {string | null | undefined} envName
+ * @param {{
+ *   userId?: string | null;
+ *   machineId?: string | null;
+ *   backupToken?: string | null;
+ *   presignUrl?: string | null;
+ *   planKey?: string | null;
+ *   intervalsByPlan?: Record<string, { outputsSec: number; workflowsSec: number }> | null;
+ *   skipModels?: boolean;
+ *   flushSecret?: string | null;
+ * }} [options]
  * @returns {Record<string, string>}
  */
-export function buildWorkstationContainerEnv(envName) {
+export function buildWorkstationContainerEnv(envName, options = {}) {
   const resolvedName = resolveEnvName(envName);
   const slug = resolveWorkstationSlug(resolvedName);
-  const workstation = WORKSTATIONS.find((item) => item.name === resolvedName);
 
   /** @type {Record<string, string>} */
   const env = {
     GPUVIETNAM_WORKSTATION: slug,
     GPUVIETNAM_ENV_NAME: resolvedName,
-    GPUVIETNAM_ENV_ICON: workstation?.icon ?? '👤',
   };
+
+  // Do not put emoji/icons into provider container env — Clore create_order
+  // has returned opaque code 1 when env values contain non-ASCII / '&'.
 
   if (process.env.CIVITAI_API_TOKEN) {
     env.CIVITAI_API_TOKEN = process.env.CIVITAI_API_TOKEN;
   }
+
+  // Solution A: public R2 (or CDN) base for stock checkpoints — no R2 secrets in container.
+  const modelsBase = resolveStockModelsBaseUrl();
+  if (modelsBase) {
+    env.GPUVIETNAM_MODELS_BASE_URL = modelsBase;
+  }
+
+  injectBackupContainerEnv(env, options);
 
   return env;
 }

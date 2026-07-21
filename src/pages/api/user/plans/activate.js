@@ -28,6 +28,19 @@ export default async function handler(req, res) {
       return res.status(200).json(result);
     }
 
+    const { data: runningSession } = await supabaseAdmin
+      .from('gpu_sessions')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .eq('status', 'running')
+      .limit(1)
+      .maybeSingle();
+    if (runningSession) {
+      return res.status(409).json({
+        error: 'Phiên làm việc đang mở. Vui lòng tắt máy trước khi đổi gói dịch vụ.',
+      });
+    }
+
     const result = await activateInventoryPlan(supabaseAdmin, user.id, id);
     if (result.error) return res.status(400).json({ error: result.error });
     return res.status(200).json(result);

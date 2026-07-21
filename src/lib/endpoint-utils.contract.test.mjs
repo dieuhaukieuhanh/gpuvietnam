@@ -116,4 +116,14 @@ describe('Architecture Freeze v3.2 Phase 4 - EndpointReady gate', () => {
     const endpoint = buildEndpointFromMachine(resolvedMachine);
     assert.equal(endpoint.comfyUrl, `http://${ip}:${hostPort}`);
   });
+
+  it('Clore http_pub port=443 resolves as https://host', () => {
+    const host = '2q8138x0hvvzh.us.clorecloud.net';
+    const input = { ip_address: host, port: 443 };
+    assert.equal(isEndpointResolved(input), true);
+    const endpoint = buildExternalEndpoint(host, 443);
+    assert.equal(endpoint.comfyUrl, `https://${host}`);
+    const ready = buildConsumerEndpoint(input, true);
+    assert.equal(ready.comfyUrl, `https://${host}`);
+  });
 });

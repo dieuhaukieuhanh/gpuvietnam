@@ -109,6 +109,19 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(readApiSrc('user/stop-machine.js').includes('mapDestroyApiResponse'));
   });
 
+  it('destroy APIs do not fake success when provider destroy fails', () => {
+    const destroySrc = readApiSrc('machines/destroy.js');
+    const stopSrc = readApiSrc('user/stop-machine.js');
+    assert.ok(destroySrc.includes('status(409)'));
+    assert.ok(destroySrc.includes('result.destroyed && lifecycleRecord'));
+    assert.ok(stopSrc.includes('status(409)'));
+    assert.ok(stopSrc.includes('if (!result.destroyed)'));
+    assert.ok(
+      /if \(result\.destroyed && lifecycleRecord/.test(destroySrc) ||
+        destroySrc.includes('if (result.destroyed && lifecycleRecord && subscription)'),
+    );
+  });
+
   it('cancel-start-machine interrupts pending session via M3', () => {
     const source = readApiSrc('user/cancel-start-machine.js');
     assert.ok(source.includes('interruptPendingSessionForUser'));
@@ -137,8 +150,12 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(source.includes('machineSessionView'));
     assert.ok(source.includes('billingViewForStart'));
     assert.ok(source.includes('completeUserStartProvision'));
+    assert.ok(source.includes('reclaimStaleProvisionClaim'));
+    assert.ok(source.includes('buildProvisionAttemptLabel'));
+    assert.ok(!source.includes('retry background provision'));
     assert.ok(provision.includes('createProvisioningPendingSession'));
     assert.ok(provision.includes('persistProviderRunning'));
+    assert.ok(provision.includes('recoverRentedInstanceByLabel'));
     assert.ok(provision.includes("liveStatus.status === 'running'"));
     assert.ok(!source.includes('syncSubscriptionWithMachineState'));
   });

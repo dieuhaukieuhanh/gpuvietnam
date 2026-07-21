@@ -1,5 +1,12 @@
 import { isRetryableGpuError, mapProviderError } from './gpu-errors.js';
-import { createDefaultLegacyGpuProvider } from './provider-abstraction/index.js';
+import {
+  bootstrapProviderRegistry,
+  createDefaultLegacyGpuProvider,
+  createLegacyGpuProviderBridge,
+  getDefaultProviderId,
+  getProviderAdapter,
+  tryGetProviderAdapter,
+} from './provider-abstraction/index.js';
 
 const DEFAULT_RETRIES = 2;
 const RETRY_DELAY_MS = 400;
@@ -49,12 +56,15 @@ export class GPUService {
    * @template T
    * @param {() => Promise<T>} fn
    * @param {string} operation
+   * @param {{ retries?: number; delayMs?: number }} [options]
    * @returns {Promise<T>}
    */
-  async withRetry(fn, operation) {
+  async withRetry(fn, operation, options = {}) {
+    const maxRetries = Number.isFinite(options.retries) ? Number(options.retries) : DEFAULT_RETRIES;
+    const baseDelayMs = Number.isFinite(options.delayMs) ? Number(options.delayMs) : RETRY_DELAY_MS;
     let lastError;
 
-    for (let attempt = 0; attempt <= DEFAULT_RETRIES; attempt += 1) {
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
         if (attempt > 0) {
           this.log(`${operation}:retry`, { attempt: attempt + 1 });
@@ -62,12 +72,12 @@ export class GPUService {
         return await fn();
       } catch (error) {
         lastError = mapProviderError(error, operation);
-        const canRetry = attempt < DEFAULT_RETRIES && isRetryableGpuError(lastError);
+        const canRetry = attempt < maxRetries && isRetryableGpuError(lastError);
         if (!canRetry) {
           this.log(`${operation}:failed`, { message: lastError.message, attempt: attempt + 1 });
           throw lastError;
         }
-        await sleep(RETRY_DELAY_MS * (attempt + 1));
+        await sleep(baseDelayMs * (attempt + 1));
       }
     }
 
@@ -83,7 +93,12 @@ export class GPUService {
   /** @param {string} instanceId */
   async destroyInstance(instanceId) {
     this.log('destroyInstance', { instanceId });
-    return this.withRetry(() => this.provider.destroyInstance(instanceId), 'destroyInstance');
+    // One short network retry only — Clore cancel_order already retries 429 with
+    // multi-second backoff; stacking long service retries would stall stop UX.
+    return this.withRetry(() => this.provider.destroyInstance(instanceId), 'destroyInstance', {
+      retries: 1,
+      delayMs: 800,
+    });
   }
 
   /** @param {string} instanceId */
@@ -130,17 +145,40 @@ export function createGpuService(provider) {
   return new GPUService(provider);
 }
 
-/** @type {GPUService | null} */
-let defaultGpuService = null;
+/** @type {Map<string, GPUService>} */
+const gpuServicesByProvider = new Map();
 
 /**
- * Singleton GPUService wired to VastProvider (current production backend).
- * Lives here (not index.js) so modules such as auto-stop.js can import it
- * without a circular dependency through @/lib/gpu.
+ * GPUService for a specific marketplace provider (clore | vast | ...).
+ * @param {string} [providerId]
  */
-export function getGpuService() {
-  if (!defaultGpuService) {
-    defaultGpuService = createGpuService(createDefaultLegacyGpuProvider());
+export function getGpuService(providerId) {
+  const normalized = String(providerId ?? '').trim().toLowerCase();
+  if (!normalized || normalized === 'default') {
+    const key = 'default';
+    if (!gpuServicesByProvider.has(key)) {
+      gpuServicesByProvider.set(key, createGpuService(createDefaultLegacyGpuProvider()));
+    }
+    return gpuServicesByProvider.get(key);
   }
-  return defaultGpuService;
+
+  if (!gpuServicesByProvider.has(normalized)) {
+    bootstrapProviderRegistry();
+    const adapter = tryGetProviderAdapter(normalized) ?? getProviderAdapter(normalized);
+    gpuServicesByProvider.set(
+      normalized,
+      createGpuService(createLegacyGpuProviderBridge(adapter)),
+    );
+  }
+  return gpuServicesByProvider.get(normalized);
+}
+
+/**
+ * Resolve GPUService from a machine row (`provider` / `provider_id`).
+ * @param {{ provider?: string; provider_id?: string; providerId?: string } | null | undefined} machine
+ */
+export function getGpuServiceForMachine(machine) {
+  const providerId =
+    machine?.providerId ?? machine?.provider_id ?? machine?.provider ?? getDefaultProviderId();
+  return getGpuService(String(providerId));
 }

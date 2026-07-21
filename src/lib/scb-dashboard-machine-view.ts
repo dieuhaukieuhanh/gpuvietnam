@@ -13,6 +13,8 @@ export type ServerCardPhase =
 export type MachineMetricsSnapshot = {
   pollStatus?: string | null;
   comfyUrl?: string | null;
+  workReady?: boolean;
+  comfyProxyEnabled?: boolean;
   ip?: string | null;
   port?: number | null;
   template?: string | null;
@@ -35,6 +37,8 @@ export function createEmptyMachineMetrics(): MachineMetricsSnapshot {
   return {
     pollStatus: null,
     comfyUrl: null,
+    workReady: false,
+    comfyProxyEnabled: false,
     ip: null,
     port: null,
     template: null,
@@ -44,6 +48,12 @@ export function createEmptyMachineMetrics(): MachineMetricsSnapshot {
     idleWarningActive: false,
     metrics: null,
   };
+}
+
+/** True when user can open Comfy (direct URL or brand proxy). */
+export function isComfyWorkspaceReady(metrics: MachineMetricsSnapshot | null | undefined): boolean {
+  if (!metrics) return false;
+  return Boolean(metrics.comfyUrl) || metrics.workReady === true;
 }
 
 /** Instant UI feedback while start-machine API is in flight. */
@@ -84,7 +94,7 @@ export function buildOptimisticStoppingMachineSessionView(
       canStop: false,
       canOpenComfy: false,
     },
-    message: 'Đang đóng phiên làm việc...',
+    message: 'Đang lưu dữ liệu trước khi tắt máy...',
     domainEvent: 'MACHINE_STOPPING',
     clientOptimistic: true,
   };
@@ -110,13 +120,19 @@ export function buildIdleMachineSessionViewForUi(
   };
 }
 
-/** Keep boot UI stable until billing anchor is set (Comfy traffic-ready). */
+/** Keep boot UI only for true boot — not for billing/projection lag after machine is up. */
 export function resolveBootDisplayPhase(
   phase: ServerCardPhase,
   billingStarted: boolean,
-  sessionView?: Pick<MachineSessionView, 'lifecycleStatus' | 'serverStatus' | 'phase'> | null,
+  sessionView?: Pick<MachineSessionView, 'lifecycleStatus' | 'serverStatus' | 'phase' | 'machine'> | null,
 ): ServerCardPhase {
   if (phase === 'stopping') return 'stopping';
+
+  // Machine row already running → never remount the boot checklist on F5.
+  if (sessionView?.machine?.status === 'running') {
+    return 'running';
+  }
+
   if (phase !== 'running' || billingStarted) return phase;
 
   const lifecycle = sessionView?.lifecycleStatus;
@@ -154,6 +170,14 @@ export function mergeMetricsFromStatusPoll(
     ...prev,
     pollStatus: (data.status as string | null | undefined) ?? prev.pollStatus ?? null,
     comfyUrl: (data.comfyUrl as string | null | undefined) ?? prev.comfyUrl ?? null,
+    workReady:
+      data.workReady === true ||
+      Boolean(data.comfyUrl) ||
+      (data.workReady === false ? false : Boolean(prev.workReady)),
+    comfyProxyEnabled:
+      typeof data.comfyProxyEnabled === 'boolean'
+        ? data.comfyProxyEnabled
+        : Boolean(prev.comfyProxyEnabled),
     ip: (data.ip as string | null | undefined) ?? prev.ip ?? null,
     port: (data.port as number | null | undefined) ?? prev.port ?? null,
     template: (data.template as string | null | undefined) ?? prev.template ?? null,
@@ -176,7 +200,7 @@ export function serverCardStatusLabel(phase: ServerCardPhase, isPending: boolean
     case 'running':
       return '\u0110ang ch\u1ea1y';
     case 'stopping':
-      return '\u0110ang \u0111\u00f3ng phi\u00ean';
+      return '\u0110ang l\u01b0u d\u1eef li\u1ec7u';
     case 'disconnected':
       return 'M\u1ea5t k\u1ebft n\u1ed1i';
     case 'error':

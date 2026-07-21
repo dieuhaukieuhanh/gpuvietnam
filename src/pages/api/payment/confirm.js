@@ -31,7 +31,9 @@ export default async function handler(req, res) {
       });
     }
 
-    await replaceActiveSubscriptions(supabaseAdmin, user.id);
+    if (!input.additional) {
+      await replaceActiveSubscriptions(supabaseAdmin, user.id);
+    }
 
     const data = await createPendingGpuSubscription(supabaseAdmin, user.id, input);
 

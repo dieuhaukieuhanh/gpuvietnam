@@ -7,9 +7,11 @@ import {
   shouldSkipDeadInstanceDestroyDuringBoot,
   shouldDestroyStaleBootMachine,
   isStaleProvisioningBoot,
+  isStaleProvisioningClaim,
   shouldCleanupLeakedBootMachine,
   shouldRetryProvisioningForBoot,
   PROVISIONING_BOOT_MAX_MS,
+  STALE_PROVISIONING_CLAIM_MS,
 } from './machines-provisioning-sync.js';
 
 const NOW = new Date('2026-07-03T12:00:00.000Z').getTime();
@@ -20,6 +22,19 @@ describe('machines provisioning sync (boot race)', () => {
   it('keeps fresh provisioning without machine row (async Vast rent)', () => {
     assert.equal(shouldResetIdleProvisioningSubscription(null, 'provisioning'), false);
     assert.equal(shouldResetIdleProvisioningSubscription(null, 'offline'), false);
+  });
+
+  it('isStaleProvisioningClaim gates reclaim window', () => {
+    assert.equal(isStaleProvisioningClaim({ provisioning_started_at: RECENT }, NOW), false);
+    assert.equal(
+      isStaleProvisioningClaim(
+        {
+          provisioning_started_at: new Date(NOW - STALE_PROVISIONING_CLAIM_MS - 1000).toISOString(),
+        },
+        NOW,
+      ),
+      true,
+    );
   });
 
   it('isStaleProvisioningBoot uses created_at (not updated_at bumps)', () => {

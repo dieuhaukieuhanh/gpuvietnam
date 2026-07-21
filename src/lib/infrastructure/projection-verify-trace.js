@@ -2,6 +2,8 @@
  * Diagnostic trace for projection_verify worker lifecycle (read-only logging).
  */
 
+import { logger } from '../logging/index.js';
+
 /**
  * @typedef {Object} ProjectionVerifyTraceContext
  * @property {string|null} [operationId]
@@ -38,13 +40,16 @@ export function createProjectionVerifyTraceContext(row) {
  * @param {Record<string, unknown>} [payload]
  */
 export function logProjectionVerifyTrace(checkpoint, ctx, payload = {}) {
-  console.info('[scb-pv-trace]', {
-    checkpoint,
-    operation_id: ctx?.operationId ?? null,
-    correlation_id: ctx?.correlationId ?? null,
-    user_id: ctx?.userId ?? null,
-    machine_id: ctx?.machineId ?? null,
-    ts: new Date().toISOString(),
-    ...payload,
-  });
+  logger('worker').info(
+    {
+      operation: 'projection_verify',
+      checkpoint,
+      requestId: ctx?.correlationId ?? null,
+      userId: ctx?.userId ?? null,
+      machineId: ctx?.machineId ?? null,
+      operation_id: ctx?.operationId ?? null,
+      ...payload,
+    },
+    `projection_verify:${checkpoint}`,
+  );
 }

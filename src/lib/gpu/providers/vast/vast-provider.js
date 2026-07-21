@@ -1,4 +1,4 @@
-import { DEFAULT_GPU_PORT } from '../../gpu-config.js';
+import { DEFAULT_GPU_PORT, resolveGpuImage } from '../../gpu-config.js';
 import { GPUInstanceNotFoundError, GPUProviderError } from '../../gpu-errors.js';
 import { ComfyClient } from './comfy-client.js';
 import {
@@ -159,6 +159,7 @@ export class VastProvider {
     const instance = mapVastInstanceToGPUInstance(raw, params.gpuLine, {
       port: internalPort,
       resolvedEndpoint: resolved,
+      image: params.image ?? resolveGpuImage(params.gpuLine),
     });
     this.instanceGpuLines.set(instance.id, params.gpuLine);
     this.instanceInternalPorts.set(instance.id, internalPort);
@@ -171,6 +172,21 @@ export class VastProvider {
     this.instanceGpuLines.delete(instanceId);
     this.instanceEndpointCache.delete(instanceId);
     this.instanceInternalPorts.delete(instanceId);
+  }
+
+  /**
+   * Find a rented instance by attempt label (orphan recovery).
+   * @param {string} label
+   * @param {GPULine} [gpuLine]
+   * @returns {Promise<GPUInstance | null>}
+   */
+  async findInstanceByLabel(label, gpuLine = 'rtx4090_1x') {
+    const rows = await this.client.listInstancesByLabel(label);
+    if (!rows.length) return null;
+    const first = rows[0];
+    const id = String(first.id ?? first.instance_id ?? '');
+    if (!id) return null;
+    return mapVastInstanceToGPUInstance(first, gpuLine, { instanceIdHint: id });
   }
 
   /** @param {string} instanceId */

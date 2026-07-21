@@ -277,7 +277,7 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 |---------|--------------|-----|
 | Starter | `rtx3090` | RTX 3090 |
 | Pro | `rtx4090_1x` | RTX 4090 |
-| Studio | `rtx4090_2x` | 2× RTX 4090 |
+| Studio | `rtx5090_1x` | 1× RTX 5090 |
 
 Region mặc định: Taiwan → Japan → Singapore (`GPU_REGIONS` override).
 
@@ -516,13 +516,17 @@ R2_BUCKET_NAME=
 
 ## 15. Gói giá & billing
 
-Giá lưu trong `gpu_pricing_config` (admin chỉnh qua `/admin?tab=gpuPricing`). Giá marketing mặc định (tham chiếu):
+**SoT giá bán (live):** Admin → Edit giá (`/admin?tab=gpuPricing`) → bảng `gpu_pricing_config`.
+Web (trang chủ, checkout, payment, dashboard) đọc qua `/api/gpu-pricing` + `useGpuPricingConfig`.
+Seed/fallback khi DB trống: `src/lib/gpu-pricing-defaults.js` (đồng bộ `GPU_PLANS` / `CHECKOUT_PLANS`).
+
+Giá marketing mặc định (tham chiếu seed — **không** sửa giá live tại đây):
 
 | Gói | GPU | Giá/giờ lẻ (VNĐ) | Combo1 (100+10h) | Combo2 (200+30h) |
 |-----|-----|------------------|------------------|------------------|
-| Starter | RTX 3090 | 18.000 | 1.400.000 | 2.900.000 |
-| Pro | RTX 4090 | 30.000 | 2.400.000 | 4.900.000 |
-| Studio | 2×4090 | 50.000 | 4.500.000 | 8.800.000 |
+| Starter | RTX 3090 | 9.900 | 990.000 | 1.980.000 |
+| Pro | RTX 4090 | 20.000 | 2.000.000 | 4.000.000 |
+| Studio | RTX 5090 | 35.000 | 3.500.000 | 7.000.000 |
 
 - **Trial:** 3 giờ Starter — OTP SĐT, chống lạm dụng IP
 - **Ví:** nạp trước, bonus 2–5%, dùng mua gói / hourly / auto-renew

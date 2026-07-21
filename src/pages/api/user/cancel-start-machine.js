@@ -1,6 +1,6 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import {
-  getGpuService,
+  getGpuServiceForMachine,
   interruptPendingSessionForUser,
   snapshotToMachineRecord,
   resolveMachineSessionView,
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
       if (cancelResult.machine) machineRecord = cancelResult.machine;
     }
 
-    const gpuService = getGpuService();
+    const gpuService = getGpuServiceForMachine(activeMachine);
     const interruptResult = await interruptPendingSessionForUser(supabaseAdmin, user.id);
     await destroyMachineWithBackup(supabaseAdmin, gpuService, user.id, {
       interrupted: true,

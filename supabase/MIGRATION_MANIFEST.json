@@ -25,7 +25,9 @@
       "category": "migration",
       "description": "users.role column + idx_users_role (legacy-DB safety; schema.sql already declares role)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0003",
@@ -33,7 +35,9 @@
       "category": "migration",
       "description": "users.updated_at column (legacy-DB safety; schema.sql already declares updated_at)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0004",
@@ -49,7 +53,9 @@
       "category": "migration",
       "description": "public.subscriptions table (plan billing + entitlement CAS target for SCB 3.4B W5)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0006",
@@ -57,7 +63,9 @@
       "category": "migration",
       "description": "users.wallet_balance / ssd_plan_gb / backup_plan_gb + public.storage_upgrades (wallet_balance is the SCB 3.4B W3 debit target)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0007",
@@ -65,7 +73,9 @@
       "category": "migration",
       "description": "public.user_settings + public.wallet_transactions tables + users.full_name (wallet_transactions is the SCB 3.4B W4 ledger insert target)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0008",
@@ -73,7 +83,9 @@
       "category": "migration",
       "description": "wallet_transactions deposit-status columns + pending-deposit index",
       "idempotent": true,
-      "depends_on": ["0007"]
+      "depends_on": [
+        "0007"
+      ]
     },
     {
       "id": "0009",
@@ -89,7 +101,9 @@
       "category": "migration",
       "description": "public.models (checkpoint / LoRA) + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0011",
@@ -97,7 +111,9 @@
       "category": "migration",
       "description": "public.workflows + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0012",
@@ -105,7 +121,9 @@
       "category": "migration",
       "description": "public.storage_files (SSD / backup) + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0013",
@@ -121,7 +139,9 @@
       "category": "migration",
       "description": "public.notifications + indexes + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0015",
@@ -129,7 +149,9 @@
       "category": "migration",
       "description": "public.plan_renew_requests + indexes + RLS",
       "idempotent": true,
-      "depends_on": ["0005"]
+      "depends_on": [
+        "0005"
+      ]
     },
     {
       "id": "0016",
@@ -137,7 +159,9 @@
       "category": "migration",
       "description": "public.support_sessions + indexes + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0017",
@@ -145,7 +169,9 @@
       "category": "migration",
       "description": "public.admin_machine_logs + indexes",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0018",
@@ -153,7 +179,9 @@
       "category": "migration",
       "description": "public.backup_logs + index + RLS",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0019",
@@ -161,7 +189,9 @@
       "category": "migration",
       "description": "public.machines projection table + indexes (machine is a disposable projection of gpu_sessions)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0020",
@@ -169,7 +199,9 @@
       "category": "migration",
       "description": "public.user_plan_inventory + indexes + RLS (SCB 3.4B W6 projection-sync target; referenced by machines_billing_inventory_id_fkey)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0021",
@@ -177,7 +209,9 @@
       "category": "migration",
       "description": "public.gpu_sessions — SCB 3.0 Single Source of Truth (machine_id FK to machines)",
       "idempotent": true,
-      "depends_on": ["0019"]
+      "depends_on": [
+        "0019"
+      ]
     },
     {
       "id": "0022",
@@ -185,7 +219,10 @@
       "category": "migration",
       "description": "machines + gpu_sessions billing-projection columns + idx_gpu_sessions_machine (adds machines.billing_inventory_id referenced by 0025 FK)",
       "idempotent": true,
-      "depends_on": ["0019", "0021"]
+      "depends_on": [
+        "0019",
+        "0021"
+      ]
     },
     {
       "id": "0023",
@@ -193,7 +230,9 @@
       "category": "migration",
       "description": "machines idle-state columns",
       "idempotent": true,
-      "depends_on": ["0019"]
+      "depends_on": [
+        "0019"
+      ]
     },
     {
       "id": "0024",
@@ -201,7 +240,9 @@
       "category": "migration",
       "description": "public.manual_hour_grants + public.hour_grant_logs + RLS (SCB 3.4B W5 entitlement CAS target for grants)",
       "idempotent": true,
-      "depends_on": ["0001"]
+      "depends_on": [
+        "0001"
+      ]
     },
     {
       "id": "0025",
@@ -209,7 +250,11 @@
       "category": "migration",
       "description": "SCB 3.0 canonical migration: gpu_sessions SCB columns + lifecycle CHECK constraints (NOT VALID), settlement retry index, machines.gpu_session_id FK + billing_inventory_id FK to user_plan_inventory, COMMENTs",
       "idempotent": true,
-      "depends_on": ["0021", "0022", "0020"]
+      "depends_on": [
+        "0021",
+        "0022",
+        "0020"
+      ]
     },
     {
       "id": "0026",
@@ -217,7 +262,9 @@
       "category": "migration",
       "description": "M5 finalization: pre-check no legacy status rows, narrow gpu_sessions_status_check to (pending,running,closed), VALIDATE all M2 NOT VALID constraints",
       "idempotent": true,
-      "depends_on": ["0025"]
+      "depends_on": [
+        "0025"
+      ]
     },
     {
       "id": "0027",
@@ -225,7 +272,15 @@
       "category": "migration",
       "description": "SCB 3.4B settlement transaction RPC: wallet_transactions.idempotency_key column + partial unique index + public.settle_session_transaction(payload json) SECURITY DEFINER function (W2-W7 atomic)",
       "idempotent": true,
-      "depends_on": ["0025", "0007", "0008", "0024", "0005", "0006", "0020"]
+      "depends_on": [
+        "0025",
+        "0007",
+        "0008",
+        "0024",
+        "0005",
+        "0006",
+        "0020"
+      ]
     },
     {
       "id": "0028",
@@ -233,7 +288,9 @@
       "category": "migration",
       "description": "M13 reconciliation audit tables: public.reconciliation_runs + public.drift_items (drift_items references machines(id) and auth.users(id))",
       "idempotent": true,
-      "depends_on": ["0019"]
+      "depends_on": [
+        "0019"
+      ]
     },
     {
       "id": "0030",
@@ -241,7 +298,9 @@
       "category": "migration",
       "description": "SCB 2.1 Phase 2: public.machine_operations durable repair queue (references machines, gpu_sessions, auth.users)",
       "idempotent": true,
-      "depends_on": ["0028"]
+      "depends_on": [
+        "0028"
+      ]
     },
     {
       "id": "0031",
@@ -249,7 +308,9 @@
       "category": "migration",
       "description": "SCB 2.1 Phase 2.5: machine_operations retry/DLQ/metrics columns + dead_letter state",
       "idempotent": true,
-      "depends_on": ["0030"]
+      "depends_on": [
+        "0030"
+      ]
     },
     {
       "id": "0032",
@@ -257,7 +318,9 @@
       "category": "migration",
       "description": "SCB 2.1 AF v2: machines projection_verified_at/message + projection_verify queue operation",
       "idempotent": true,
-      "depends_on": ["0031"]
+      "depends_on": [
+        "0031"
+      ]
     },
     {
       "id": "0033",
@@ -265,7 +328,9 @@
       "category": "migration",
       "description": "Architecture Freeze v3.2: machines.port nullable, drop DEFAULT 8080, Pending/HostPort COMMENT",
       "idempotent": true,
-      "depends_on": ["0032"]
+      "depends_on": [
+        "0032"
+      ]
     },
     {
       "id": "0034",
@@ -273,7 +338,39 @@
       "category": "migration",
       "description": "Architecture Freeze v3.2: legacy port=8080 → Pending (creating/starting) + enqueue projection_verify (running)",
       "idempotent": true,
-      "depends_on": ["0033"]
+      "depends_on": [
+        "0033"
+      ]
+    },
+    {
+      "id": "0035",
+      "file": "supabase/machines-credit-warning.sql",
+      "category": "migration",
+      "description": "machines.credit_warning_sent — 30-minute pre-stop notification for active package Remaining",
+      "idempotent": true,
+      "depends_on": [
+        "0023"
+      ]
+    },
+    {
+      "id": "0036",
+      "file": "supabase/subscriptions-provisioning-claim.sql",
+      "category": "migration",
+      "description": "subscriptions.provisioning_started_at — CAS claim timestamp for start-machine double-provision guard",
+      "idempotent": true,
+      "depends_on": [
+        "0005"
+      ]
+    },
+    {
+      "id": "0037",
+      "file": "supabase/subscriptions-provisioning-lease.sql",
+      "category": "migration",
+      "description": "subscriptions provision lease columns (lease_id, expires_at, heartbeat_at, owner) for heartbeat reclaim",
+      "idempotent": true,
+      "depends_on": [
+        "0036"
+      ]
     },
     {
       "id": "0099",
@@ -281,23 +378,143 @@
       "category": "system",
       "description": "Version marker: public.schema_version single-row table + public.sc_schema_verification readiness view; recomputes scb_3_4b_ready from the catalog",
       "idempotent": true,
-      "depends_on": ["0027", "0028", "0030", "0031", "0032", "0033", "0034"]
+      "depends_on": [
+        "0027",
+        "0028",
+        "0030",
+        "0031",
+        "0032",
+        "0033",
+        "0034",
+        "0035",
+        "0036",
+        "0037"
+      ]
+    },
+    {
+      "id": "0038",
+      "file": "supabase/subscriptions-provisioning-progress.sql",
+      "category": "migration",
+      "description": "subscriptions.provisioning_progress jsonb for Provision Progress Engine resume",
+      "idempotent": true,
+      "depends_on": [
+        "0037"
+      ]
+    },
+      {
+      "id": "0039",
+      "file": "supabase/machine-backup-tokens.sql",
+      "category": "migration",
+      "description": "machine_backup_tokens for container-scoped R2 presign upload auth (A1–A2)",
+      "idempotent": true,
+      "depends_on": [
+        "0001",
+        "0005",
+        "0019"
+      ]
+    },
+    {
+      "id": "0040",
+      "file": "supabase/comfy-access-tokens.sql",
+      "category": "migration",
+      "description": "comfy_access_tokens for Level C brand-domain ComfyUI reverse proxy",
+      "idempotent": true,
+      "depends_on": [
+        "0001",
+        "0005",
+        "0019"
+      ]
+    },
+    {
+      "id": "0041",
+      "file": "supabase/backup-entitlement-retention.sql",
+      "category": "migration",
+      "description": "users backup_upgrade_gb + retention state (active/grace/deleted) for plan-tier quota and purge",
+      "idempotent": true,
+      "depends_on": [
+        "0001",
+        "0006",
+        "0020"
+      ]
+    },
+    {
+      "id": "0042",
+      "file": "supabase/machines-backup-flush-secret.sql",
+      "category": "migration",
+      "description": "machines.backup_flush_secret for L2 HTTP backup flush auth",
+      "idempotent": true,
+      "depends_on": [
+        "0019"
+      ]
     }
   ],
   "seeds": [
-    { "id": "seed-models",        "file": "supabase/seed-models.sql",        "depends_on": ["0010"] },
-    { "id": "seed-workflows",     "file": "supabase/seed-workflows.sql",     "depends_on": ["0011"] },
-    { "id": "seed-storage",       "file": "supabase/seed-storage.sql",       "depends_on": ["0012"] },
-    { "id": "seed-gpu-sessions",  "file": "supabase/seed-gpu-sessions.sql",  "depends_on": ["0025"] }
+    {
+      "id": "seed-models",
+      "file": "supabase/seed-models.sql",
+      "depends_on": [
+        "0010"
+      ]
+    },
+    {
+      "id": "seed-workflows",
+      "file": "supabase/seed-workflows.sql",
+      "depends_on": [
+        "0011"
+      ]
+    },
+    {
+      "id": "seed-storage",
+      "file": "supabase/seed-storage.sql",
+      "depends_on": [
+        "0012"
+      ]
+    },
+    {
+      "id": "seed-gpu-sessions",
+      "file": "supabase/seed-gpu-sessions.sql",
+      "depends_on": [
+        "0025"
+      ]
+    }
   ],
   "operational": [
-    { "id": "storage-models",     "file": "supabase/storage-models.sql",     "description": "Storage bucket 'user-models' + storage policies (run once via SQL Editor)" }
+    {
+      "id": "storage-models",
+      "file": "supabase/storage-models.sql",
+      "description": "Storage bucket 'user-models' + storage policies (run once via SQL Editor)"
+    }
   ],
   "historical": [
-    { "id": "scb-schema-apply-nodrop",       "file": "supabase/scb-schema-apply-nodrop.sql",       "superseded_by": "0025", "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history." },
-    { "id": "scb-schema-started-at-nullable","file": "supabase/scb-schema-started-at-nullable.sql","superseded_by": "0025", "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history." },
-    { "id": "fix-trigger",                   "file": "supabase/fix-trigger.sql",                   "superseded_by": "0004", "reason": "Duplicate of drop-auth-trigger.sql (both drop on_auth_user_created). 0004 is canonical." },
-    { "id": "admin-approve-payment",         "file": "supabase/admin-approve-payment.sql",        "superseded_by": null,   "reason": "One-shot operational snippet with placeholder SUBSCRIPTION_ID. Not a migration." },
-    { "id": "set-admin-role",                "file": "supabase/set-admin-role.sql",               "superseded_by": "0002", "reason": "Operational role backfill UPDATE; the role column is added idempotently by add-user-role.sql (0002)." }
+    {
+      "id": "scb-schema-apply-nodrop",
+      "file": "supabase/scb-schema-apply-nodrop.sql",
+      "superseded_by": "0025",
+      "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history."
+    },
+    {
+      "id": "scb-schema-started-at-nullable",
+      "file": "supabase/scb-schema-started-at-nullable.sql",
+      "superseded_by": "0025",
+      "reason": "Self-marked SUPERSEDED by scb-schema.sql (M2). Retained for audit history."
+    },
+    {
+      "id": "fix-trigger",
+      "file": "supabase/fix-trigger.sql",
+      "superseded_by": "0004",
+      "reason": "Duplicate of drop-auth-trigger.sql (both drop on_auth_user_created). 0004 is canonical."
+    },
+    {
+      "id": "admin-approve-payment",
+      "file": "supabase/admin-approve-payment.sql",
+      "superseded_by": null,
+      "reason": "One-shot operational snippet with placeholder SUBSCRIPTION_ID. Not a migration."
+    },
+    {
+      "id": "set-admin-role",
+      "file": "supabase/set-admin-role.sql",
+      "superseded_by": "0002",
+      "reason": "Operational role backfill UPDATE; the role column is added idempotently by add-user-role.sql (0002)."
+    }
   ]
 }

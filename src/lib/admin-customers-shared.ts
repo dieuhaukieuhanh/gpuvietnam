@@ -13,6 +13,8 @@ export type AdminCustomerRow = {
   plan: string;
   hoursLeft: number;
   totalHours: number;
+  /** Số ngày còn lại tới hết hạn — max trong các gói thanh toán cùng tier */
+  daysLeft: number | null;
   lastAccess: string | null;
   workflow: string;
   model: string;
@@ -35,6 +37,16 @@ export type AdminCustomerRow = {
   sessionStartedAt: string | null;
   /** Template đang dùng khi online */
   currentTemplate: string | null;
+  /** Provider máy đang chạy: clore | vast (từ machines.provider) */
+  currentProvider: string | null;
+  /** Admin audit — ComfyUI image tag (v3/v4). Never shown to customers. */
+  runtimeImage: string | null;
+  /** Admin audit — gpu_line (rtx3090 / rtx4090_1x / rtx5090_1x). */
+  gpuLine: string | null;
+  /** Admin audit — HTTP gate passed but SSH/ops degraded. */
+  opsDegraded: boolean;
+  /** Admin audit — soft SSH probe result (null = unknown). */
+  sshOk: boolean | null;
   /** Số máy GPU đang chạy */
   machinesRunning: number;
   /** Output phiên hiện tại */
@@ -42,6 +54,12 @@ export type AdminCustomerRow = {
   /** Cảnh báo hành vi bất thường */
   anomalies: import('@/lib/customer-anomalies').CustomerAnomaly[];
   anomalyLevel: import('@/lib/customer-anomalies').CustomerAnomalyLevel;
+  /** Admin override: null | force_on | force_off */
+  autoBackupOverride: 'force_on' | 'force_off' | null;
+  /** Effective auto-backup after policy resolve */
+  autoBackupEnabled: boolean;
+  /** Resolve source: force_on | force_off | global_starter | plan_default */
+  autoBackupSource: string;
 };
 
 export type { CustomerAnomaly, CustomerAnomalyLevel, CustomerAnomalySummary } from '@/lib/customer-anomalies';
@@ -69,6 +87,19 @@ export type CustomerFilters = {
   search: string;
   alert: string;
 };
+
+/** Map machines.provider → nhãn Admin (Clore / Vast). */
+export function formatMachineProviderLabel(
+  provider: string | null | undefined,
+): string | null {
+  const raw = String(provider ?? '')
+    .trim()
+    .toLowerCase();
+  if (!raw) return null;
+  if (raw === 'clore' || raw.startsWith('clore')) return 'Clore';
+  if (raw === 'vast' || raw.startsWith('vast')) return 'Vast';
+  return raw;
+}
 
 export const DEFAULT_CUSTOMER_FILTERS: CustomerFilters = {
   status: 'all',

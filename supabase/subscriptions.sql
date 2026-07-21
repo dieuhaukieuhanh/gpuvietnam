@@ -13,6 +13,7 @@ create table if not exists public.subscriptions (
   hours_used numeric not null default 0,
   status text not null default 'pending',
   server_status text not null default 'offline',
+  provisioning_started_at timestamptz,
   is_trial boolean not null default false,
   transfer_note text,
   expires_at timestamptz,

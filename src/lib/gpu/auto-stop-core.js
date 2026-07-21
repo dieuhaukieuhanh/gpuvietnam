@@ -8,6 +8,9 @@ import { isOutOfCredit, REMAINING_STATE_OK } from './remaining-time.js';
 
 export const AUTO_STOP_MODULE_VERSION = '1.0';
 
+/** Warn before out-of-credit destroy when package Remaining ≤ this many minutes. */
+export const CREDIT_WARN_MINUTES = 30;
+
 export const AUTO_STOP_DECISION = Object.freeze({
   SKIPPED: 'skipped',
   DESTROY: 'destroy',
@@ -59,6 +62,27 @@ export function shouldWarnForIdle(idleMinutes, idleWarningSent, warnMinutes = 55
 }
 
 /**
+ * Notify before auto-stop when the active package has ≤ warnMinutes left.
+ * @param {import('./remaining-time.js').RemainingResult|null|undefined} remaining
+ * @param {boolean} creditWarningSent
+ * @param {boolean} machineHasBilling
+ * @param {number} [warnMinutes]
+ * @returns {boolean}
+ */
+export function shouldWarnForLowCredit(
+  remaining,
+  creditWarningSent,
+  machineHasBilling,
+  warnMinutes = CREDIT_WARN_MINUTES,
+) {
+  if (!machineHasBilling) return false;
+  if (creditWarningSent === true) return false;
+  if (!remaining || remaining.state !== REMAINING_STATE_OK) return false;
+  if (remaining.remainingHours <= 0) return false;
+  return remaining.remainingHours * 60 <= warnMinutes;
+}
+
+/**
  * @param {{
  *   machineStatus: string;
  *   machineHasBilling: boolean;
@@ -69,10 +93,12 @@ export function shouldWarnForIdle(idleMinutes, idleWarningSent, warnMinutes = 55
  *   hasActiveJobs: boolean;
  *   idleMinutes: number|null;
  *   idleWarningSent: boolean;
+ *   creditWarningSent?: boolean;
  *   idleStopMinutes?: number;
  *   idleWarnMinutes?: number;
+ *   creditWarnMinutes?: number;
  * }} input
- * @returns {{ decision: string; reason?: string; idleMinutes?: number|null }}
+ * @returns {{ decision: string; reason?: string; idleMinutes?: number|null; remainingMinutes?: number|null }}
  */
 export function decideAutoStopAction(input) {
   if (shouldSkipAutoStop(input.machineStatus)) {
@@ -87,6 +113,25 @@ export function decideAutoStopAction(input) {
     )
   ) {
     return { decision: AUTO_STOP_DECISION.DESTROY, reason: 'out_of_credit' };
+  }
+
+  if (
+    shouldWarnForLowCredit(
+      input.remaining,
+      Boolean(input.creditWarningSent),
+      input.machineHasBilling,
+      input.creditWarnMinutes ?? CREDIT_WARN_MINUTES,
+    )
+  ) {
+    const remainingMinutes =
+      input.remaining?.state === REMAINING_STATE_OK
+        ? Math.max(0, Math.ceil(input.remaining.remainingHours * 60))
+        : null;
+    return {
+      decision: AUTO_STOP_DECISION.WARN,
+      reason: 'low_credit',
+      remainingMinutes,
+    };
   }
 
   if (!input.hasEndpoint) {
@@ -110,7 +155,7 @@ export function decideAutoStopAction(input) {
   }
 
   if (shouldWarnForIdle(idleMinutes, input.idleWarningSent, warnMinutes)) {
-    return { decision: AUTO_STOP_DECISION.WARN, idleMinutes };
+    return { decision: AUTO_STOP_DECISION.WARN, reason: 'idle', idleMinutes };
   }
 
   return { decision: AUTO_STOP_DECISION.IDLE, idleMinutes };

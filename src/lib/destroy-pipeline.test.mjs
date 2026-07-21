@@ -310,6 +310,39 @@ describe('runDestroyPipeline', () => {
     assert.equal(settleCalls, 0);
   });
 
+  it('T2b — destroy error but verify destroyed continues to settle', async () => {
+    const mock = createMockSupabase(runningSession());
+    let settleCalls = 0;
+    let verifyCalls = 0;
+
+    const result = await runDestroyPipeline(
+      mock.client,
+      {
+        gpuService: {
+          destroyInstance: async () => {
+            throw new Error('Clore.ai 429: rate limit');
+          },
+        },
+        verifyDestroyed: async () => {
+          verifyCalls += 1;
+          // pre-verify still running; post-fail verify + final verify destroyed
+          return verifyCalls === 1 ? stillRunningVerify() : destroyedVerify();
+        },
+        settle: async () => {
+          settleCalls += 1;
+          return { state: 'OK' };
+        },
+        skipSettlement: async () => ({ state: 'SKIPPED' }),
+      },
+      { userId: USER_ID, machine: mock.machine, reason: 'user_stop', skipBackup: true },
+    );
+
+    assert.equal(result.destroyed, true);
+    assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.DESTROYED);
+    assert.equal(settleCalls, 1);
+    assert.ok(verifyCalls >= 2);
+  });
+
   it('returns NO_MACHINE when nothing to destroy', async () => {
     const result = await runDestroyPipeline(
       {

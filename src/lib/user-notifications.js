@@ -11,6 +11,7 @@ export const NOTIFICATION_TYPES = {
   MAINTENANCE: 'maintenance',
   AUTO_STOP: 'auto_stop',
   IDLE_WARNING: 'idle_warning',
+  CREDIT_WARNING: 'credit_warning',
   BACKUP_STARTED: 'backup_started',
   SUPPORT_REQUEST: 'support_request',
   SUPPORT_ACTIVE: 'support_active',
@@ -247,6 +248,19 @@ export async function notifyIdleWarning(supabaseAdmin, { userId }) {
     title: '⚠️ Máy sắp tự động tắt',
     message: 'Máy sẽ tự động tắt sau 5 phút nếu không có hoạt động. Hãy chạy một job để giữ máy.',
     link: routes.dashboard,
+  });
+}
+
+/** Notify ~30 minutes before out-of-credit auto-stop for the active package. */
+export async function notifyCreditWarning(supabaseAdmin, { userId, minutesLeft = 30, planName }) {
+  const minutes = Math.max(1, Math.ceil(Number(minutesLeft) || 30));
+  const planLabel = planName ? ` gói ${planName}` : '';
+  return createUserNotification(supabaseAdmin, {
+    userId,
+    type: NOTIFICATION_TYPES.CREDIT_WARNING,
+    title: '⚠️ Máy sắp tắt vì hết giờ gói đang dùng',
+    message: `Gói${planLabel} còn khoảng ${minutes} phút. Máy sẽ tự tắt khi hết giờ gói này (giờ ở gói khác không giữ máy). Hãy lưu công việc hoặc gia hạn.`,
+    link: routes.dashboardGoiCuaToi,
   });
 }
 

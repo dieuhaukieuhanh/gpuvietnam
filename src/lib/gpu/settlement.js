@@ -29,6 +29,7 @@ import {
   SETTLEMENT_RPC_ERROR,
   isSettlementRpcRetryable,
 } from './settlement-transaction-rpc.js';
+import { filterEntitlementPlansForMachine } from './remaining-time.js';
 
 export {
   SETTLEMENT_MODULE_VERSION,
@@ -73,13 +74,48 @@ async function loadSessionForSettlement(supabaseAdmin, sessionId) {
   const { data, error } = await supabaseAdmin
     .from('gpu_sessions')
     .select(
-      'id, user_id, status, started_at, ended_at, settlement_status, settlement_at, settlement_breakdown, verified_destroyed_at',
+      'id, user_id, status, started_at, ended_at, settlement_status, settlement_at, settlement_breakdown, verified_destroyed_at, machine_id',
     )
     .eq('id', sessionId)
     .maybeSingle();
 
   if (error) throw error;
   return data;
+}
+
+/**
+ * Resolve the machine that owned this session so settlement burns only that package.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {Record<string, unknown>} session
+ * @returns {Promise<Record<string, unknown>|null>}
+ */
+async function loadMachineForSettlement(supabaseAdmin, session) {
+  const machineId = session?.machine_id != null ? String(session.machine_id) : null;
+  if (machineId) {
+    const { data, error } = await supabaseAdmin
+      .from('machines')
+      .select(
+        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id, plan, plan_name, gpu_label',
+      )
+      .eq('id', machineId)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  if (session?.id) {
+    const { data, error } = await supabaseAdmin
+      .from('machines')
+      .select(
+        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id, plan, plan_name, gpu_label',
+      )
+      .eq('gpu_session_id', String(session.id))
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  return null;
 }
 
 /**
@@ -268,13 +304,18 @@ export async function settleSession(supabaseAdmin, input) {
   // ──────────────── PRE-T (JS business math) ────────────────
   // All allocation / breakdown math stays in JS. The RPC receives the
   // prepared plan and executes it atomically (SCB 3.4A §2).
-  const [{ data: userRow }, plans] = await Promise.all([
+  const [{ data: userRow }, plans, machine] = await Promise.all([
     supabaseAdmin.from('users').select('wallet_balance').eq('id', userId).maybeSingle(),
     fetchBillablePlans(supabaseAdmin, userId),
+    loadMachineForSettlement(supabaseAdmin, session),
   ]);
 
+  // Burn only the package this session ran on (Starter/Pro/Studio). Soonest
+  // expiry first inside that package — never across other GPU tiers.
+  const scopedPlans = machine ? filterEntitlementPlansForMachine(plans, machine) : plans;
+
   const walletBalance = Number(userRow?.wallet_balance ?? 0);
-  const availableSeconds = computeAvailableEntitlementSeconds(plans, walletBalance);
+  const availableSeconds = computeAvailableEntitlementSeconds(scopedPlans, walletBalance);
   const { chargeSeconds, capAppliedSeconds } = capChargeSeconds(billableSeconds, availableSeconds);
 
   /** @type {import('./settlement-core.js').SettlementAllocationLine[]} */
@@ -293,7 +334,7 @@ export async function settleSession(supabaseAdmin, input) {
     unchargedSeconds = billableSeconds;
   } else {
     const orderedPlans = orderPlansForSettlement(
-      plans.map((plan) => ({ ...plan, hours_remaining: Number(plan.hours_remaining ?? 0) })),
+      scopedPlans.map((plan) => ({ ...plan, hours_remaining: Number(plan.hours_remaining ?? 0) })),
     );
     const allocation = allocateSettlementCharge({
       chargeSeconds,
@@ -321,7 +362,7 @@ export async function settleSession(supabaseAdmin, input) {
     supabaseAdmin,
     userId,
     allocationLines,
-    plans,
+    scopedPlans,
   );
 
   const settlementAt = new Date().toISOString();
@@ -333,7 +374,7 @@ export async function settleSession(supabaseAdmin, input) {
     providerDestroyedVerified: input.providerDestroyedVerified === true,
     expectedPreSettlementStatus: String(session.settlement_status),
     lines: allocationLines,
-    plans,
+    plans: scopedPlans,
     breakdown,
     billableSeconds,
     chargedSeconds,
@@ -344,6 +385,17 @@ export async function settleSession(supabaseAdmin, input) {
 
   // ──────────────── POST-RPC classification (SCB 3.4A §9) ────────────────
   if (rpcResult.state === 'OK' || rpcResult.state === 'IDEMPOTENT') {
+    // Hours may have hit zero — refresh backup quota / grace clock (non-fatal).
+    try {
+      const { syncUserBackupEntitlement } = await import('../backup-entitlement.js');
+      await syncUserBackupEntitlement(supabaseAdmin, userId);
+    } catch (err) {
+      console.warn(
+        '[settleSession] syncUserBackupEntitlement failed (non-fatal):',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     // Preserve the existing SettlementResult shape exactly.
     return {
       state: rpcResult.state,

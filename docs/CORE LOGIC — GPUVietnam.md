@@ -10,7 +10,7 @@ Không tạo máy nếu KH chưa có gói hoặc hết giờ.
 
 Ưu tiên gói tặng sắp hết hạn → Combo → Giờ lẻ.
 
-Fallback region khi tạo máy: thử lần lượt Taiwan → Japan → Singapore (`provision-instance.js`). Trong mỗi lần thử, chọn offer theo mục 5 (ưu tiên giá, fallback chỉ mở rộng địa lý).
+Provider routing khi tạo máy: Clore:Vast = 4:1 với failover (`provider-routing.js` + `provision-instance.js`). Chọn offer theo mục 5 (uptime groups + median ±10%, ping ≤250ms, không lọc region).
 
 Retry 2 lần nếu thất bại.
 
@@ -30,9 +30,13 @@ KHÔNG trừ giờ khi máy đang starting/creating.
 3. TỰ ĐỘNG TẮT MÁY (Auto-Stop)
 File: auto-stop.js, check-idle.js
 
-Mô tả: Kiểm tra mỗi 5 phút. Nếu hết giờ → tắt NGAY. Nếu idle 1h → cảnh báo 55 phút → tắt.
+Mô tả: Kiểm tra mỗi 5 phút. Hết giờ **gói đang dùng** → tắt NGAY (giờ ở gói khác không giữ máy). Còn ≤ 30 phút gói đang dùng → thông báo. Idle 1h → cảnh báo 55 phút → tắt.
 
 Nguyên tắc:
+
+Remaining / out-of-credit chỉ tính giờ của gói máy đang chạy (Starter / Pro / Studio) — mỗi gói GPU và bảng giá khác nhau.
+
+Thông báo trước khoảng 30 phút trước khi tắt vì hết giờ gói đang dùng.
 
 Idle timer CHỈ bắt đầu khi không có job nào đang chạy trong ComfyUI.
 
@@ -53,58 +57,59 @@ Không chặn việc tắt máy nếu backup thất bại.
 
 Ghi log vào backup_logs.
 
-5. CHỌN GPU THÔNG MINH (GPU Scoring)
-File: vast-client.js (`findBestGPU`, `findRankedGPUOffers`), gpu-config.js
+5. PROVISION WORKSTATION (Provider Routing + Offer Selection)
+File: provider-routing.js, offer-selection.js, provision-instance.js,
+ast-client.js, clore-client.js, gpu-config.js
 
-Mô tả: Lọc cứng → chấm điểm (ưu tiên giá) → thuê offer tốt nhất trong giới hạn giá/region.
+Mô tả: Level 1 chọn provider (Clore/Vast) → Level 2 lọc + nhóm uptime + chọn 3 offer
+rẻ nhất → thuê tuần tự; failover provider nếu cần. Khi cả hai provider thất bại →
+**No Available Workstation**.
 
-Nguyên tắc:
+### Level 1 – Provider Routing
 
-**Lọc cứng** (giữ nguyên ở mọi mức fallback):
+Providers: **Clore.ai**, **Vast.ai**
 
-| Tiêu chí | Ngưỡng |
-|:---|:---|
-| Verified / rentable | Có |
-| VRAM | ≥ 22GB |
-| Uptime | ≥ 99.5% |
-| Disk | ≥ 20GB |
-| Mạng | ≥ 100 Mbps |
-| Region | Châu Á (mặc định) |
+Tỷ lệ mặc định **Clore : Vast = 4 : 1** (chuỗi xoay: Clore, Clore, Clore, Clore, Vast).
 
-**Chấm điểm** (hằng số `GPU_SCORE_WEIGHTS` trong gpu-config.js):
+Failover: nếu provider được chọn không có offer khớp / API lỗi / timeout / tạo máy thất
+bại → thử ngay provider còn lại. Cả hai unavailable → No Available Workstation.
 
-| Tiêu chí | Trọng số |
-|:---|:---|
-| Giá | 60% |
-| Region | 15% |
-| Mạng | 10% |
-| Uptime | 10% |
-| DLPerf | 5% |
+### Level 2 – Offer Selection (mỗi gói độc lập)
 
-**Region score** (`GPU_REGION_SCORES`):
+| Package | GPU | Customer Storage | Min Host Disk |
+|:---|:---|---:|---:|
+| Starter | RTX3090 | 20 GB | 20 GB |
+| Pro | RTX4090 (1x) | 50 GB | 50 GB |
+| Studio | RTX5090 (1x) | 100 GB | 100 GB |
 
-| Region | Điểm |
-|:---|:---|
-| Taiwan | 90 |
-| Thailand | 85 |
-| Singapore | 80 |
-| Hong Kong | 80 |
-| Japan | 75 |
-| South Korea | 70 |
-| Indonesia / Malaysia / India | 65 |
-| Khác (Châu Á) | 55 |
-| Ngoài Á (global) | 0 |
+Customer storage cố định theo gói; host disk chỉ là điều kiện đủ để offer đủ điều kiện.
 
-**Fallback — chỉ mở rộng địa lý** (`GPU_FALLBACK_LEVELS`); không hạ uptime, disk hay mạng:
+**Image (ComfyUI):** Starter/Pro (`rtx3090` / `rtx4090_*`) → tag **v3** (CUDA ~12.0, pool host rộng). Studio (`rtx5090_1x`) → tag **v4** (CUDA 12.8). Resolve: `resolveGpuImage(gpuLine)` trong `gpu-config.js`. Rollback một tag: `GPUVIETNAM_COMFYUI_IMAGE_FORCE`. Projection audit: cột `machines.image` (migration `supabase/machines-image.sql`). Official Node Pack SoT: `docs/COMFYUI_IMAGE.md` + `image/official-nodes.lock` (Image v1.0).
 
-1. `asia_preferred` — Taiwan, Japan, Singapore, Thailand…
-2. `asia_full` — thêm India, Asia, APAC…
-3. `global` — toàn thế giới
+Hậu kiểm SQL (admin / ops — **không** expose `machines.image` ra API khách):
+```sql
+SELECT id, gpu_line, image, provider, status, created_at
+FROM machines
+WHERE created_at > now() - interval '24 hours'
+ORDER BY created_at DESC;
+-- Kỳ vọng: rtx3090/rtx4090_* → :v3 ; rtx5090_1x → :v4
+```
 
-**Giá trần & giới hạn thuê** khi rent offer:
+**Step 1 – Filter:** GPU đúng gói · VRAM ≥ 20 GB · Host disk ≥ ngưỡng gói · RAM/CUDA
+(khi offer báo) · Ping ≤ 250 ms (đo được thì dùng đo; không thì ước lượng) · yêu cầu kỹ
+thuật hiện có. **Không** lọc theo quốc gia/region. Studio soft-floor CUDA ≥ 12.0 khi offer báo.
 
-- `MAX_PRICE_PREMIUM = 1.2` — `priceCap = giá_rẻ_nhất_trong_batch × 1.2`; offer vượt cap → bỏ region hiện tại.
-- `MAX_OFFERS_PER_REGION = 3` — tối đa 3 offer/region; hết lượt → chuyển region tiếp theo.
+**Step 2 – Uptime groups:** A ≥99% · B 98.5–99% · C 98.0–98.5%. Bỏ offer < 98%.
+
+**Step 3:** Trong mỗi nhóm, sort giá tăng dần, giữ 3 offer rẻ nhất.
+
+**Step 4 – Preferred group:** Representative = median giá.
+- Có A và B: nếu Median(A) ≤ Median(B)×1.10 → dùng A; không thì merge A+B, lấy 3 rẻ nhất.
+- Không có A, có B và C: nếu Median(B) ≤ Median(C)×1.10 → dùng B; không thì merge B+C.
+- Chỉ một nhóm: lấy tối đa 3 offer rẻ nhất của nhóm đó.
+
+**Step 5 – Create:** thử Offer #1 → #2 → #3. Offer đã thuê / validation fail / API /
+timeout → offer tiếp theo. Cả 3 fail → refresh marketplace và chạy lại từ Step 1.
 
 6. MÔI TRƯỜNG LÀM VIỆC (Workstation)
 File: setup-workstation.sh, workstation-setup.js
@@ -139,9 +144,11 @@ Nguyên tắc:
 
 Chỉ áp dụng cho gói Combo (không hourly).
 
-Tái tục chủ động (>10h): tặng 5% giờ.
+Tái tục chủ động (KH bấm / CK): không thưởng.
 
-Auto-renew (<10h): tặng 3% giờ.
+Auto-renew khi còn ≥10h: tặng 3% giờ.
+
+Auto-renew khi còn <10h: không thưởng.
 
 Trừ tiền từ Ví, nếu thiếu → gửi thông báo.
 

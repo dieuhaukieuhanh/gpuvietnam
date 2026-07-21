@@ -40,21 +40,46 @@ function formatPendingRenewResponse(row) {
   };
 }
 
-async function loadRenewContext(supabaseAdmin, userId, plan, billing) {
-  const { data: subscription } = await supabaseAdmin
-    .from('subscriptions')
-    .select('id, plan, billing, hours_total, hours_used, status')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+async function loadRenewContext(supabaseAdmin, userId, plan, billing, subscriptionId) {
+  let subscription = null;
+  if (subscriptionId) {
+    const { data: sub, error: subError } = await supabaseAdmin
+      .from('subscriptions')
+      .select('id, plan, billing, hours_total, hours_used, status, expires_at')
+      .eq('id', subscriptionId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (subError) throw subError;
+    subscription = sub ?? null;
+  }
+
+  if (!subscription) {
+    let query = supabaseAdmin
+      .from('subscriptions')
+      .select('id, plan, billing, hours_total, hours_used, status, expires_at')
+      .eq('user_id', userId)
+      .eq('status', 'active');
+    if (plan) query = query.eq('plan', plan);
+    if (billing) query = query.eq('billing', billing);
+    const { data: sub } = await query
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    subscription = sub ?? null;
+  }
+
+  if (!subscription) {
+    return { error: 'Không tìm thấy gói phù hợp để tái tục.' };
+  }
+  if (subscription.status !== 'active') {
+    return { error: 'Gói này không còn hoạt động, không thể tái tục.' };
+  }
 
   const remainingRead = await loadScbRemainingForUser(supabaseAdmin, userId);
   const hoursRemaining = remainingRead.hoursRemaining ?? 0;
 
-  const resolvedPlan = plan ?? subscription?.plan;
-  const resolvedBilling = billing ?? subscription?.billing;
+  const resolvedPlan = plan ?? subscription.plan;
+  const resolvedBilling = billing ?? subscription.billing;
 
   const quote = computeRenewQuote(resolvedPlan, resolvedBilling, hoursRemaining, {
     isAutoRenew: false,
@@ -86,7 +111,7 @@ async function loadRenewContext(supabaseAdmin, userId, plan, billing) {
 /**
  * Khách xác nhận đã chuyển khoản bổ sung để tái tục.
  */
-export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { plan, billing }) {
+export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { plan, billing, subscriptionId }) {
   await ensureGpuPricingLoaded(supabaseAdmin);
 
   const { data: existing, error: existingError } = await supabaseAdmin
@@ -107,7 +132,7 @@ export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { pl
     };
   }
 
-  const ctx = await loadRenewContext(supabaseAdmin, userId, plan, billing);
+  const ctx = await loadRenewContext(supabaseAdmin, userId, plan, billing, subscriptionId);
   if (ctx.error) return { error: ctx.error };
 
   if (ctx.shortage <= 0) {
@@ -202,6 +227,7 @@ export async function approvePlanRenewRequest(supabaseAdmin, requestId) {
   const renewResult = await processPlanRenew(supabaseAdmin, req.user_id, {
     plan: req.plan,
     billing: req.billing,
+    subscriptionId: req.subscription_id ?? null,
     isAutoRenew: false,
   });
 

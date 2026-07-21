@@ -169,8 +169,8 @@ export default function TrangChuPage() {
                         <div className="infra-card">
                             <div className="infra-icon">🖥️</div>
                             <h4>GPU Chuyên Dụng</h4>
-                            <p className="gpu-list">RTX 3090 • RTX 4090 • 2x RTX 4090</p>
-                            <p>24GB - 48GB VRAM, CUDA 12.x, driver Studio mới nhất</p>
+                            <p className="gpu-list">RTX 3090 • RTX 4090 • RTX 5090</p>
+                            <p>24GB - 32GB VRAM, CUDA 12.x, driver mới nhất</p>
                         </div>
                         <div className="infra-card">
                             <div className="infra-icon">⚙️</div>
@@ -181,7 +181,7 @@ export default function TrangChuPage() {
                         <div className="infra-card">
                             <div className="infra-icon">💾</div>
                             <h4>Lưu Trữ Bền Vững</h4>
-                            <p className="gpu-list">20GB - 50GB Riêng</p>
+                            <p className="gpu-list">Auto Backup 100GB · 150GB · 200GB</p>
                             <p>Tắt máy — Luồng công việc được lưu lại, dữ liệu an toàn, backup tự động</p>
                         </div>
                     </div>
@@ -336,39 +336,6 @@ export default function TrangChuPage() {
             </div>
 
             {trialModal}
-
-            <div className="modal-overlay" id="packageModal">
-                <div className="modal">
-                    <button className="close-btn" onClick={() => { if (typeof window !== 'undefined') (0, eval)("closeModal()"); }}>✕</button>
-                    <h3>🖥️ Bạn sắp khởi tạo:</h3>
-                    <p className="workstation-name" id="modalWorkstationName">ComfyUI — Character & Art</p>
-                    <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>Chọn gói GPU cho máy chủ của bạn:</p>
-                    <div className="options">
-                        <div className="option recommended" onClick={() => { if (typeof window !== 'undefined') (0, eval)("selectPlanFromModal('Pro')"); }}>
-                            <h4>⭐ GỢI Ý TỐT NHẤT</h4>
-                            <p style={{ fontSize: '12.5px' }}>Gói Pro</p>
-                            <p className="price-sm">2.400.000đ<span style={{ fontSize: '11px' }}>/combo</span></p>
-                            <p className="spec">RTX 4090 • 110 giờ</p>
-                        </div>
-                        <div className="option" onClick={() => { if (typeof window !== 'undefined') (0, eval)("selectPlanFromModal('Starter')"); }}>
-                            <h4>💰 TIẾT KIỆM</h4>
-                            <p style={{ fontSize: '12.5px' }}>Gói Starter</p>
-                            <p className="price-sm">1.400.000đ<span style={{ fontSize: '11px' }}>/combo</span></p>
-                            <p className="spec">RTX 3090 • 110 giờ</p>
-                        </div>
-                    </div>
-                    <a
-                      href="#"
-                      className="trial-link"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        openTrialModal();
-                      }}
-                    >
-                      💡 Mới dùng lần đầu? Dùng thử 3 giờ GPU miễn phí →
-                    </a>
-                </div>
-            </div>
       </>
     </>
   );

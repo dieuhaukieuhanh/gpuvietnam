@@ -4,6 +4,7 @@ import type { MachineSessionPhase } from '@/hooks/useDashboard';
 import {
   createEmptyMachineMetrics,
   isAutostopOfflineMessage,
+  isComfyWorkspaceReady,
   mergeMetricsFromStatusPoll,
   type MachineMetricsSnapshot,
 } from '@/lib/scb-dashboard-machine-view';
@@ -19,6 +20,8 @@ type InfraPollResponse = {
   error?: string;
   metrics?: MachineMetricsSnapshot['metrics'];
   comfyUrl?: string | null;
+  workReady?: boolean;
+  comfyProxyEnabled?: boolean;
   ip?: string | null;
   port?: number | null;
   template?: string | null;
@@ -39,11 +42,11 @@ export function shouldPollInfra(phase: MachineSessionPhase | null | undefined): 
 
 export function pollIntervalMs(
   phase: MachineSessionPhase | null | undefined,
-  hasComfyUrl = false,
+  hasComfyWorkspace = false,
 ): number {
   if (phase === 'stopping') return STATUS_POLL_STOPPING_MS;
   if (phase === 'running') {
-    return hasComfyUrl ? STATUS_POLL_RUNNING_MS : STATUS_POLL_RUNNING_WAIT_COMFY_MS;
+    return hasComfyWorkspace ? STATUS_POLL_RUNNING_MS : STATUS_POLL_RUNNING_WAIT_COMFY_MS;
   }
   return STATUS_POLL_BOOT_MS;
 }

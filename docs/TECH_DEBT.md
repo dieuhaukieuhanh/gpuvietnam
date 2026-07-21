@@ -502,24 +502,24 @@ OTP phù hợp VN; Supabase Auth nhanh triển khai; chưa cần social login.
 
 ### Description
 
-Backup trước destroy dùng SSH vào host Vast + tar + upload R2; chưa có backup adapter abstract.
+Stop-backup từng phụ thuộc SSH (Vast/Clore tar + upload R2). Đang chuyển HTTP-first.
 
 ### Current Design
 
-Unified destroy gọi backup khi running; failure vẫn destroy theo policy. Log `backup_logs`.
+App ưu tiên **L2 HTTP flush** (`POST /gpuvietnam/backup/flush` qua Comfy custom node + presign) rồi mới fallback SSH. Unified destroy vẫn gọi backup khi running; failure vẫn destroy theo policy. Log `backup_logs`. Provision gate HTTP-first gắn `ops_degraded` khi SSH soft-fail — máy vẫn giao nếu Comfy HTTP OK.
 
 ### Why It Exists
 
-Vast expose SSH; không có snapshot API chuẩn; R2 đủ cho archive.
+Vast/Clore expose SSH; không có snapshot API chuẩn; R2 đủ cho archive. HTTP flush giảm phụ thuộc SSH flake (đặc biệt Clore).
 
 ### Why It Is Accepted
 
-Principle 12 — backup tách billing; Principle 31 — user owns data; đủ cho ComfyUI folders.
+Principle 12 — backup tách billing; Principle 31 — user owns data; đủ cho ComfyUI folders. SSH còn là fallback cho đến khi flush HTTP ổn định cao.
 
 ### Risks
 
-- Provider không SSH → backup không chạy.
-- Network/SSH flake → mất data user.
+- HTTP flush fail + SSH chết (`ops_degraded`) → mất data user.
+- Network/SSH flake trên path fallback.
 - Backup sync trong destroy → timeout edge case.
 
 ### Business Impact

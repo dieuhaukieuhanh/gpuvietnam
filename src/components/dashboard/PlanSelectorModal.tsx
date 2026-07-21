@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/gpu-pricing';
 export type ActivePlan = {
   id: string;
   inventoryId?: number;
+  subscriptionId?: string | null;
   type: 'main' | 'gift';
   plan_type?: 'combo' | 'hourly' | 'gift';
   plan: 'starter' | 'pro' | 'studio';

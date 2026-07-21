@@ -20,6 +20,8 @@ import { fetchLiveMetrics } from '@/lib/gpu/metrics';
 import { runReadPathProjectionFirst } from '@/lib/machines-drift-projection';
 import { toSyncShape } from '@/lib/machines-drift-core';
 import { resolveProjectionMachineStatus } from '@/lib/scb-read-path';
+import { redactComfyUpstreamForClient, isComfyProxyEnabled } from '@/lib/comfy-proxy';
+import { scrubMachineForCustomer } from '@/lib/machines-public';
 
 function scbDbg(label, payload) {
   console.log('[SCB-DBG][api/status/projection]', label, JSON.stringify(payload));
@@ -162,22 +164,25 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     });
   }
 
-  const responsePayload = {
-    status: isTrafficReady ? 'running' : liveStatus.status === 'running' ? 'starting' : liveStatus.status,
-    machineId: liveStatus.status === 'offline' ? null : activeMachine?.id ?? null,
-    instanceId: liveStatus.instanceId,
-    ip,
-    port,
-    comfyUrl,
-    message: liveStatus.message ?? null,
-    template: activeMachine?.template ? String(activeMachine.template) : null,
-    projectionFirst: true,
-    metrics,
-    idleMinutes: idleInfo.idleMinutes,
-    lastActivity: idleInfo.lastActivity,
-    minutesUntilAutoStop: idleInfo.minutesUntilAutoStop,
-    idleWarningActive: idleInfo.idleWarningActive,
-  };
+  const responsePayload = scrubMachineForCustomer(
+    redactComfyUpstreamForClient({
+      status: isTrafficReady ? 'running' : liveStatus.status === 'running' ? 'starting' : liveStatus.status,
+      machineId: liveStatus.status === 'offline' ? null : activeMachine?.id ?? null,
+      instanceId: liveStatus.instanceId,
+      ip,
+      port,
+      comfyUrl,
+      message: liveStatus.message ?? null,
+      template: activeMachine?.template ? String(activeMachine.template) : null,
+      projectionFirst: true,
+      metrics,
+      idleMinutes: idleInfo.idleMinutes,
+      lastActivity: idleInfo.lastActivity,
+      minutesUntilAutoStop: idleInfo.minutesUntilAutoStop,
+      idleWarningActive: idleInfo.idleWarningActive,
+      comfyProxyEnabled: isComfyProxyEnabled(),
+    }),
+  );
 
   scbDbg('EXIT ok', { id: scbReqId, status: responsePayload.status });
   return res.status(200).json(responsePayload);

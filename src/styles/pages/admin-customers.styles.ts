@@ -324,6 +324,30 @@ export const styles = `
   .admin-customers-panel .online-compact-no {
     color: #8888A0;
   }
+  .admin-customers-panel .provider-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+    line-height: 1.4;
+  }
+  .admin-customers-panel .provider-badge-clore {
+    color: #c4b5fd;
+    background: rgba(139, 92, 246, 0.18);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+  }
+  .admin-customers-panel .provider-badge-vast {
+    color: #7dd3fc;
+    background: rgba(14, 165, 233, 0.16);
+    border: 1px solid rgba(14, 165, 233, 0.35);
+  }
+  .admin-customers-panel .customer-expand-machine-status .provider-badge {
+    margin-left: 8px;
+  }
   .admin-customers-panel .anomaly-compact {
     font-size: 12px;
     font-weight: 600;

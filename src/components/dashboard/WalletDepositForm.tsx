@@ -264,7 +264,7 @@ export default function WalletDepositForm({
         ))}
       </div>
 
-      {showHints && !compact && (
+      {showHints && !compact && WALLET_RENEW_HINTS.length > 0 && (
         <div className="wallet-topup-hints">
           {WALLET_RENEW_HINTS.map((line) => (
             <p key={line}>{line}</p>

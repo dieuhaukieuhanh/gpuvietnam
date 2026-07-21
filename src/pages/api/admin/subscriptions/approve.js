@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin-auth';
 import { notifyPaymentSuccess } from '@/lib/user-notifications';
+import { syncUserPlanInventory } from '@/lib/user-plan-inventory';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 /**
@@ -43,6 +44,8 @@ export default async function handler(req, res) {
       userId: data.user_id,
       planName: data.plan,
     });
+
+    await syncUserPlanInventory(supabaseAdmin, data.user_id);
 
     return res.status(200).json({
       success: true,

@@ -13,6 +13,8 @@
 
 | Hạng mục | Trạng thái |
 |----------|------------|
+| **Auto-stop theo gói đang dùng** | ✅ Remaining/out-of-credit chỉ tính Starter/Pro/Studio đang chạy; hết giờ gói đó → tắt dù còn giờ gói khác |
+| **Cảnh báo 30 phút trước tắt (hết giờ)** | ✅ `credit_warning_sent` + notification `credit_warning`; UI `lowCreditWarning` = 30 phút |
 | **SCB 4.0 đóng băng** | ✅ Tag `scb-4.0` (commit `bbed8da`); ADR-004 ghi nhận 3 ngoại lệ product-layer |
 | **Server-authoritative remaining hours** | ✅ `POST /api/machines/destroy` nhận `clientRemainingHours`; CAS-guarded override projection; Truth `gpu_sessions` không đổi |
 | **`/api/machines/status` infra-only** | ✅ Bỏ `billingView`/billing fields khỏi response; billing từ `/api/dashboard/me` |
@@ -252,8 +254,8 @@ await gpu.healthCheck(instance.id);
 | Vị trí | Ghi chú |
 |--------|---------|
 | `getGpuService()` | Singleton chỉ wire `VastProvider` |
-| `infrastructure-providers.js` | Mock admin + `fetchVastAiOffers` TODO (chưa qua GPUService) |
-| `infrastructure-shared.ts` | `INFRA_PROVIDERS` có tên RunPod/TensorDock (UI filter mock) |
+| `infrastructure-providers.js` | `fetchVastAiOffers` + `fetchCloreAiOffers` live (data thật); `fetchRunPodOffers`/`fetchTensorDockOffers` còn TODO — chưa qua GPUService |
+| `infrastructure-shared.ts` | `INFRA_PROVIDERS` = Vast.ai / Clore.ai / RunPod / TensorDock (RunPod, TensorDock vẫn là mock filter) |
 | `start-machine.js` | ✅ Gọi GPUService + `buildWorkstationContainerEnv()` |
 
 ## Biến môi trường (`.env.local`)
@@ -414,6 +416,8 @@ Admin duyệt CK → active + server_status provisioning
 **File:** `AdminInfrastructurePanel.tsx`, `AdminInfrastructurePage.tsx`, `src/lib/infrastructure-providers.js`, `src/lib/infrastructure-shared.ts`, `src/lib/currency.js` (`USD_TO_VND`, `formatVndPerHour`)
 
 **Env (provisioning):** `VAST_AI_KEY` — qua `GPUService` → `VastProvider` (3090 / 4090 1x / 4090 2x). Admin mock hạ tầng: `infrastructure-providers.js` (chưa wire GPUService cho bảng giá market).
+
+**Nguồn data bảng giá market (`infrastructure-providers.js`):** `fetchVastAiOffers` (cần `VAST_AI_KEY`, POST `console.vast.ai/api/v0/bundles/`) và `fetchCloreAiOffers` (public GET `api.clore.ai/v1/marketplace`, không cần key) đều đã live — data thật, filter theo region Châu Á (`resolveAsiaRegionLabel`) + `UPTIME_THRESHOLD`. `fetchRunPodOffers`/`fetchTensorDockOffers` còn TODO (chưa có endpoint marketplace phù hợp). `fetchInfrastructureData()` dùng mock toàn bộ chỉ khi **tất cả** provider live trả về `null`.
 
 ## Admin tab Khách hàng ✅
 
@@ -613,8 +617,9 @@ Bảng `notifications` dùng chung với các tính năng khác — không nằm
 
 | Combo | Quota | Hiệu lực (mặc định) |
 |-------|--------|----------------------|
-| **Combo1** | 100h + **tặng 10h** | 45 ngày |
-| **Combo2** | 200h + **tặng 30h** | 120 ngày |
+| **Giờ lẻ** | Theo giờ thực dùng | 60 ngày |
+| **Combo1** | 100h + **tặng 10h** | 120 ngày |
+| **Combo2** | 200h + **tặng 30h** | 180 ngày |
 
 **Giá combo (VNĐ) = giờ cơ sở × giá/giờ gói** (10h/30h tặng kèm không tính tiền):
 
@@ -628,11 +633,11 @@ Bảng `notifications` dùng chung với các tính năng khác — không nằm
 
 | Loại tái tục | Thưởng | Điều kiện |
 |--------------|--------|-----------|
-| **Chủ động** (KH bấm tái tục) | **+5%** giờ cơ sở combo | Còn **>10h** (`PROACTIVE_RENEW_HOURS_THRESHOLD`) |
-| **Gia hạn tự động** (bật trong Cài đặt) | **+3%** giờ cơ sở combo | `auto_renew_enabled` + Combo |
-| Tái tục khi còn **≤10h** | **+3%** (cùng mức auto) | Khuyến khích gia hạn sớm |
+| **Chủ động** (KH bấm tái tục / CK) | Không thưởng | — |
+| **Gia hạn tự động** (bật trong Cài đặt) | **+3%** giờ cơ sở combo | `auto_renew_enabled` + Combo + còn **≥10h** |
+| Tái tục tự động khi còn **<10h** | Không thưởng | — |
 
-Tổng giờ tái tục = `baseHours + comboBonus (10/30) + renewBonus (3% hoặc 5%)`.
+Tổng giờ tái tục = `baseHours + comboBonus (10/30) + renewBonus (3% nếu auto-renew & ≥10h, ngược lại 0)`.
 
 - **UI chọn giờ:** `BillingToggleBar.tsx` — Theo giờ / Combo1 / Combo2
 - **Bảng giá:** `HomePricingSection.tsx` — trang chủ `#pricing`, `/bang-gia`
@@ -1004,6 +1009,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 
 ## Đã xong (gần đây)
 
+- [x] **Auto-stop theo gói đang dùng + cảnh báo 30 phút** — Remaining/out-of-credit scoped Starter/Pro/Studio của máy chạy; hết giờ gói đó → tắt dù còn giờ gói khác; `credit_warning` notification + `machines.credit_warning_sent` (migration `0035`)
 - [x] **SCB 4.0 đóng băng** — tag `scb-4.0` (commit `bbed8da`); ADR-004 + SCB_CHANGELOG entry; ADR-001..004 closed set
 - [x] **Server-authoritative remaining hours (Phương án 4)** — `POST /api/machines/destroy` nhận `clientRemainingHours` + `clientSessionDurationSeconds`; server validate drift ≤ 0.05h + non-gain; CAS-guarded override `subscriptions.hours_used` / `manual_hour_grants.hours_used` (projection only); settlement-fail guard; `gpu_sessions` SoT không đổi
 - [x] **`/api/machines/status` infra-only** — bỏ `billingView`/`remainingFields`/`sessionFields`/`outOfHours`/`lowCreditWarning`; billing truth từ `/api/dashboard/me`; xem `docs/ui/DASHBOARD_VIEW_CONTRACT.md`
@@ -1067,7 +1073,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - [x] **Wire start-machine** — Vast provisioning, multi-offer retry, billing, đổi môi trường
 - [x] **setup-workstation.sh** — workflow theo môi trường; SSH `VAST_SSH_PRIVATE_KEY_PATH`
 - [x] **Dockerfile hardening** — PyTorch timeout/retry, pin frontend, git clone retry
-- [x] **Mô hình giá Vast.ai** — giá vốn/giá bán theo giờ (3090/4090/2×4090); combo 100h+10h / 200h+30h; tái tục +5% / auto-renew +3%
+- [x] **Mô hình giá Vast.ai** — giá vốn/giá bán theo giờ (3090/4090/2×4090); combo 100h+10h / 200h+30h; tái tục chủ động không thưởng / auto-renew +3% khi còn ≥10h
 - [x] **Tầng GPU Service** — `src/lib/gpu/`: `GPUService` → `GPUProvider` → `VastProvider`; domain `GPUInstance` / `GPUJob` / `GPUStatus`; đã wire `start-machine`
 - [x] **Hỗ trợ từ xa (một chiều)** — `support_sessions` + API; Admin gửi → KH đồng ý/từ chối qua chuông 🔔; phiên 30 phút; bỏ card 🔧 Cần trợ giúp? trên Dashboard
 - [x] **Chuông thông báo Dashboard** — `NotificationBell` + `NotificationDropdown` (approve/reject inline cho `support_request`)

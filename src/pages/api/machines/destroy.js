@@ -2,7 +2,7 @@ import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import { getAdminUserFromRequest, isAdminSecretValid } from '@/lib/admin-auth';
 import { DESTROY_PIPELINE_OUTCOME } from '@/lib/destroy-pipeline-core';
 import {
-  getGpuService,
+  getGpuServiceForMachine,
   snapshotToMachineRecord,
   resolveMachineSessionView,
   persistStopRequested,
@@ -111,7 +111,10 @@ async function completeUserDestroy(supabaseAdmin, gpuService, params) {
     reason,
   });
 
-  if (lifecycleRecord && subscription) {
+  // Only advance lifecycle to destroyed when the provider destroy actually succeeded.
+  // Marking DESTROY_COMPLETED on a failed cancel leaves the UI/DB believing the GPU is off
+  // while Clore/Vast may still be billing.
+  if (result.destroyed && lifecycleRecord && subscription) {
     await persistDestroyCompleted(
       supabaseAdmin,
       subscription.id,
@@ -139,7 +142,6 @@ export default async function handler(req, res) {
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
-    const gpuService = getGpuService();
 
     const adminUser = await getAdminUserFromRequest(req);
     const isAdmin = Boolean(adminUser) || isAdminSecretValid(req);
@@ -161,16 +163,32 @@ export default async function handler(req, res) {
       reason = normalizeDestroyReason(req.body);
     }
 
-    const { data: subscription } = await supabaseAdmin
-      .from('subscriptions')
-      .select('id, server_status, env_name, status')
-      .eq('user_id', targetUserId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
     const activeMachine = await getActiveMachineForUser(supabaseAdmin, targetUserId);
+
+    // Prefer the subscription linked to the running machine — not "newest active"
+    // (user may have Starter + Pro; wrong row breaks stop lifecycle / settlement).
+    let subscription = null;
+    if (activeMachine?.subscription_id) {
+      const { data } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, server_status, env_name, status, billing, plan')
+        .eq('id', String(activeMachine.subscription_id))
+        .maybeSingle();
+      subscription = data;
+    }
+    if (!subscription) {
+      const { data } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, server_status, env_name, status, billing, plan')
+        .eq('user_id', targetUserId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      subscription = data;
+    }
+
+    const gpuService = getGpuServiceForMachine(activeMachine);
     let lifecycleRecord = subscription
       ? snapshotToMachineRecord(subscription, activeMachine, targetUserId)
       : null;
@@ -261,7 +279,48 @@ export default async function handler(req, res) {
         console.error('[machines/destroy] settlement failed:', error);
       }
 
-      if (useClientValue && !destroyError && preSettlementEntitlement && clientUsedHours != null) {
+      if (destroyError) {
+        console.warn(
+          '[machines/destroy] destroy threw — not settling hours or marking idle',
+          { message: destroyError?.message },
+        );
+        return res.status(500).json({
+          error: 'Không tắt được máy (lỗi hệ thống). Vui lòng thử lại sau vài giây.',
+          retryable: true,
+          machineSessionView: resolveMachineSessionView(lifecycleRecord, {
+            envName: subscription?.env_name ?? null,
+          }),
+          billingView: await resolveBillingSessionView(supabaseAdmin, targetUserId, {
+            machine: activeMachine,
+            machineSessionPhase: 'stopping',
+          }).catch(() => null),
+        });
+      }
+
+      if (!destroyResult?.destroyed) {
+        console.warn('[machines/destroy] provider destroy incomplete', {
+          outcome: destroyResult?.outcome,
+          lastStep: destroyResult?.lastStep,
+          retryable: destroyResult?.retryable,
+        });
+        return res.status(409).json({
+          error:
+            'Chưa tắt được máy phía provider (có thể đang bị giới hạn tốc độ API). Vui lòng thử lại sau vài giây.',
+          retryable: true,
+          reason,
+          machineSessionView: resolveMachineSessionView(lifecycleRecord, {
+            envName: subscription?.env_name ?? null,
+          }),
+          billingView: await resolveBillingSessionView(supabaseAdmin, targetUserId, {
+            machine: activeMachine,
+            machineSessionPhase: 'stopping',
+          }).catch(() => null),
+          ...mapDestroyApiResponse(destroyResult),
+        });
+      }
+
+      // Hours override only after a verified provider destroy.
+      if (useClientValue && preSettlementEntitlement && clientUsedHours != null) {
         const targetHoursUsed = Math.max(
           0,
           preSettlementEntitlement.hoursUsed + Math.max(0, clientUsedHours),
@@ -280,11 +339,6 @@ export default async function handler(req, res) {
             clientRemainingHours,
           });
         }
-      } else if (useClientValue && destroyError) {
-        console.warn(
-          '[machines/destroy] skip client override — settlement failed, fallback to server-authoritative',
-          { destroyErrorMessage: destroyError?.message },
-        );
       }
 
       const idleView = buildIdleMachineSessionView(subscription, targetUserId);
@@ -295,14 +349,6 @@ export default async function handler(req, res) {
         machine: null,
         machineSessionPhase: 'idle',
       });
-
-      if (destroyError) {
-        return res.status(500).json({
-          error: 'Phiên đã đóng nhưng settlement thất bại. Vui lòng tải lại trang.',
-          machineSessionView: idleView,
-          billingView: settledBillingView,
-        });
-      }
 
       const backupMessage =
         destroyResult?.backupSuccess === true
@@ -327,7 +373,7 @@ export default async function handler(req, res) {
       reason,
     });
 
-    if (lifecycleRecord && subscription) {
+    if (result.destroyed && lifecycleRecord && subscription) {
       await persistDestroyCompleted(
         supabaseAdmin,
         subscription.id,
@@ -363,7 +409,13 @@ export default async function handler(req, res) {
           billingView,
         });
       }
-      return res.status(404).json({ error: 'Không tắt được máy. Vui lòng thử lại.' });
+      return res.status(409).json({
+        error:
+          'Chưa tắt được máy phía provider. Vui lòng thử lại sau vài giây.',
+        retryable: Boolean(result.retryable),
+        reason,
+        ...mapDestroyApiResponse(result),
+      });
     }
 
     await notifyAfterMachineDestroy(

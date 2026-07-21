@@ -312,9 +312,19 @@ BEGIN
         END IF;
 
         -- Lock + read current hours_used (SCB 3.4A §8: FOR UPDATE per row).
-        EXECUTE format('SELECT hours_used FROM %I WHERE id = $1 FOR UPDATE', v_line_table)
-          INTO v_current_hours
-          USING v_line_id;
+        -- Cast id: subscriptions.id is uuid; manual_hour_grants.id is bigint.
+        -- JSON ->> always yields text, so untyped `$1` caused `uuid/bigint = text`.
+        IF v_line_table = 'manual_hour_grants' THEN
+          SELECT hours_used INTO v_current_hours
+          FROM public.manual_hour_grants
+          WHERE id = v_line_id::bigint
+          FOR UPDATE;
+        ELSE
+          SELECT hours_used INTO v_current_hours
+          FROM public.subscriptions
+          WHERE id = v_line_id::uuid
+          FOR UPDATE;
+        END IF;
 
         IF v_current_hours IS NULL THEN
           v_err_code := 'CLAIM_PRECONDITION';
@@ -327,12 +337,19 @@ BEGIN
         -- re-read value on retries). SCB 3.4A §5 step 3.
         v_next_hours := round((v_expected_hours + v_line_hours)::numeric, 2);
 
-        EXECUTE format(
-          'UPDATE %I SET hours_used = $1 WHERE id = $2 AND hours_used = $3 RETURNING hours_used',
-          v_line_table
-        )
-          INTO v_final_hours
-          USING v_next_hours, v_line_id, v_expected_hours;
+        IF v_line_table = 'manual_hour_grants' THEN
+          UPDATE public.manual_hour_grants
+            SET hours_used = v_next_hours
+            WHERE id = v_line_id::bigint
+              AND hours_used = v_expected_hours
+            RETURNING hours_used INTO v_final_hours;
+        ELSE
+          UPDATE public.subscriptions
+            SET hours_used = v_next_hours
+            WHERE id = v_line_id::uuid
+              AND hours_used = v_expected_hours
+            RETURNING hours_used INTO v_final_hours;
+        END IF;
 
         IF v_final_hours IS NOT NULL THEN
           -- CAS succeeded.
@@ -365,7 +382,8 @@ BEGIN
     -- =============================================================
     IF v_projection_sync THEN
       BEGIN
-        -- Gift / manual-grant backed inventory rows.
+        -- Gift / manual-grant backed inventory rows (active projection only —
+        -- do not revive expired duplicate inventory rows).
         UPDATE public.user_plan_inventory upi
           SET hours_remaining = round((g.hours_granted - g.hours_used)::numeric, 2),
               status = CASE
@@ -376,7 +394,8 @@ BEGIN
           FROM public.manual_hour_grants g
           WHERE upi.grant_id = g.id
             AND upi.user_id  = v_user_id
-            AND g.user_id    = v_user_id;
+            AND g.user_id    = v_user_id
+            AND upi.status IN ('active', 'depleted');
 
         -- Subscription-backed inventory rows (combo / hourly).
         UPDATE public.user_plan_inventory upi
@@ -389,7 +408,8 @@ BEGIN
           FROM public.subscriptions s
           WHERE upi.subscription_id = s.id
             AND upi.user_id         = v_user_id
-            AND s.user_id           = v_user_id;
+            AND s.user_id           = v_user_id
+            AND upi.status IN ('active', 'depleted');
       EXCEPTION WHEN OTHERS THEN
         v_err_code := 'PROJECTION_FAILED';
         v_err_msg  := 'user_plan_inventory sync failed: ' || SQLERRM;

@@ -40,14 +40,13 @@ describe('provider adapter contract (Phase 3)', () => {
       bootstrapProviderRegistry();
     });
 
-    it('registers vast + stub providers', () => {
+    it('registers exactly clore, vast, salad, runpod', () => {
       const providers = listRegisteredProviders();
       const ids = providers.map((p) => p.id).sort();
       assert.deepEqual(ids, [
-        'gpuvietnam_internal',
-        'interdata',
+        'clore',
+        'runpod',
         'salad',
-        'tensordock',
         'vast',
       ]);
     });
@@ -66,11 +65,16 @@ describe('provider adapter contract (Phase 3)', () => {
       assert.ok(typeof health.healthy === 'boolean');
     });
 
-    it('stub adapters expose capabilities but listOffers empty', async () => {
+    it('salad + runpod stubs expose capabilities but listOffers empty', async () => {
       const salad = getProviderAdapter('salad');
       assert.equal(salad.getCapabilities().implemented, false);
       const offers = await salad.listOffers({ gpuLine: 'rtx4090_1x' });
       assert.deepEqual(offers, []);
+
+      const runpod = getProviderAdapter('runpod');
+      assert.equal(runpod.getCapabilities().implemented, false);
+      const runpodOffers = await runpod.listOffers({ gpuLine: 'rtx4090_1x' });
+      assert.deepEqual(runpodOffers, []);
     });
   });
 
@@ -107,7 +111,7 @@ describe('provider adapter contract (Phase 3)', () => {
           num_gpus: 1,
           gpu_ram: 24576,
           reliability: 0.999,
-          disk_space: 32,
+          disk_space: 80,
           inet_down: 500,
           geolocation: 'Taiwan',
           dph_total: 0.5,

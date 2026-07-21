@@ -121,12 +121,31 @@ export const styles = `:root {
         .toggle-btn { padding: 10px 22px; border-radius: 14px; font-size: 13.5px; font-weight: 500; cursor: pointer; border: none; background: transparent; color: var(--text-muted); transition: all 0.25s; }
         .toggle-btn.active { background: var(--accent-blue); color: white; }
 
-        .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1100px; margin: 0 auto 60px; align-items: stretch; }
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 20px;
+            max-width: 1100px;
+            margin: 0 auto 60px;
+            align-items: stretch;
+        }
         @media (max-width: 1000px) { .pricing-grid { grid-template-columns: 1fr; max-width: 480px; } }
         .plan-card {
             background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: var(--radius-3xl); padding: 30px; display: flex;
-            flex-direction: column; position: relative; transition: all 0.4s;
+            border-radius: var(--radius-3xl); padding: 30px;
+            display: grid;
+            grid-template-rows: subgrid;
+            grid-row: span 8;
+            row-gap: 0;
+            position: relative; transition: all 0.4s;
+        }
+        @media (max-width: 1000px) {
+            .plan-card {
+                display: flex;
+                flex-direction: column;
+                grid-row: auto;
+                grid-template-rows: none;
+            }
         }
         .plan-card:hover { border-color: rgba(79, 142, 247, 0.5); }
         .plan-card.featured { border-color: var(--accent-blue); box-shadow: var(--shadow-pro); background: #111118; }
@@ -145,10 +164,83 @@ export const styles = `:root {
             background: var(--accent-blue); color: white; padding: 4px 16px;
             border-radius: 20px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
         }
-        .plan-card .plan-icon { font-size: 26px; margin-bottom: 18px; }
-        .plan-card .plan-name { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-        .plan-card .plan-tagline { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5; }
-        .plan-card .plan-price-row { padding-bottom: 22px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+        .plan-card .plan-card-head,
+        .plan-card .plan-audience-block,
+        .plan-card .plan-bestfor-block,
+        .plan-card .plan-features-block,
+        .plan-card .plan-card-footer {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        .plan-card .plan-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .plan-card .plan-icon { font-size: 26px; margin-bottom: 0; line-height: 1; }
+        .plan-card .plan-name { font-size: 26px; font-weight: 700; margin-bottom: 0; }
+        .plan-card .plan-tagline { font-size: 13px; color: var(--text-secondary); margin-bottom: 0; line-height: 1.5; }
+        .plan-card .plan-audience-block { margin-bottom: 0; padding-top: 24px; padding-bottom: 20px; }
+        .plan-card .plan-audience-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .plan-card .plan-audience-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+        .plan-card .plan-price-row {
+            padding-top: 4px;
+            padding-bottom: 22px;
+            margin-bottom: 0;
+            border-bottom: 1px solid var(--border);
+            align-self: start;
+            width: 100%;
+        }
+        .plan-card .plan-bestfor-block {
+            padding-top: 22px;
+        }
+        .plan-card .plan-bestfor-block .plan-list,
+        .plan-card .plan-features-block .plan-list {
+            margin-bottom: 0;
+        }
+        .plan-card .plan-real-output {
+            background: #0A0A0F;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            font-size: 11.5px;
+            color: var(--text-secondary);
+            margin: 20px 0;
+            line-height: 1.5;
+            align-self: start;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .plan-card .plan-features-block {
+            padding-bottom: 0;
+        }
+        .plan-card .plan-trust {
+            background: #0D0D14;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            margin: 20px 0 0;
+            align-self: start;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .plan-card .plan-card-footer {
+            padding-top: 20px;
+            flex: 1;
+        }
         .plan-card .plan-price { font-size: 38px; font-weight: 700; display: flex; align-items: baseline; gap: 4px; }
         .plan-card .plan-price span { font-size: 14px; font-weight: 400; color: var(--text-muted); }
         .plan-card .plan-price-note { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
@@ -158,11 +250,10 @@ export const styles = `:root {
         .plan-card .plan-list li.excluded { color: #444460; }
         .plan-card .plan-list li .check-icon { color: var(--accent-green); flex-shrink: 0; margin-top: 2px; }
         .plan-card .plan-list li .x-icon { color: #333350; flex-shrink: 0; margin-top: 2px; }
-        .plan-card .plan-real-output { background: #0A0A0F; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 11.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
         .plan-card .plan-real-output strong { color: var(--accent-blue); }
-        .plan-card .plan-trust { background: #0D0D14; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 24px; }
         .plan-card .plan-trust li { font-size: 11.5px; color: var(--text-muted); margin-bottom: 7px; padding-left: 12px; border-left: 2px solid rgba(79, 142, 247, 0.4); line-height: 1.5; list-style: none; }
         .plan-card .plan-trust li:last-child { margin-bottom: 0; }
+        .plan-card .plan-upgrade { margin-bottom: 20px; }
         .plan-card .plan-cta { margin-top: auto; }
 
         .payment-section {

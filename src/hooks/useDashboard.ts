@@ -75,6 +75,7 @@ export type BillingSessionView = {
   currentSessionElapsedHours: number | null;
   settledSessionUsageHours: number | null;
   primaryPlanType: string | null;
+  appliedPlanKey?: 'starter' | 'pro' | 'studio' | null;
   walletBalance: number | null;
   planCardRemainingHours: number | null;
   planCardTotalHours: number | null;
@@ -175,7 +176,18 @@ export function useDashboard() {
             nowMs: Date.now(),
           },
         ) as MachineSessionView | null;
-        if (merged?.phase !== 'opening') {
+        // Resume-first: restore boot guard after refresh when a session is in flight / running
+        const resume = result.sessionResume as
+          | { shouldResume?: boolean; currentState?: string }
+          | undefined;
+        if (
+          resume?.shouldResume ||
+          merged?.phase === 'opening' ||
+          merged?.phase === 'running' ||
+          merged?.phase === 'disconnected'
+        ) {
+          markOpeningBootGuard();
+        } else {
           clearOpeningBootGuard();
         }
         return merged;
@@ -201,7 +213,7 @@ export function useDashboard() {
         }
       }
     }
-  }, [session?.access_token, clearOpeningBootGuard, mergeBillingView]);
+  }, [session?.access_token, clearOpeningBootGuard, markOpeningBootGuard, mergeBillingView]);
 
   const applyMachineSessionView = useCallback((view: MachineSessionView | null) => {
     if (view?.phase === 'opening') {

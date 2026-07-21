@@ -43,10 +43,15 @@ export function tryGetProviderAdapter(providerId) {
 }
 
 /**
+ * Default marketplace provider for getGpuService() when no machine/provider is known.
+ * Aligns with PROVIDER_ROUTING — Vast primary, Clore secondary.
+ * Override with GPU_PROVIDER / DEFAULT_GPU_PROVIDER.
  * @returns {string}
  */
 export function getDefaultProviderId() {
-  return (process.env.GPU_PROVIDER ?? process.env.DEFAULT_GPU_PROVIDER ?? 'vast').trim() || 'vast';
+  const fromEnv = (process.env.GPU_PROVIDER ?? process.env.DEFAULT_GPU_PROVIDER ?? '').trim();
+  if (fromEnv) return fromEnv;
+  return 'vast';
 }
 
 /**

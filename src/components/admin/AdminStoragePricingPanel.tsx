@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { adminFetch } from '@/lib/admin-session';
+import AdminBackupIntervalsPanel from '@/components/admin/AdminBackupIntervalsPanel';
 
 export type StoragePricingRow = {
   id: string;
@@ -254,6 +255,8 @@ export default function AdminStoragePricingPanel() {
 
   return (
     <>
+      <AdminBackupIntervalsPanel />
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="stat-label">Quản lý giá</div>
         <div className="stat-sub" style={{ marginTop: 8, lineHeight: 1.6 }}>

@@ -36,13 +36,13 @@ export function useGpuPricingConfig() {
         throw new Error(data.error ?? 'Không tải được bảng giá.');
       }
 
-      const normalized = data.config as GpuPricingConfig;
-      applyGpuPricingFromConfig(normalized);
+      const normalized = applyGpuPricingFromConfig(data.config) as GpuPricingConfig;
       setConfig(normalized);
       setPlans(data.plans ?? buildCheckoutPlansFromConfig(normalized));
     } catch (err) {
-      const fallback = getDefaultGpuPricingConfig() as GpuPricingConfig;
-      applyGpuPricingFromConfig(fallback);
+      const fallback = applyGpuPricingFromConfig(
+        getDefaultGpuPricingConfig(),
+      ) as GpuPricingConfig;
       setConfig(fallback);
       setPlans(buildCheckoutPlansFromConfig(fallback));
       setError(err instanceof Error ? err.message : 'Không tải được bảng giá.');

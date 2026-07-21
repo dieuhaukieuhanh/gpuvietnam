@@ -31,17 +31,6 @@ export function initTrangChu(): void {
             }
         }
 
-        function closeModal() {
-            document.getElementById('packageModal').classList.remove('active');
-            document.body.style.overflow = '';
-        }
-
-        function selectPlanFromModal(planName) {
-            closeModal();
-            if (planName === 'Starter') startFreeTrial();
-            else scrollToPlan(planName);
-        }
-
         function startFreeTrial() { alert('🎁 Đăng ký dùng thử 3 giờ GPU miễn phí!\\n\\n📱 Nhắn Zalo: 0961 862 141\\n📧 Hoặc Email: hello@gpuvietnam.com\\n\\nChúng tôi sẽ tạo máy chủ GPU dùng thử cho bạn ngay lập tức.'); }
         function contactCustomWorkstation() { alert('🎯 Workstation Theo Yêu Cầu\\n\\n📱 Nhắn Zalo: 0961 862 141 mô tả nhu cầu của bạn.\\nChúng tôi sẽ tạo môi trường riêng trong 24h — miễn phí setup.'); }
         function scrollToSection(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
@@ -50,9 +39,9 @@ export function initTrangChu(): void {
         const faqs = [
             { q: 'GPUVietnam có phải là công cụ tạo ảnh không?', a: 'Không. Chúng tôi cho thuê máy chủ GPU đã cài sẵn ComfyUI và các công cụ AI Art. Bạn nhận được một máy chủ ảo riêng, toàn quyền kiểm soát — như máy tính của chính mình, nhưng mạnh hơn gấp 10 lần.' },
             { q: 'Tôi không biết dùng ComfyUI thì có dùng được không?', a: 'Được — có video hướng dẫn tiếng Việt từng bước. Kẹt chỗ nào nhắn Zalo là có người trả lời ngay.' },
-            { q: 'File của tôi có bị mất khi tắt máy không?', a: 'Gói Pro và Studio có lưu trữ cố định, file không mất. Gói Starter tự động sync về Google Drive khi kết thúc phiên.' },
-            { q: 'Đội mình 3 người, dùng chung 1 tài khoản được không?', a: 'Được. Gói Studio hỗ trợ tối đa 5 người dùng cùng lúc, mỗi người có workspace riêng biệt.' },
-            { q: 'Dữ liệu của tôi có được bảo mật không?', a: 'Có. Mỗi workspace được tách biệt hoàn toàn.' }
+            { q: 'File của tôi có bị mất khi tắt máy không?', a: 'Mọi gói đều có Auto Backup (Starter 100GB · Pro 150GB · Studio 200GB) kèm SSD theo gói (50 / 80 / 120GB). Outputs và workflows được lưu định kỳ trong phiên; có thể nâng dung lượng Backup khi cần.' },
+            { q: 'Đội mình 3 người, dùng chung 1 tài khoản được không?', a: 'Hiện tại mỗi tài khoản chạy một phiên / một môi trường tại một thời điểm. Studio là gói RTX 5090 (32GB) cho production nặng của một người dùng — chưa phải gói chia máy cho cả đội. Đội cần nhiều người làm song song nên dùng tài khoản riêng.' },
+            { q: 'Dữ liệu của tôi có được bảo mật không?', a: 'Có. Mỗi khách có máy/phiên riêng, dữ liệu không lẫn với khách khác.' }
         ];
 
         function renderFAQ() {
@@ -60,12 +49,6 @@ export function initTrangChu(): void {
             if (!grid) return;
             grid.innerHTML = faqs.map(faq => \`<div class="faq-item" onclick="this.classList.toggle('open')"><h4>\${faq.q} <span style="font-size: 18px;">▾</span></h4><p>\${faq.a}</p></div>\`).join('');
         }
-
-        const packageModal = document.getElementById('packageModal');
-        if (packageModal) {
-          packageModal.addEventListener('click', function(e) { if (e.target === this) closeModal(); });
-        }
-        document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 
         // ─── Init ─────────────────────────────────────────────────────────
         renderFAQ();`);

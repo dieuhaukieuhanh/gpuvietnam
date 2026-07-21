@@ -3,10 +3,12 @@ import { describe, it } from 'node:test';
 import { REMAINING_STATE_OK } from './remaining-time.js';
 import {
   AUTO_STOP_DECISION,
+  CREDIT_WARN_MINUTES,
   decideAutoStopAction,
   shouldStopForOutOfCredit,
   shouldStopForIdle,
   shouldWarnForIdle,
+  shouldWarnForLowCredit,
 } from './auto-stop-core.js';
 
 const okRemaining = (remainingHours, primaryPlanType = 'combo') => ({
@@ -50,6 +52,19 @@ describe('idle decisions', () => {
   });
 });
 
+describe('credit warning', () => {
+  it('warns at ≤ 30 minutes remaining', () => {
+    assert.equal(shouldWarnForLowCredit(okRemaining(0.5), false, true), true);
+    assert.equal(shouldWarnForLowCredit(okRemaining(CREDIT_WARN_MINUTES / 60), false, true), true);
+    assert.equal(shouldWarnForLowCredit(okRemaining(0.51), false, true), false);
+  });
+
+  it('does not warn twice or when already out of credit', () => {
+    assert.equal(shouldWarnForLowCredit(okRemaining(0.4), true, true), false);
+    assert.equal(shouldWarnForLowCredit(okRemaining(0), false, true), false);
+  });
+});
+
 describe('decideAutoStopAction', () => {
   const base = {
     machineStatus: 'running',
@@ -61,6 +76,7 @@ describe('decideAutoStopAction', () => {
     hasActiveJobs: false,
     idleMinutes: 10,
     idleWarningSent: false,
+    creditWarningSent: false,
   };
 
   it('T1 — remaining > 0 does not destroy for credit', () => {
@@ -73,6 +89,13 @@ describe('decideAutoStopAction', () => {
     const d = decideAutoStopAction({ ...base, remaining: okRemaining(0) });
     assert.equal(d.decision, AUTO_STOP_DECISION.DESTROY);
     assert.equal(d.reason, 'out_of_credit');
+  });
+
+  it('warns for low credit before idle checks', () => {
+    const d = decideAutoStopAction({ ...base, remaining: okRemaining(0.4) });
+    assert.equal(d.decision, AUTO_STOP_DECISION.WARN);
+    assert.equal(d.reason, 'low_credit');
+    assert.equal(d.remainingMinutes, 24);
   });
 
   it('T2 — idle timeout destroys when credit ok', () => {

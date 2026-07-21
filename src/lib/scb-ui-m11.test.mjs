@@ -267,7 +267,9 @@ describe('M11 frontend legacy removal (grep)', () => {
   it('DashboardOverview wires session UX helpers across three cards', () => {
     const source = readComponent('dashboard/DashboardOverview.tsx');
     assert.ok(source.includes('resolveTimerDisplayMode'));
-    assert.ok(!source.includes('DashboardSessionBootTimeline'));
+    assert.ok(source.includes('Đang mở phiên làm việc'));
+    assert.ok(source.includes('dashboard-opening-progress'));
+    assert.ok(!source.includes('<DashboardSessionBootTimeline'));
     assert.ok(source.includes('formatDisplayHours'));
     assert.ok(source.includes('planCardFromSubscription'));
     assert.ok(source.includes('showLiveTimer'));

@@ -76,7 +76,7 @@ export function mapProviderError(error, operation) {
 
   const message = error instanceof Error ? error.message : String(error);
   const retryable =
-    /timeout|ECONNRESET|ETIMEDOUT|502|503|504/i.test(message) ||
+    /timeout|ECONNRESET|ETIMEDOUT|502|503|504|429|code.?5|rate.?limit/i.test(message) ||
     /no_such_ask|not available|404\/3603/i.test(message);
 
   if (/no_such_ask|404\/3603|not available/i.test(message)) {
@@ -102,7 +102,7 @@ export function isRetryableGpuError(error) {
  */
 export function isGpuUnavailableError(error) {
   const message = error instanceof Error ? error.message : String(error);
-  return /no vast\.ai offers|hết gpu|out of stock|đang hết gpu|no_such_ask|not available|404\/3603/i.test(
+  return /no available workstation|no vast\.ai offers|no matching offer|hết gpu|out of stock|đang hết gpu|no_such_ask|not available|server-already-rented|404\/3603/i.test(
     message,
   );
 }
@@ -112,10 +112,13 @@ export function isGpuUnavailableError(error) {
  */
 export function formatGpuUserMessage(error) {
   if (isGpuUnavailableError(error)) {
-    return 'Đang hết GPU hoặc máy vừa được thuê, vui lòng thử lại sau giây lát';
+    return 'No Available Workstation';
   }
 
   const message = error instanceof Error ? error.message : String(error);
+  if (/bad host|gpu\/container|no such container|trying next offer/i.test(message)) {
+    return 'Máy provider lỗi GPU/container, đang thử máy khác…';
+  }
   if (/timeout|ETIMEDOUT/i.test(message)) {
     return 'Hết thời gian chờ, vui lòng thử lại';
   }

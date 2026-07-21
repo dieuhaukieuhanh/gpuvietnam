@@ -37,3 +37,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Stock model sync scratch
+local-models/
+
+# Local provision funnel journal (Clore/Vast smoke stats)
+/tmp/provision-journal.jsonl
+
+
+.vercel
+.env*

@@ -7,7 +7,7 @@ export function createGpuServiceWithProvider(provider) {
   return createGpuService(provider);
 }
 
-export { GPUService, createGpuService, getGpuService } from './gpu-service.js';
+export { GPUService, createGpuService, getGpuService, getGpuServiceForMachine } from './gpu-service.js';
 export { VastProvider } from './providers/vast/vast-provider.js';
 export { VastProviderAdapter } from './providers/vast/vast-provider-adapter.js';
 export { VastClient } from './providers/vast/vast-client.js';
@@ -31,12 +31,33 @@ export {
 } from './gpu-errors.js';
 export {
   PLAN_TO_GPU,
+  PACKAGE_SPECS,
   resolveGpuLineFromPlan,
+  resolvePackageSpec,
+  resolvePackageDiskSize,
+  resolveGpuImage,
   getDefaultGpuRegions,
   DEFAULT_GPU_IMAGE,
+  GPU_IMAGE_V3,
+  GPU_IMAGE_V4,
+  GPU_IMAGE_BY_LINE,
   DEFAULT_DISK_SIZE,
   DEFAULT_GPU_PORT,
+  NO_AVAILABLE_WORKSTATION_MESSAGE,
+  OFFER_SELECTION,
+  PROVIDER_ROUTING,
+  CLORE_SUPPORTED_GPU_LINES,
+  isCloreGpuLineSupported,
 } from './gpu-config.js';
+export { selectWorkstationOffers, median } from './offer-selection.js';
+export {
+  nextProviderInRotation,
+  provisionWithProviderFailover,
+  resolveProviderAttemptOrder,
+} from './provider-routing.js';
+export { CloreProvider } from './providers/clore/clore-provider.js';
+export { CloreProviderAdapter } from './providers/clore/clore-provider-adapter.js';
+export { CloreClient } from './providers/clore/clore-client.js';
 export { provisionGpuInstance } from './provision-instance.js';
 export {
   finalizeGpuSession,
@@ -96,6 +117,7 @@ export {
   triggerAutoStopDestroy,
   IDLE_WARN_MINUTES,
   IDLE_STOP_MINUTES,
+  CREDIT_WARN_MINUTES,
   computeIdleMinutes,
   fetchComfyQueueStats,
   getMachineById,
@@ -105,10 +127,12 @@ export {
   shouldStopForOutOfCredit,
   shouldStopForIdle,
   shouldWarnForIdle,
+  shouldWarnForLowCredit,
 } from './auto-stop.js';
 export {
   calculateRemaining,
   calculateTotalEntitlement,
+  calculateGiftComboEntitlement,
   calculateSettledUsage,
   calculateCurrentSessionElapsed,
   calculateSessionBillableSeconds,
@@ -118,6 +142,9 @@ export {
   systemClock,
   isUsableEntitlementPlan,
   resolvePrimaryPlanType,
+  filterEntitlementPlansForMachine,
+  normalizeEntitlementPlanKey,
+  resolveMachinePlanKey,
   assertAtMostOneRunningSession,
   RemainingInvariantError,
   REMAINING_STATE_OK,
@@ -212,3 +239,28 @@ export {
   reconcileSettlement,
   isVerifyPass,
 } from './provider-verify.js';
+export {
+  HOST_REPUTATION,
+  HOST_FAILURE_CATEGORY,
+  classifyHostFailure,
+  applyHostReputationToOffers,
+  rememberHostFailure,
+  rememberHostSuccess,
+  isHostExcludedByReputation,
+  getHostReputationMetrics,
+  resolveVastHostKey,
+  resolveCloreHostKey,
+  buildHostReputationKey,
+  withGpuLine,
+} from './host-reputation/index.js';
+export {
+  RETRY_ERROR_CATEGORY,
+  classifyRetryError,
+  decideRetryPolicy,
+  applyRetryDecision,
+  shouldRetryAnotherHost,
+  shouldRetrySameHost,
+  shouldRetryAnotherProvider,
+  getRetryPolicyMetrics,
+  RETRY_POLICY,
+} from '../provider-retry-policy/index.js';

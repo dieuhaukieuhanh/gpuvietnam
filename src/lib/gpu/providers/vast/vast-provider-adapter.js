@@ -3,7 +3,8 @@
  * Wraps existing VastProvider/VastClient without changing Vast business logic.
  */
 
-import { getDefaultGpuRegions, GPU_REGION_SCORES } from '../../gpu-config.js';
+import { getDefaultGpuRegions } from '../../gpu-config.js';
+import { getAsiaRegionScore } from '../../geo-asia.js';
 import { readProviderStateSnapshot } from '../../provider-verify.js';
 import { VAST_CAPABILITIES, defineProviderCapabilities } from '../../provider-abstraction/provider-capabilities.js';
 import { VastProvider } from './vast-provider.js';
@@ -41,6 +42,17 @@ export class VastProviderAdapter {
     });
   }
 
+  /**
+   * Cached capability snapshot (SWR). Independent of live marketplace inventory.
+   * @param {{ forceRefresh?: boolean; requestId?: string|null }} [options]
+   */
+  async getCapabilitiesCached(options = {}) {
+    const { getVastCapabilitiesCached } = await import(
+      '../../../provider-capability-cache/index.js'
+    );
+    return getVastCapabilitiesCached(options);
+  }
+
   /** @param {CreateMachineParams} params */
   async createMachine(params) {
     return this.legacyProvider.createInstance(params);
@@ -49,6 +61,17 @@ export class VastProviderAdapter {
   /** @param {string} instanceId */
   async destroyMachine(instanceId) {
     return this.legacyProvider.destroyInstance(instanceId);
+  }
+
+  /**
+   * @param {string} label
+   * @param {import('../../domain/gpu-instance').GPULine} [gpuLine]
+   */
+  async findMachineByLabel(label, gpuLine) {
+    if (typeof this.legacyProvider.findInstanceByLabel === 'function') {
+      return this.legacyProvider.findInstanceByLabel(label, gpuLine);
+    }
+    return null;
   }
 
   /** @param {string} instanceId */
@@ -70,12 +93,17 @@ export class VastProviderAdapter {
       if (filtered.length > 0) offerList = filtered;
     }
 
-    const ranked = findRankedGPUOffers(
-      params.gpuLine,
-      params.plan,
-      offerList,
-      params.limit ?? 10,
-    );
+    let ranked = [];
+    try {
+      ranked = findRankedGPUOffers(
+        params.gpuLine,
+        params.plan,
+        offerList,
+        params.limit ?? 10,
+      );
+    } catch {
+      return [];
+    }
 
     return ranked.map((item) => ({
       offerId: item.offerId,
@@ -94,7 +122,7 @@ export class VastProviderAdapter {
       return {
         id: key.replace(/\s+/g, '-'),
         label,
-        score: GPU_REGION_SCORES[key] ?? 50,
+        score: getAsiaRegionScore(label) || 50,
       };
     });
   }

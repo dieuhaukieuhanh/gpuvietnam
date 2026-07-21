@@ -26,11 +26,13 @@ import {
   ACTIVATE_OUTCOME,
 } from './session-activate.js';
 import { isProjectionTrafficReady } from '../scb-read-path.js';
+import { isEndpointResolved } from '../endpoint-utils.js';
 import {
   verifyInstanceRunning,
   createProviderVerifyPortFromGpuService,
   isVerifyPass,
 } from './provider-verify.js';
+import { selectPrimaryBillablePlanForMachine } from './remaining-time.js';
 
 /**
  * @param {Record<string, unknown>} row
@@ -57,19 +59,29 @@ function mapGpuSessionRowToRecord(row) {
  * @param {Record<string, unknown>} machine
  */
 async function loadBootstrapContext(supabaseAdmin, userId, machine) {
-  const [{ data: subscription }, plans] = await Promise.all([
-    supabaseAdmin
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+  const machineSubId =
+    machine?.subscription_id != null && String(machine.subscription_id).trim() !== ''
+      ? String(machine.subscription_id)
+      : null;
+
+  const [subscriptionResult, plans] = await Promise.all([
+    machineSubId
+      ? supabaseAdmin.from('subscriptions').select('*').eq('id', machineSubId).maybeSingle()
+      : supabaseAdmin
+          .from('subscriptions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
     fetchOrderedBillablePlansForUser(supabaseAdmin, userId),
   ]);
+  const subscription = subscriptionResult.data ?? null;
 
-  const primaryPlan = plans[0] ?? null;
+  // Gift-first burn order is global; must scope to this machine's package first
+  // or Pro sessions incorrectly link to the newest Starter gift row.
+  const primaryPlan = selectPrimaryBillablePlanForMachine(plans, machine, subscription);
   const inventoryId = parseInventoryId(primaryPlan?.id);
   const envIcon = subscription?.env_icon ? `${subscription.env_icon} ` : '';
   const template = `${envIcon}${machine.template ?? subscription?.env_name ?? 'ComfyUI'}`.trim();
@@ -240,13 +252,24 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
   }
 
   if (!isProjectionTrafficReady(machine)) {
-    scbObs('RETURN skip', {
-      reason: 'traffic_not_ready',
+    // Allow live verify when endpoint is already published — projection worker
+    // can lag; do not block billing forever with traffic_not_ready.
+    const endpointReady =
+      String(machine.status ?? '') === 'running' && isEndpointResolved(machine);
+    if (!endpointReady) {
+      scbObs('RETURN skip', {
+        reason: 'traffic_not_ready',
+        machineId: machine.id,
+        projection_verified_at: machine.projection_verified_at ?? null,
+        projection_message: machine.projection_message ?? null,
+      });
+      return { skipped: true, reason: 'traffic_not_ready' };
+    }
+    scbObs('traffic_not_ready bypass', {
       machineId: machine.id,
+      reason: 'endpoint_resolved_live_verify',
       projection_verified_at: machine.projection_verified_at ?? null,
-      projection_message: machine.projection_message ?? null,
     });
-    return { skipped: true, reason: 'traffic_not_ready' };
   }
 
   const verifyPort = createProviderVerifyPortFromGpuService(gpuService);

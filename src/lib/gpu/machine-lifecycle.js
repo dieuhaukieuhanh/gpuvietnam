@@ -3,13 +3,9 @@
  * Pure state machine. No DB, HTTP, Supabase, logging, or side effects.
  */
 
-import {
-  isMachineBooting,
-  isRecentBootMachine,
-  shouldCleanupLeakedBootMachine,
-  shouldRepairBootingSubscriptionDrift,
-} from '../machines-provisioning-sync.js';
+import { isMachineBooting, isRecentBootMachine, shouldCleanupLeakedBootMachine, shouldRepairBootingSubscriptionDrift } from '../machines-provisioning-sync.js';
 import { isProjectionTrafficReady } from '../scb-read-path.js';
+import { isEndpointResolved } from '../endpoint-utils.js';
 
 export const MACHINE_LIFECYCLE_STATUS = Object.freeze({
   IDLE: 'idle',
@@ -100,11 +96,23 @@ export function deriveLifecycleStatus(subscription, machine, context = {}) {
       !isProjectionTrafficReady(machine) &&
       !isBillingAnchored(machine)
     ) {
+      // Endpoint already published (e.g. Clore http_pub) — keep UI in running;
+      // billing still waits on openBillableSession / live verify.
+      if (isEndpointResolved(machine)) return MACHINE_LIFECYCLE_STATUS.RUNNING;
       return MACHINE_LIFECYCLE_STATUS.PROVISIONING;
     }
     return MACHINE_LIFECYCLE_STATUS.RUNNING;
   }
   if (serverStatus === 'provisioning') {
+    // Machine row already running with a public endpoint: do not keep the
+    // dashboard stuck on the boot checklist until subscription flips online.
+    if (
+      machine &&
+      machineStatus === 'running' &&
+      (isBillingAnchored(machine) || isProjectionTrafficReady(machine) || isEndpointResolved(machine))
+    ) {
+      return MACHINE_LIFECYCLE_STATUS.RUNNING;
+    }
     return MACHINE_LIFECYCLE_STATUS.PROVISIONING;
   }
   if (machine && machineStatus !== 'destroyed') {
@@ -551,6 +559,13 @@ export function detectDriftRepair(subscription, machine, nowMs = Date.now()) {
     return { repairAction: 'mark_destroyed', repairKind: 'mark_destroyed_local', reason: 'reset_stale_provisioning_boot' };
   }
   if (machine && subscription.server_status === 'offline') {
+    // Hour top-up / extra combo often creates a newer offline subscription while an
+    // older online subscription still owns the running machine. That is not a leak.
+    const machineSubId =
+      machine.subscription_id != null ? String(machine.subscription_id) : null;
+    if (machineSubId && machineSubId !== String(subscription.id)) {
+      return null;
+    }
     if (shouldRepairBootingSubscriptionDrift(machine, subscription.server_status, nowMs)) {
       return {
         repairAction: 'promote_provisioning',

@@ -1,4 +1,10 @@
-import { getPlanPrice } from '@/lib/gpu-pricing';
+import {
+  getPlanKeyFromName,
+  getPlanNameFromKey,
+  getPlanPrice,
+  getPlanPurchaseAmount,
+  normalizeHourlyPurchaseHours,
+} from '@/lib/gpu-pricing';
 import { ensureGpuPricingLoaded } from '@/lib/gpu-pricing-config';
 import {
   computeExpiresAt,
@@ -6,8 +12,93 @@ import {
   getPlanQuota,
 } from '@/lib/plan-hours';
 import { DEFAULT_CHECKOUT_ENV } from '@/lib/checkout-auth';
+import { syncUserPlanInventory } from '@/lib/user-plan-inventory';
 
 const VALID_BILLING = ['hourly', 'combo1', 'combo2'];
+
+/**
+ * @param {string} plan
+ * @returns {'starter'|'pro'|'studio'|null}
+ */
+function resolveGpuPlanKey(plan) {
+  const fromName = getPlanKeyFromName(plan);
+  if (fromName === 'starter' || fromName === 'pro' || fromName === 'studio') {
+    return fromName;
+  }
+  const planKey = String(plan ?? '')
+    .trim()
+    .toLowerCase();
+  if (planKey === 'starter' || planKey === 'pro' || planKey === 'studio') return planKey;
+  if (planKey.includes('starter')) return 'starter';
+  if (planKey.includes('studio')) return 'studio';
+  if (planKey.includes('pro')) return 'pro';
+  return null;
+}
+
+/**
+ * "Mua thêm N giờ lẻ" always creates a new hourly subscription row.
+ * Each purchase has its own 60-day validity — never merge into an existing
+ * Giờ lẻ line (UI shows one line per purchase; settlement pool still sums them).
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ * @param {string} plan
+ * @param {number} hours
+ * @param {{
+ *   expiresAt?: string|null,
+ *   env?: string,
+ *   icon?: string,
+ *   desc?: string|null,
+ * }} [options]
+ */
+export async function creditAdditionalHoursToHourlyPlan(
+  supabaseAdmin,
+  userId,
+  plan,
+  hours,
+  options = {},
+) {
+  const hoursNum = Math.max(0, Math.floor(Number(hours) || 0));
+  if (hoursNum <= 0) {
+    return { ok: false, error: 'Số giờ không hợp lệ.' };
+  }
+
+  const gpuPlan = resolveGpuPlanKey(plan);
+  if (!gpuPlan) {
+    return { ok: false, error: 'Gói GPU không hợp lệ.' };
+  }
+
+  const planLabel = getPlanNameFromKey(gpuPlan) ?? plan;
+  const now = new Date().toISOString();
+  const expiresAt = options.expiresAt ?? null;
+
+  const { data: subscription, error: insertErr } = await supabaseAdmin
+    .from('subscriptions')
+    .insert({
+      user_id: userId,
+      plan: planLabel,
+      billing: 'hourly',
+      env_name: options.env || DEFAULT_CHECKOUT_ENV.name,
+      env_icon: options.icon || DEFAULT_CHECKOUT_ENV.icon,
+      env_desc: options.desc ?? DEFAULT_CHECKOUT_ENV.desc,
+      gpu_label: getGpuLabel(planLabel),
+      hours_total: hoursNum,
+      hours_used: 0,
+      status: 'active',
+      server_status: 'offline',
+      is_trial: false,
+      transfer_note: `Ví: mua thêm ${hoursNum}h ${planLabel}`,
+      expires_at: expiresAt,
+      activated_at: now,
+      created_at: now,
+    })
+    .select('*')
+    .single();
+  if (insertErr) throw insertErr;
+
+  await syncUserPlanInventory(supabaseAdmin, userId);
+  return { ok: true, subscription, hoursAdded: hoursNum, gpuPlan };
+}
 
 export function normalizeGpuPurchaseInput(body) {
   const plan = body?.plan;
@@ -21,7 +112,32 @@ export function normalizeGpuPurchaseInput(body) {
     return { error: 'Thiếu thông tin gói.' };
   }
 
-  return { plan, billing, env, icon, desc, transferNote };
+  let hours = null;
+  if (billing === 'hourly' && body?.hours != null && body?.hours !== '') {
+    hours = normalizeHourlyPurchaseHours(body.hours);
+  }
+
+  const additional = body?.additional === true || body?.additional === '1' || body?.additional === 1;
+
+  return { plan, billing, env, icon, desc, transferNote, hours, additional };
+}
+
+function resolvePurchasePricing(plan, billing, hours) {
+  const quota = getPlanQuota(plan, billing);
+  if (billing === 'hourly') {
+    const purchaseHours = normalizeHourlyPurchaseHours(hours);
+    return {
+      price: getPlanPurchaseAmount(plan, billing, purchaseHours),
+      hoursTotal: purchaseHours,
+      validityDays: quota.validityDays,
+    };
+  }
+
+  return {
+    price: getPlanPrice(plan, billing),
+    hoursTotal: quota.hoursTotal,
+    validityDays: quota.validityDays,
+  };
 }
 
 export async function assertNoPendingGpuPayment(supabaseAdmin, userId) {
@@ -54,11 +170,11 @@ export async function replaceActiveSubscriptions(supabaseAdmin, userId) {
 export async function createPendingGpuSubscription(
   supabaseAdmin,
   userId,
-  { plan, billing, env, icon, desc, transferNote },
+  { plan, billing, env, icon, desc, transferNote, hours },
 ) {
   await ensureGpuPricingLoaded(supabaseAdmin);
-  const quota = getPlanQuota(plan, billing);
-  const expiresAt = computeExpiresAt(quota.validityDays);
+  const pricing = resolvePurchasePricing(plan, billing, hours);
+  const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
 
   const { data, error } = await supabaseAdmin
@@ -71,7 +187,7 @@ export async function createPendingGpuSubscription(
       env_icon: icon,
       env_desc: desc,
       gpu_label: getGpuLabel(plan),
-      hours_total: quota.hoursTotal,
+      hours_total: pricing.hoursTotal,
       hours_used: 0,
       status: 'pending_payment',
       server_status: 'offline',
@@ -91,10 +207,11 @@ export async function createPendingGpuSubscription(
 export async function purchaseGpuPlanWithWallet(
   supabaseAdmin,
   userId,
-  { plan, billing, env, icon, desc },
+  { plan, billing, env, icon, desc, hours, additional = false },
 ) {
   await ensureGpuPricingLoaded(supabaseAdmin);
-  const price = getPlanPrice(plan, billing);
+  const pricing = resolvePurchasePricing(plan, billing, hours);
+  const price = pricing.price;
   if (price <= 0) {
     return { ok: false, error: 'Gói này không hỗ trợ thanh toán ví.' };
   }
@@ -119,12 +236,58 @@ export async function purchaseGpuPlanWithWallet(
     };
   }
 
-  const quota = getPlanQuota(plan, billing);
-  const expiresAt = computeExpiresAt(quota.validityDays);
+  const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
   const newBalance = walletBalance - price;
 
-  await replaceActiveSubscriptions(supabaseAdmin, userId);
+  // Additional hourly → new Giờ lẻ lot (own 60-day expiry). Combo additional
+  // also inserts a new subscription below (no merge into existing combo lines).
+  if (additional && billing === 'hourly') {
+    const { error: walletError } = await supabaseAdmin
+      .from('users')
+      .update({ wallet_balance: newBalance, updated_at: now })
+      .eq('id', userId);
+    if (walletError) throw walletError;
+
+    await supabaseAdmin.from('wallet_transactions').insert({
+      user_id: userId,
+      type: 'payment',
+      amount: price,
+      bonus_amount: 0,
+      balance_after: newBalance,
+      description: `Mua thêm ${pricing.hoursTotal}h ${plan}`,
+      status: 'completed',
+    });
+
+    const credited = await creditAdditionalHoursToHourlyPlan(
+      supabaseAdmin,
+      userId,
+      plan,
+      pricing.hoursTotal,
+      {
+        expiresAt,
+        env,
+        icon,
+        desc,
+      },
+    );
+    if (!credited.ok) {
+      return { ok: false, error: credited.error ?? 'Không cộng được giờ lẻ vào gói.' };
+    }
+
+    return {
+      ok: true,
+      subscription: credited.subscription,
+      hoursAdded: credited.hoursAdded,
+      walletBalance: newBalance,
+      amountCharged: price,
+      creditedAs: 'hourly',
+    };
+  }
+
+  if (!additional) {
+    await replaceActiveSubscriptions(supabaseAdmin, userId);
+  }
 
   const { data: subscription, error: subError } = await supabaseAdmin
     .from('subscriptions')
@@ -136,7 +299,7 @@ export async function purchaseGpuPlanWithWallet(
       env_icon: icon,
       env_desc: desc,
       gpu_label: getGpuLabel(plan),
-      hours_total: quota.hoursTotal,
+      hours_total: pricing.hoursTotal,
       hours_used: 0,
       status: 'active',
       server_status: 'offline',
@@ -164,9 +327,13 @@ export async function purchaseGpuPlanWithWallet(
     amount: price,
     bonus_amount: 0,
     balance_after: newBalance,
-    description: `Mua gói ${plan} ${billing}`,
+    description: additional
+      ? `Mua thêm gói ${plan} ${billing}`
+      : `Mua gói ${plan} ${billing}`,
     status: 'completed',
   });
+
+  await syncUserPlanInventory(supabaseAdmin, userId);
 
   return {
     ok: true,

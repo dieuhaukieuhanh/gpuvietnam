@@ -13,7 +13,11 @@ import {
   calculateTotalEntitlement,
   clampRemainingHours,
   createClock,
+  filterEntitlementPlansForMachine,
   isOutOfCredit,
+  normalizeEntitlementPlanKey,
+  resolveMachinePlanKey,
+  selectPrimaryBillablePlanForMachine,
 } from './remaining-time.js';
 
 const T0 = '2026-06-28T10:00:00.000Z';
@@ -58,6 +62,95 @@ describe('calculateTotalEntitlement', () => {
       walletBalance: 100000,
     };
     assert.equal(calculateTotalEntitlement(snapshot, clock), 100000 / 30000);
+  });
+
+  it('when machine is set, only counts hours for that package (not other plans)', () => {
+    const snapshot = {
+      machine: { gpu_line: 'rtx3090', billing_inventory_id: 1 },
+      entitlementPlans: [
+        { id: 1, status: 'active', plan_type: 'combo', plan_name: 'starter', hours_remaining: 0.4 },
+        { id: 2, status: 'active', plan_type: 'combo', plan_name: 'pro', hours_remaining: 50 },
+      ],
+      walletBalance: 0,
+    };
+    assert.equal(calculateTotalEntitlement(snapshot, clock), 0.4);
+  });
+});
+
+describe('plan key helpers', () => {
+  it('normalizeEntitlementPlanKey maps starter/pro/studio', () => {
+    assert.equal(normalizeEntitlementPlanKey('Starter'), 'starter');
+    assert.equal(normalizeEntitlementPlanKey('pro'), 'pro');
+    assert.equal(normalizeEntitlementPlanKey('Studio 2x'), 'studio');
+  });
+
+  it('resolveMachinePlanKey prefers billing inventory row', () => {
+    const key = resolveMachinePlanKey(
+      { billing_inventory_id: 2, gpu_line: 'rtx3090' },
+      [
+        { id: 1, plan_name: 'starter' },
+        { id: 2, plan_name: 'pro' },
+      ],
+    );
+    assert.equal(key, 'pro');
+  });
+
+  it('resolveMachinePlanKey prefers subscription when inventory is another package', () => {
+    const key = resolveMachinePlanKey(
+      {
+        billing_inventory_id: 15,
+        subscription_id: 'sub-pro',
+        gpu_line: 'rtx4090_1x',
+      },
+      [
+        { id: 15, plan_name: 'starter', subscription_id: 'sub-starter' },
+        { id: 21, plan_name: 'pro', subscription_id: 'sub-pro' },
+      ],
+    );
+    assert.equal(key, 'pro');
+  });
+
+  it('selectPrimaryBillablePlanForMachine scopes soonest-expiry burn to package', () => {
+    // Global order may put Starter first; must not pick it for a Pro machine.
+    const picked = selectPrimaryBillablePlanForMachine(
+      [
+        {
+          id: 15,
+          plan_name: 'starter',
+          plan_type: 'gift',
+          valid_until: '2026-08-01T00:00:00.000Z',
+        },
+        {
+          id: 22,
+          plan_name: 'pro',
+          plan_type: 'gift',
+          valid_until: '2026-09-01T00:00:00.000Z',
+        },
+        {
+          id: 21,
+          plan_name: 'pro',
+          plan_type: 'combo',
+          billing: 'combo2',
+          is_active: true,
+          valid_until: '2026-12-01T00:00:00.000Z',
+        },
+      ],
+      { billing_inventory_id: 15, subscription_id: 'sub-pro', gpu_line: 'rtx4090_1x' },
+      { plan: 'Pro' },
+    );
+    assert.equal(Number(picked?.id), 22);
+  });
+
+  it('filterEntitlementPlansForMachine keeps only matching package', () => {
+    const filtered = filterEntitlementPlansForMachine(
+      [
+        { id: 1, plan_name: 'starter', hours_remaining: 1 },
+        { id: 2, plan_name: 'pro', hours_remaining: 9 },
+      ],
+      { gpu_line: 'rtx3090' },
+    );
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].plan_name, 'starter');
   });
 });
 
@@ -330,6 +423,95 @@ describe('calculateRemaining', () => {
     const a = calculateRemaining(snapshot, clock);
     const b = calculateRemaining(snapshot, clock);
     assert.deepEqual(a, b);
+  });
+
+  it('machine-scoped Remaining ignores other packages and does not subtract settled history', () => {
+    const result = calculateRemaining(
+      {
+        machine: { gpu_line: 'rtx3090', billing_inventory_id: 1 },
+        entitlementPlans: [
+          { id: 1, status: 'active', plan_type: 'combo', plan_name: 'starter', hours_remaining: 1 },
+          { id: 2, status: 'active', plan_type: 'combo', plan_name: 'pro', hours_remaining: 40 },
+        ],
+        walletBalance: 0,
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T06:00:00.000Z',
+            ended_at: '2026-06-28T09:00:00.000Z',
+          },
+          {
+            status: 'running',
+            started_at: '2026-06-28T09:30:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    // Starter inventory already post-settlement; do not subtract closed sessions again.
+    assert.equal(result.totalEntitlementHours, 1);
+    assert.equal(result.settledSessionUsageHours, 0);
+    assert.equal(result.currentSessionElapsedHours, 0.5);
+    assert.equal(result.remainingHours, 0.5);
+  });
+
+  it('machine-scoped Remaining hits 0 when active package empties even if other packages have hours', () => {
+    const result = calculateRemaining(
+      {
+        machine: { gpu_line: 'rtx3090' },
+        entitlementPlans: [
+          { status: 'active', plan_type: 'combo', plan_name: 'starter', hours_remaining: 0.25 },
+          { status: 'active', plan_type: 'combo', plan_name: 'pro', hours_remaining: 100 },
+        ],
+        walletBalance: 0,
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'running',
+            started_at: '2026-06-28T09:45:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.remainingHours, 0);
+  });
+
+  it('packageRemainingHours includes prepaid giờ lẻ but excludes wallet', () => {
+    const result = calculateRemaining(
+      {
+        machine: { gpu_line: 'rtx3090' },
+        entitlementPlans: [
+          { status: 'active', plan_type: 'gift', plan_name: 'starter', hours_remaining: 10 },
+          { status: 'active', plan_type: 'combo', plan_name: 'starter', hours_remaining: 680 },
+          {
+            status: 'active',
+            plan_type: 'hourly',
+            plan_name: 'starter',
+            hours_remaining: 10,
+            price_per_hour: 9900,
+          },
+        ],
+        walletBalance: 12_380_000,
+        providerRunningVerified: true,
+        sessions: [
+          {
+            status: 'running',
+            started_at: '2026-06-28T09:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.packagePoolHours, 700);
+    assert.equal(result.packageRemainingHours, 699);
+    // Full remaining still includes ví for auto-stop / out-of-credit.
+    assert.ok(result.remainingHours > 1900);
   });
 });
 

@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BillingToggleBar from '@/components/pricing/BillingToggleBar';
 import {
+  buildBillingToggleLabels,
   buildPlanPricingDisplayFromPlan,
   getDefaultGpuPricingConfig,
   normalizeGpuPricingConfig,
+  CANONICAL_VALIDITY_DAYS,
 } from '@/lib/gpu-pricing-config';
 import type { GpuPricingConfig } from '@/lib/gpu-pricing-types';
 import type { BillingMode } from '@/lib/checkout-plans';
 import { adminFetch } from '@/lib/admin-session';
 import { styles as checkoutStyles } from '@/styles/pages/checkout-1.styles';
 import { adminGpuPricingStyles } from '@/styles/pages/admin-gpu-pricing.styles';
+
+function withSyncedBillingToggles(config: GpuPricingConfig): GpuPricingConfig {
+  return {
+    ...config,
+    billingToggles: buildBillingToggleLabels(config) as GpuPricingConfig['billingToggles'],
+  };
+}
 
 function cloneConfig(config: GpuPricingConfig): GpuPricingConfig {
   return structuredClone(config);
@@ -23,11 +32,13 @@ type TextInputProps = {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** Optional — trim / normalize after typing so spaces are not eaten on each keystroke. */
+  onBlur?: (value: string) => void;
   multiline?: boolean;
   mono?: boolean;
 };
 
-function TextInput({ label, value, onChange, multiline, mono }: TextInputProps) {
+function TextInput({ label, value, onChange, onBlur, multiline, mono }: TextInputProps) {
   const className = `gpu-edit-field${mono ? ' mono' : ''}`;
   return (
     <label className="gpu-edit-label">
@@ -38,9 +49,16 @@ function TextInput({ label, value, onChange, multiline, mono }: TextInputProps) 
           rows={2}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => onBlur?.(e.target.value)}
         />
       ) : (
-        <input className={className} type="text" value={value} onChange={(e) => onChange(e.target.value)} />
+        <input
+          className={className}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={(e) => onBlur?.(e.target.value)}
+        />
       )}
     </label>
   );
@@ -50,9 +68,10 @@ type NumberInputProps = {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  disabled?: boolean;
 };
 
-function NumberInput({ label, value, onChange }: NumberInputProps) {
+function NumberInput({ label, value, onChange, disabled }: NumberInputProps) {
   return (
     <label className="gpu-edit-label">
       <span>{label}</span>
@@ -62,6 +81,7 @@ function NumberInput({ label, value, onChange }: NumberInputProps) {
         min={0}
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
+        disabled={disabled}
       />
     </label>
   );
@@ -193,20 +213,15 @@ export default function AdminGpuPricingPanel() {
     }));
   };
 
-  const updateBillingToggle = (index: number, label: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      billingToggles: prev.billingToggles.map((item, i) => (i === index ? { ...item, label } : item)),
-    }));
-  };
-
   const updatePlan = (planIndex: number, patch: Partial<GpuPricingConfig['plans'][number]>) => {
-    setDraft((prev) => ({
-      ...prev,
-      plans: prev.plans.map((plan, i) =>
-        i === planIndex ? ({ ...plan, ...patch } as GpuPricingConfig['plans'][number]) : plan,
-      ),
-    }));
+    setDraft((prev) =>
+      withSyncedBillingToggles({
+        ...prev,
+        plans: prev.plans.map((plan, i) =>
+          i === planIndex ? ({ ...plan, ...patch } as GpuPricingConfig['plans'][number]) : plan,
+        ),
+      }),
+    );
   };
 
   const updatePlanListItem = (
@@ -373,15 +388,25 @@ export default function AdminGpuPricingPanel() {
       </div>
 
       <div className="gpu-edit-section card">
-        <h3 className="gpu-edit-section-title">Nhãn chọn gói giờ</h3>
+        <h3 className="gpu-edit-section-title">Hiệu lực gói giờ</h3>
         <div className="gpu-edit-grid-3">
-          {draft.billingToggles.map((toggle, index) => (
-            <TextInput
-              key={toggle.mode}
-              label={toggle.mode}
-              value={toggle.label}
-              onChange={(v) => updateBillingToggle(index, v)}
-            />
+          <NumberInput
+            label="Giờ lẻ (ngày)"
+            value={CANONICAL_VALIDITY_DAYS.hourly}
+            onChange={() => undefined}
+            disabled
+          />
+        </div>
+        <p className="stat-sub" style={{ marginTop: 8, lineHeight: 1.6 }}>
+          Thời hạn đã thống nhất toàn hệ thống: <strong>Giờ lẻ 60 ngày · Combo1 120 ngày · Combo2 180 ngày</strong>.
+          Không chỉnh sửa được để tránh lệch hiển thị giữa các trang.
+        </p>
+        <div className="gpu-edit-grid-3" style={{ marginTop: 12 }}>
+          {draft.billingToggles.map((toggle) => (
+            <label key={toggle.mode} className="gpu-edit-label">
+              <span>{toggle.mode}</span>
+              <input className="gpu-edit-field" type="text" value={toggle.label} readOnly />
+            </label>
           ))}
         </div>
       </div>
@@ -398,7 +423,10 @@ export default function AdminGpuPricingPanel() {
 
         <div className="pricing-grid gpu-edit-plan-grid">
           {draft.plans.map((plan, planIndex) => {
-            const pricing = buildPlanPricingDisplayFromPlan(plan)[previewBilling];
+            const pricing = buildPlanPricingDisplayFromPlan(
+              plan,
+              draft.billingValidity?.hourlyDays ?? 60,
+            )[previewBilling];
             const showBadge = plan.featured && (plan.badge ?? 'Phổ biến nhất');
 
             return (
@@ -438,7 +466,8 @@ export default function AdminGpuPricingPanel() {
                   <TextInput
                     label="Badge (để trống nếu không dùng)"
                     value={plan.badge ?? ''}
-                    onChange={(v) => updatePlan(planIndex, { badge: v.trim() || null })}
+                    onChange={(v) => updatePlan(planIndex, { badge: v })}
+                    onBlur={(v) => updatePlan(planIndex, { badge: v.trim() || null })}
                   />
 
                   <p className="plan-label">Đối tượng phù hợp</p>
@@ -508,10 +537,9 @@ export default function AdminGpuPricingPanel() {
                     />
                     <NumberInput
                       label="Combo1 ngày"
-                      value={plan.combo1.days}
-                      onChange={(v) =>
-                        updatePlan(planIndex, { combo1: { ...plan.combo1, days: v } })
-                      }
+                      value={CANONICAL_VALIDITY_DAYS.combo1}
+                      onChange={() => undefined}
+                      disabled
                     />
                     <NumberInput
                       label="Combo2 giờ"
@@ -529,10 +557,9 @@ export default function AdminGpuPricingPanel() {
                     />
                     <NumberInput
                       label="Combo2 ngày"
-                      value={plan.combo2.days}
-                      onChange={(v) =>
-                        updatePlan(planIndex, { combo2: { ...plan.combo2, days: v } })
-                      }
+                      value={CANONICAL_VALIDITY_DAYS.combo2}
+                      onChange={() => undefined}
+                      disabled
                     />
                   </div>
 
@@ -567,7 +594,8 @@ export default function AdminGpuPricingPanel() {
                   <TextInput
                     label="Không phù hợp (để trống nếu không hiển thị)"
                     value={plan.notFor ?? ''}
-                    onChange={(v) => updatePlan(planIndex, { notFor: v.trim() || null })}
+                    onChange={(v) => updatePlan(planIndex, { notFor: v })}
+                    onBlur={(v) => updatePlan(planIndex, { notFor: v.trim() || null })}
                     multiline
                   />
 

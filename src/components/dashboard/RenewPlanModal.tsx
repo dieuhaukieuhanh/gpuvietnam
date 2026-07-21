@@ -22,7 +22,7 @@ type RenewQuote = {
 
   totalHours: number;
 
-  bonusLabel: string;
+  bonusLabel: string | null;
 
   price: number;
 
@@ -56,6 +56,8 @@ type RenewPlanModalProps = {
 
   billing: BillingMode;
 
+  subscriptionId?: string | null;
+
   onClose: () => void;
 
   onSuccess: () => void;
@@ -83,6 +85,8 @@ export default function RenewPlanModal({
   planName,
 
   billing,
+
+  subscriptionId,
 
   onClose,
 
@@ -136,7 +140,7 @@ export default function RenewPlanModal({
 
         },
 
-        body: JSON.stringify({ plan: planName, billing, previewOnly: true }),
+        body: JSON.stringify({ plan: planName, billing, subscriptionId: subscriptionId ?? null, previewOnly: true }),
 
       });
 
@@ -192,7 +196,7 @@ export default function RenewPlanModal({
 
     }
 
-  }, [accessToken, planName, billing]);
+  }, [accessToken, planName, billing, subscriptionId]);
 
 
 
@@ -256,7 +260,7 @@ export default function RenewPlanModal({
 
         },
 
-        body: JSON.stringify({ plan: planName, billing }),
+        body: JSON.stringify({ plan: planName, billing, subscriptionId: subscriptionId ?? null }),
 
       });
 
@@ -330,7 +334,7 @@ export default function RenewPlanModal({
 
         },
 
-        body: JSON.stringify({ plan: planName, billing, confirmTransfer: true }),
+        body: JSON.stringify({ plan: planName, billing, subscriptionId: subscriptionId ?? null, confirmTransfer: true }),
 
       });
 
@@ -482,9 +486,9 @@ export default function RenewPlanModal({
 
             <div className="renew-modal-line">
 
-              ⏱️ Nhận: {quote.baseHours}h + {quote.comboBonus}h tặng + {quote.renewBonus}h thưởng ={' '}
+              ⏱️ Nhận: {quote.baseHours}h + {quote.comboBonus}h tặng ={' '}
 
-              <strong>{quote.totalHours}h</strong>
+              <strong>{quote.baseHours + quote.comboBonus}h</strong>
 
             </div>
 

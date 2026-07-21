@@ -1,17 +1,19 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
-import { createCorrelationId } from '@/lib/scb-correlation';
 import { handleMachinesStatusProjectionFirst } from '@/lib/machines-status-projection';
 import { logArchitectureFreezeStartup } from '@/lib/scb-read-path';
+import {
+  bindRequestActors,
+  getLogContext,
+  logger,
+  resolveRequestId,
+  withApiLogging,
+} from '@/lib/logging';
 
-function scbDbg(label, payload) {
-  console.log('[SCB-DBG][api/status]', label, JSON.stringify(payload));
-}
+async function machinesStatusHandler(req, res) {
+  const requestId = getLogContext().requestId ?? resolveRequestId(req);
+  const log = logger('api');
 
-export default async function handler(req, res) {
-  const scbReqId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const correlationId = createCorrelationId();
-  scbDbg('ENTER', { id: scbReqId, correlationId, ts: new Date().toISOString(), method: req.method });
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -20,23 +22,39 @@ export default async function handler(req, res) {
     logArchitectureFreezeStartup();
     const user = await getAuthUserFromRequest(req);
     if (!user) {
-      scbDbg('EXIT unauthorized', { id: scbReqId });
+      log.warn({ operation: 'machines.status', phase: 'FAILURE' }, 'unauthorized');
       return unauthorized(res);
     }
 
+    bindRequestActors({ userId: user.id, requestId, operation: 'machines.status' });
     const supabaseAdmin = getSupabaseAdmin();
 
     return handleMachinesStatusProjectionFirst(req, res, {
       user,
       supabaseAdmin,
-      correlationId,
-      scbReqId,
+      correlationId: requestId,
+      scbReqId: requestId,
     });
   } catch (err) {
-    console.error('[SCB-DBG][api/status] EXIT error-throw', err instanceof Error ? err.message : String(err));
-    console.error('❌ message:', err instanceof Error ? err.message : String(err));
-    console.error('❌ stack:', err instanceof Error ? err.stack : '(no stack)');
-    console.error('[machines/status]', err);
-    return res.status(500).json({ error: err.message || 'Không lấy được trạng thái máy.' });
+    log.error(
+      {
+        operation: 'machines.status',
+        phase: 'FAILURE',
+        err: {
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        },
+      },
+      'machines status failed',
+    );
+    return res.status(500).json({
+      error: err.message || 'Không lấy được trạng thái máy.',
+      requestId,
+    });
   }
 }
+
+export default withApiLogging(machinesStatusHandler, {
+  operation: 'machines.status',
+  channel: 'api',
+});

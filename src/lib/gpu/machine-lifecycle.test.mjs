@@ -125,9 +125,26 @@ describe('deriveLifecycleStatus', () => {
     );
   });
 
-  it('provisioning when machine running but Comfy not traffic-ready', () => {
+  it('running when machine is up with public endpoint even if Comfy not projection-verified', () => {
     assert.equal(
       deriveLifecycleStatus(sub({ server_status: 'online' }), machineRow({ status: 'running' })),
+      MACHINE_LIFECYCLE_STATUS.RUNNING,
+    );
+  });
+
+  it('running when subscription still provisioning but machine endpoint is live', () => {
+    assert.equal(
+      deriveLifecycleStatus(sub({ server_status: 'provisioning' }), machineRow({ status: 'running' })),
+      MACHINE_LIFECYCLE_STATUS.RUNNING,
+    );
+  });
+
+  it('provisioning when machine running but endpoint not resolved yet', () => {
+    assert.equal(
+      deriveLifecycleStatus(
+        sub({ server_status: 'online' }),
+        machineRow({ status: 'running', port: null }),
+      ),
       MACHINE_LIFECYCLE_STATUS.PROVISIONING,
     );
   });
@@ -160,13 +177,6 @@ describe('deriveLifecycleStatus', () => {
         ),
       ),
       'running',
-    );
-  });
-
-  it('provisioning until subscription online even if machine row running', () => {
-    assert.equal(
-      deriveLifecycleStatus(sub({ server_status: 'provisioning' }), machineRow({ status: 'running' })),
-      MACHINE_LIFECYCLE_STATUS.PROVISIONING,
     );
   });
 
@@ -335,6 +345,15 @@ describe('detectDriftRepair', () => {
   it('detects leaked machine while subscription offline', () => {
     const drift = detectDriftRepair(sub({ server_status: 'offline' }), machineRow({ status: 'running' }), NOW_MS);
     assert.equal(drift?.repairAction, 'destroy_machine');
+  });
+
+  it('does not destroy running machine owned by a different subscription (hour top-up)', () => {
+    const drift = detectDriftRepair(
+      sub({ id: 'sub-new-offline', server_status: 'offline' }),
+      machineRow({ status: 'running', subscription_id: 'sub-online-owner' }),
+      NOW_MS,
+    );
+    assert.equal(drift, null);
   });
 
   it('repairs booting subscription drift instead of destroying recent boot machine', () => {

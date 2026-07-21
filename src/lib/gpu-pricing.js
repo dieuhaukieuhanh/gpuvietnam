@@ -1,43 +1,49 @@
 /**
- * Định nghĩa giá GPU — nơi DUY NHẤT để sửa giá bán.
- * Giá vốn Vast.ai (tham chiếu): 3090 5.500đ/h · 4090 1x 11.000đ/h · 4090 2x 21.000đ/h
+ * Runtime GPU plan prices (billing / settlement).
+ * Live SoT: Admin Edit giá → `gpu_pricing_config` (loaded via applyRuntimeGpuPlans).
+ * Seed below mirrors `gpu-pricing-defaults.js` only for cold start / tests.
  */
 
-export const GPU_PLANS = {
-  starter: {
-    name: 'Starter',
-    gpu: 'RTX 3090',
-    vram: '24GB',
-    price_per_hour: 9_900,
-    combo1: { hours: 100, bonus: 10, days: 45, price: 990_000 },
-    combo2: { hours: 200, bonus: 30, days: 120, price: 1_980_000 },
-  },
-  pro: {
-    name: 'Pro',
-    gpu: 'RTX 4090',
-    vram: '24GB',
-    price_per_hour: 22_000,
-    combo1: { hours: 100, bonus: 10, days: 45, price: 2_200_000 },
-    combo2: { hours: 200, bonus: 30, days: 120, price: 4_400_000 },
-    badge: 'Phổ biến nhất',
-  },
-  studio: {
-    name: 'Studio',
-    gpu: '2x RTX 4090',
-    vram: '48GB',
-    price_per_hour: 40_000,
-    combo1: { hours: 100, bonus: 10, days: 45, price: 4_000_000 },
-    combo2: { hours: 200, bonus: 30, days: 120, price: 8_000_000 },
-  },
-};
+import { DEFAULT_BILLING_VALIDITY, getDefaultGpuPricingConfig } from '@/lib/gpu-pricing-defaults';
+
+function buildSeedGpuPlans() {
+  const plans = {};
+  for (const plan of getDefaultGpuPricingConfig().plans) {
+    const entry = {
+      name: plan.name,
+      gpu: plan.gpu,
+      vram: plan.vram,
+      price_per_hour: plan.pricePerHour,
+      combo1: { ...plan.combo1 },
+      combo2: { ...plan.combo2 },
+    };
+    if (plan.badge) entry.badge = plan.badge;
+    plans[plan.planKey] = entry;
+  }
+  return plans;
+}
+
+export const GPU_PLANS = buildSeedGpuPlans();
 
 /** Gói đang dùng — cập nhật từ DB qua applyRuntimeGpuPlans(). */
 let activeGpuPlans = GPU_PLANS;
+let activeHourlyValidityDays = DEFAULT_BILLING_VALIDITY.hourlyDays;
 
 export function applyRuntimeGpuPlans(plans) {
   if (plans && typeof plans === 'object') {
     activeGpuPlans = plans;
   }
+}
+
+export function applyRuntimeBillingValidity(billingValidity) {
+  const days = Number(billingValidity?.hourlyDays);
+  if (Number.isFinite(days) && days > 0) {
+    activeHourlyValidityDays = Math.round(days);
+  }
+}
+
+export function getHourlyValidityDays() {
+  return activeHourlyValidityDays;
 }
 
 function getActivePlans() {
@@ -48,14 +54,29 @@ export const PLAN_ORDER = ['starter', 'pro', 'studio'];
 
 export const PLAN_NAME_TO_KEY = {
   Starter: 'starter',
+  'AI Starter': 'starter',
   Pro: 'pro',
+  'AI Pro': 'pro',
   Studio: 'studio',
+  'AI Studio': 'studio',
 };
 
 export const BILLING_MODES = ['hourly', 'combo1', 'combo2'];
 
 export function getPlanKeyFromName(name) {
-  return PLAN_NAME_TO_KEY[name] ?? null;
+  if (name == null) return null;
+  const trimmed = String(name).trim();
+  if (!trimmed) return null;
+  if (Object.prototype.hasOwnProperty.call(PLAN_NAME_TO_KEY, trimmed)) {
+    return PLAN_NAME_TO_KEY[trimmed];
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'starter' || lower === 'pro' || lower === 'studio') return lower;
+  // Exact display-name match, case-insensitive
+  for (const [label, key] of Object.entries(PLAN_NAME_TO_KEY)) {
+    if (label.toLowerCase() === lower) return key;
+  }
+  return null;
 }
 
 export function getPlanNameFromKey(key) {
@@ -78,6 +99,36 @@ export function getPlanPrice(planKeyOrName, billingType) {
   if (billingType === 'combo1') return plan.combo1.price;
   if (billingType === 'combo2') return plan.combo2.price;
   return 0;
+}
+
+export function normalizeHourlyPurchaseHours(value) {
+  const hours = Math.floor(Number(value));
+  if (!Number.isFinite(hours) || hours < 1) return 1;
+  return hours;
+}
+
+/**
+ * @param {string} planKeyOrName
+ * @param {'hourly'|'combo1'|'combo2'} billing
+ * @param {number|null|undefined} [hourlyHours]
+ */
+export function getPlanPurchaseHours(planKeyOrName, billing, hourlyHours = null) {
+  if (billing === 'hourly') {
+    return normalizeHourlyPurchaseHours(hourlyHours);
+  }
+  return getPlanQuota(planKeyOrName, billing).hoursTotal;
+}
+
+/**
+ * @param {string} planKeyOrName
+ * @param {'hourly'|'combo1'|'combo2'} billing
+ * @param {number|null|undefined} [hourlyHours]
+ */
+export function getPlanPurchaseAmount(planKeyOrName, billing, hourlyHours = null) {
+  if (billing === 'hourly') {
+    return getPlanPrice(planKeyOrName, 'hourly') * normalizeHourlyPurchaseHours(hourlyHours);
+  }
+  return getPlanPrice(planKeyOrName, billing);
 }
 
 export function formatCurrency(amount) {
@@ -110,7 +161,41 @@ export function getComboTotalHours(planKeyOrName, billingType) {
   return combo.hours + combo.bonus;
 }
 
+/** Proactive renew / purchase preview reward rate (5%). */
+export const COMBO_PURCHASE_REWARD_RATE = 0.05;
+
+export function computeComboRewardHours(baseHours, rate = COMBO_PURCHASE_REWARD_RATE) {
+  if (!baseHours || rate <= 0) return 0;
+  return Math.max(1, Math.floor(baseHours * rate));
+}
+
+/**
+ * @param {string} planKeyOrName
+ * @param {'combo1' | 'combo2'} billingType
+ * @param {{ rewardRate?: number; includeReward?: boolean }} [options]
+ */
+export function formatComboHoursBreakdown(planKeyOrName, billingType, options = {}) {
+  const combo = getComboPackage(planKeyOrName, billingType);
+  if (!combo) return null;
+  const includeReward = options.includeReward !== false;
+  const rewardRate = options.rewardRate ?? COMBO_PURCHASE_REWARD_RATE;
+  const rewardHours = includeReward ? computeComboRewardHours(combo.hours, rewardRate) : 0;
+  const parts = [`${combo.hours}h`, `${combo.bonus}h tặng`];
+  if (rewardHours > 0) {
+    parts.push(`${rewardHours}h thưởng`);
+  }
+  return {
+    baseHours: combo.hours,
+    giftHours: combo.bonus,
+    rewardHours,
+    line: parts.join(' + '),
+  };
+}
+
 export function getPlanQuota(planName, billing) {
+  if (billing === 'hourly') {
+    return { hoursTotal: 0, validityDays: getHourlyValidityDays() };
+  }
   const combo = getComboPackage(planName, billing);
   if (!combo) {
     return { hoursTotal: 0, validityDays: null };
@@ -122,7 +207,9 @@ export function getPlanQuota(planName, billing) {
 }
 
 export function formatBillingLabel(billing) {
-  if (billing === 'hourly') return 'Gói Đơn (Theo giờ)';
+  if (billing === 'hourly') {
+    return `Gói Đơn (Theo giờ · ${getHourlyValidityDays()} ngày)`;
+  }
   const sample = getActivePlans().starter;
   if (billing === 'combo1') {
     const c = sample.combo1;
@@ -139,14 +226,14 @@ export function formatGpuConfigShort(planName) {
   const key = getPlanKeyFromName(planName);
   const plan = getActivePlans()[key];
   if (!plan) return planName ?? '—';
-  if (key === 'studio') return `${planName} · 2x RTX 4090 (48GB)`;
+  if (key === 'studio') return `${planName} · RTX 5090 (32GB)`;
   return `${planName} · ${plan.gpu} (${plan.vram})`;
 }
 
 export function buildHourlyPricingNote(planKey) {
   const plan = getActivePlans()[planKey];
   if (!plan) return '';
-  return `Trả theo giờ thực dùng · ${plan.gpu} ${plan.vram}`;
+  return `Trả theo giờ thực dùng · Hiệu lực ${getHourlyValidityDays()} ngày · ${plan.gpu} ${plan.vram}`;
 }
 
 export function buildComboPricingNote(planKey, comboType) {

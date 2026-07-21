@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS public.machines (
   gpu_line text,
   region text,
   template text,
+  image text,
   error_message text,
   started_at timestamptz DEFAULT now(),
   stopped_at timestamptz,
@@ -91,3 +92,6 @@ COMMENT ON COLUMN public.machines.gpu_session_id IS
   'SoT is the forward FK gpu_sessions.machine_id. '
   'Nullable / may drift; recovery reconciles from gpu_sessions. '
   'Billing MUST NOT resolve sessions through this column; query gpu_sessions.machine_id instead.';
+COMMENT ON COLUMN public.machines.image IS
+  'ADMIN AUDIT ONLY — ComfyUI Docker image at provision (e.g. …:v3|:v4). '
+  'Never expose on customer-facing APIs. Projection for dual-image supply audit; not billing.';

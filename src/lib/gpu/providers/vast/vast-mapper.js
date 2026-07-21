@@ -52,7 +52,7 @@ export function mapGpuLineToVastSearch(gpuLine) {
 /**
  * @param {Record<string, unknown>} raw
  * @param {GPULine} gpuLine
- * @param {{ port?: number; instanceIdHint?: string; resolvedEndpoint?: import('./vast-endpoint-resolver.js').ResolvedEndpointPayload | null }} [options]
+ * @param {{ port?: number; instanceIdHint?: string; resolvedEndpoint?: import('./vast-endpoint-resolver.js').ResolvedEndpointPayload | null; image?: string | null }} [options]
  * @returns {GPUInstance}
  */
 export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
@@ -67,14 +67,26 @@ export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
   let code = 'unknown';
   if (actualStatus.includes('running')) code = 'running';
   else if (actualStatus.includes('loading') || actualStatus.includes('starting')) code = 'starting';
-  else if (actualStatus.includes('exited') || actualStatus.includes('stopped')) code = 'stopped';
-  else if (actualStatus.includes('failed')) code = 'failed';
-  else if (statusMsg.includes('successfully loaded')) code = 'starting';
+  else if (actualStatus.includes('exited') || actualStatus.includes('stopped')) {
+    // Vast "stopped" = disk-only billing, no GPU — treat as failed workstation.
+    code = 'failed';
+  } else if (actualStatus.includes('failed')) code = 'failed';
+  else if (
+    /no such container|cannot find container|nvidia-smi|no nvidia|gpu not (found|available)|failed to (create|start) container/i.test(
+      statusMsg,
+    )
+  ) {
+    code = 'failed';
+  } else if (statusMsg.includes('successfully loaded')) code = 'starting';
 
   const internalPort = options.port ?? DEFAULT_GPU_PORT;
   const resolved = options.resolvedEndpoint ?? null;
   const endpointUrl = resolved?.url;
   const externalPort = resolved?.externalPort ?? null;
+  const image =
+    (options.image != null && String(options.image).trim()) ||
+    (record.image != null ? String(record.image).trim() : '') ||
+    null;
 
   return {
     id,
@@ -95,6 +107,17 @@ export function mapVastInstanceToGPUInstance(raw, gpuLine, options = {}) {
       port: externalPort,
       internalPort,
       resolvedSource: resolved?.source ?? null,
+      image,
+      sshOk:
+        record.gpuvietnam_ops &&
+        typeof record.gpuvietnam_ops === 'object' &&
+        typeof /** @type {Record<string, unknown>} */ (record.gpuvietnam_ops).ssh_ok === 'boolean'
+          ? Boolean(/** @type {Record<string, unknown>} */ (record.gpuvietnam_ops).ssh_ok)
+          : null,
+      opsDegraded:
+        record.gpuvietnam_ops &&
+        typeof record.gpuvietnam_ops === 'object' &&
+        /** @type {Record<string, unknown>} */ (record.gpuvietnam_ops).ops_degraded === true,
     },
   };
 }
@@ -134,7 +157,9 @@ export function parseGpuInstanceEndpoint(instance, defaultPort = DEFAULT_GPU_POR
   if (instance.endpointUrl) {
     try {
       const url = new URL(instance.endpointUrl);
-      const port = Number(url.port) || defaultPort;
+      const port =
+        Number(url.port) ||
+        (url.protocol === 'https:' ? 443 : url.protocol === 'http:' ? 80 : defaultPort);
       return {
         ip: url.hostname,
         port,
@@ -143,6 +168,29 @@ export function parseGpuInstanceEndpoint(instance, defaultPort = DEFAULT_GPU_POR
     } catch {
       // fall through
     }
+  }
+
+  const cloreMeta = instance.metadata?.clore;
+  const cloreHost =
+    typeof instance.metadata?.publicHost === 'string'
+      ? instance.metadata.publicHost
+      : null;
+  const clorePort = Number(instance.metadata?.port);
+  if (cloreHost && Number.isFinite(clorePort) && clorePort > 0) {
+    const comfyUrl =
+      clorePort === 443
+        ? `https://${cloreHost}`
+        : clorePort === 80
+          ? `http://${cloreHost}`
+          : `http://${cloreHost}:${clorePort}`;
+    return { ip: cloreHost, port: clorePort, comfyUrl };
+  }
+  if (cloreMeta && typeof cloreMeta === 'object' && typeof cloreMeta.http_pub === 'string' && cloreMeta.http_pub) {
+    return {
+      ip: String(cloreMeta.http_pub),
+      port: 443,
+      comfyUrl: `https://${cloreMeta.http_pub}`,
+    };
   }
 
   const vast = instance.metadata?.vast;
@@ -216,10 +264,34 @@ export function mapComfyHistoryToGPUJob(historyEntry, instanceId, jobId) {
  * @returns {GPUStatus}
  */
 export function mapComfyHealthToGPUStatus(healthPayload) {
-  const ok = healthPayload !== null && healthPayload !== undefined;
-  return createGPUStatus(ok ? 'running' : 'failed', {
-    healthy: ok,
-    message: ok ? 'ComfyUI reachable' : 'ComfyUI unreachable',
+  // Reject Clore proxy bootstrap text / non-JSON bodies that used to look "ok".
+  if (typeof healthPayload === 'string') {
+    const text = healthPayload.trim();
+    const starting = /proxy is starting/i.test(text);
+    return createGPUStatus(starting ? 'starting' : 'failed', {
+      healthy: false,
+      message: starting ? 'Proxy is starting' : text.slice(0, 160) || 'ComfyUI unreachable',
+    });
+  }
+  if (!healthPayload || typeof healthPayload !== 'object') {
+    return createGPUStatus('failed', {
+      healthy: false,
+      message: 'ComfyUI unreachable',
+    });
+  }
+  const rec = /** @type {Record<string, unknown>} */ (healthPayload);
+  const looksReady = Boolean(
+    rec.system || rec.devices || rec.device || rec.comfyui_version != null,
+  );
+  if (!looksReady) {
+    return createGPUStatus('starting', {
+      healthy: false,
+      message: 'ComfyUI starting',
+    });
+  }
+  return createGPUStatus('running', {
+    healthy: true,
+    message: 'ComfyUI reachable',
   });
 }
 

@@ -1,9 +1,21 @@
 import crypto from 'crypto';
-import { Client, utils } from 'ssh2';
 import fs from 'fs';
+import ssh2 from 'ssh2';
+import { resolveClorePublicEndpoints } from './gpu/providers/clore/clore-mapper.js';
+
+const { Client, utils } = ssh2;
 
 const DEFAULT_SSH_USER = 'root';
 const SSH_TIMEOUT_MS = 120_000;
+
+/**
+ * @typedef {{
+ *   host: string;
+ *   port?: number;
+ *   username?: string;
+ *   password?: string | null;
+ * }} SshTarget
+ */
 
 /**
  * @param {string} privateKey
@@ -42,19 +54,29 @@ function getSshPrivateKey() {
   return null;
 }
 
-export function isSshConfigured() {
+/** Vast / key-based SSH available. */
+export function isSshKeyConfigured() {
   return Boolean(getSshPrivateKey());
 }
 
 /**
- * @param {{ host: string; port?: number; username?: string }} target
+ * Stable Clore root password (preferred) or any key — enough to attempt backup auth setup.
+ * Per-machine password may still be required at connect time.
+ */
+export function isSshConfigured() {
+  return isSshKeyConfigured() || Boolean(String(process.env.CLORE_SSH_PASSWORD ?? '').trim());
+}
+
+/**
+ * @param {SshTarget} target
  * @returns {Promise<import('ssh2').Client>}
  */
 function connectSsh(target) {
-  const privateKey = getSshPrivateKey();
   const host = target.host;
   const port = Number(target.port) || 22;
   const username = target.username ?? DEFAULT_SSH_USER;
+  const password = target.password ? String(target.password) : null;
+  const privateKey = password ? null : getSshPrivateKey();
   const privateKeyLoaded = Boolean(privateKey);
   const privateKeyFingerprint = privateKey ? getPrivateKeyFingerprint(privateKey) : null;
 
@@ -63,12 +85,15 @@ function connectSsh(target) {
   console.info('host:', host);
   console.info('port:', port);
   console.info('username:', username);
+  console.info('auth:', password ? 'password' : 'privateKey');
   console.info('privateKey loaded?', privateKeyLoaded);
   console.info('private key fingerprint:', privateKeyFingerprint ?? '(unavailable)');
   console.info('====================================');
 
-  if (!privateKey) {
-    return Promise.reject(new Error('VAST_SSH_PRIVATE_KEY is not configured'));
+  if (!password && !privateKey) {
+    return Promise.reject(
+      new Error('SSH auth missing (set CLORE_SSH_PASSWORD or VAST_SSH_PRIVATE_KEY)'),
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -99,17 +124,17 @@ function connectSsh(target) {
         console.info('[machine-ssh] ssh2 event: end');
       })
       .connect({
-        host: target.host,
-        port: Number(target.port) || 22,
-        username: target.username ?? DEFAULT_SSH_USER,
-        privateKey,
+        host,
+        port,
+        username,
+        ...(password ? { password } : { privateKey }),
         readyTimeout: SSH_TIMEOUT_MS,
       });
   });
 }
 
 /**
- * @param {{ host: string; port?: number; username?: string }} target
+ * @param {SshTarget} target
  * @param {string} command
  */
 export async function sshExec(target, command) {
@@ -147,7 +172,7 @@ export async function sshExec(target, command) {
 }
 
 /**
- * @param {{ host: string; port?: number; username?: string }} target
+ * @param {SshTarget} target
  * @param {string} remotePath
  * @returns {Promise<Buffer>}
  */
@@ -179,7 +204,7 @@ export async function sshReadFile(target, remotePath) {
 }
 
 /**
- * @param {{ host: string; port?: number; username?: string }} target
+ * @param {SshTarget} target
  * @param {Buffer} content
  * @param {string} remotePath
  */
@@ -210,6 +235,7 @@ export async function sshWriteFile(target, content, remotePath) {
 
 /**
  * @param {Record<string, unknown>} vastInstance
+ * @returns {SshTarget | null}
  */
 export function resolveSshTargetFromVast(vastInstance) {
   const instance = Array.isArray(vastInstance?.instances)
@@ -233,11 +259,47 @@ export function resolveSshTargetFromVast(vastInstance) {
   const username = DEFAULT_SSH_USER;
 
   console.info('====================================');
-  console.info('SSH TARGET RESOLVED');
+  console.info('SSH TARGET RESOLVED (vast)');
   console.info('host:', host);
   console.info('port:', port);
   console.info('username:', username);
   console.info('====================================');
 
   return { host, port, username };
+}
+
+/**
+ * @param {Record<string, unknown>} cloreOrder
+ * @param {{ password?: string | null }} [options]
+ * @returns {SshTarget | null}
+ */
+export function resolveSshTargetFromClore(cloreOrder, options = {}) {
+  const record = cloreOrder && typeof cloreOrder === 'object' ? cloreOrder : {};
+  const endpoints = resolveClorePublicEndpoints(record);
+  const host = endpoints.sshHost;
+  const port = Number(endpoints.sshPort);
+
+  if (!host || !Number.isFinite(port) || port <= 0) {
+    return null;
+  }
+
+  const password =
+    options.password != null && String(options.password).trim()
+      ? String(options.password).trim()
+      : String(process.env.CLORE_SSH_PASSWORD ?? '').trim() || null;
+
+  console.info('====================================');
+  console.info('SSH TARGET RESOLVED (clore)');
+  console.info('host:', host);
+  console.info('port:', port);
+  console.info('username:', DEFAULT_SSH_USER);
+  console.info('password set?', Boolean(password));
+  console.info('====================================');
+
+  return {
+    host,
+    port,
+    username: DEFAULT_SSH_USER,
+    password,
+  };
 }

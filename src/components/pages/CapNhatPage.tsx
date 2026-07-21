@@ -155,8 +155,8 @@ export default function CapNhatPage() {
                                 <div className="update-icon feature">✨</div>
                                 <div className="update-content">
                                     <span className="update-tag feature">Tính năng mới</span>
-                                    <div className="update-title">Ra mắt gói Studio — 2x RTX 4090, 48GB VRAM</div>
-                                    <div className="update-desc">Gói Studio được thiết kế dành riêng cho Agency và Studio chuyên nghiệp. Với 2 GPU riêng biệt, nhiều người có thể làm việc cùng lúc mà không ảnh hưởng đến hiệu suất.</div>
+                                    <div className="update-title">Ra mắt gói Studio — RTX 5090, 32GB VRAM</div>
+                                    <div className="update-desc">Gói Studio dùng RTX 5090 (32GB) cho production AI nặng trên một phiên ComfyUI riêng — nhanh hơn Pro (RTX 4090), không phải chia máy cho nhiều thành viên.</div>
                                 </div>
                             </div>
         

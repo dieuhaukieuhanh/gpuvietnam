@@ -80,7 +80,7 @@ export default function ChinhSachPage() {
                         <p>Chúng tôi hiểu rằng model, LoRA, workflow và output là thành quả lao động của bạn.</p>
                         <ul>
                             <li><strong>Quyền sở hữu:</strong> Bạn giữ toàn bộ quyền sở hữu đối với mọi dữ liệu sáng tạo mà bạn tạo ra hoặc tải lên nền tảng.</li>
-                            <li><strong>Tính riêng tư:</strong> Mỗi khách hàng có một không gian làm việc riêng biệt. Không ai khác, kể cả các khách hàng khác trên cùng gói Studio, có thể truy cập vào dữ liệu của bạn trừ khi bạn chủ động chia sẻ.</li>
+                            <li><strong>Tính riêng tư:</strong> Mỗi khách hàng có máy/phiên làm việc riêng. Khách khác — kể cả cùng loại gói — không thể truy cập dữ liệu của bạn trừ khi bạn chủ động chia sẻ.</li>
                             <li><strong>Sao lưu và lưu trữ:</strong> Dữ liệu của bạn được sao lưu định kỳ để đảm bảo an toàn. Thời gian lưu trữ sau khi hết hạn gói được quy định rõ ràng: Starter 7 ngày, Pro 30 ngày, Studio 90 ngày.</li>
                         </ul>
                     </div>

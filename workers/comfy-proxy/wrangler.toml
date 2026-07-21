@@ -1,0 +1,17 @@
+name = "gpuvietnam-comfy-proxy"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+kv_namespaces = [
+  { binding = "COMFY_ACCESS", id = "bfce2066889e46f894c51bd2b9716359" }
+]
+
+routes = [
+  { pattern = "work.gpuvietnam.com/*", zone_name = "gpuvietnam.com" }
+]
+
+[vars]
+COOKIE_NAME = "gvn_comfy"
+# Next.js public host that serves /api/internal/comfy-proxy-resolve.
+ORIGIN_RESOLVE_URL = "https://gpuvietnam.com/api/internal/comfy-proxy-resolve"

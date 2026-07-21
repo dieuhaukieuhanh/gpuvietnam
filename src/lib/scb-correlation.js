@@ -1,8 +1,10 @@
 /**
  * SCB 2.1 — correlation id helpers for detect → queue → worker → pipeline tracing.
+ * Delegates structured output to the centralized logger when available.
  */
 
 import { randomUUID } from 'crypto';
+import { logger } from './logging/logger.js';
 
 /**
  * @param {string} [seed]
@@ -20,9 +22,22 @@ export function createCorrelationId(seed) {
  * @param {Record<string, unknown>} [meta]
  */
 export function logWithCorrelation(scope, correlationId, message, meta = {}) {
-  console.log(`[${scope}]`, {
-    correlationId: correlationId ?? null,
+  const channel =
+    scope.includes('provider') || scope.includes('vast') || scope.includes('clore')
+      ? 'provider'
+      : scope.includes('worker') || scope.includes('machine-op')
+        ? 'worker'
+        : scope.includes('api') || scope.includes('user/') || scope.includes('machines/')
+          ? 'api'
+          : 'app';
+
+  logger(channel).info(
+    {
+      requestId: correlationId ?? null,
+      correlationId: correlationId ?? null,
+      operation: scope,
+      ...meta,
+    },
     message,
-    ...meta,
-  });
+  );
 }

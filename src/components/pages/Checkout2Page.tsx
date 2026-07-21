@@ -99,8 +99,10 @@ export default function Checkout2Page() {
           </div>
 
           <div className="selected-plan-card">
-            <div className="plan-icon">{plan.icon}</div>
-            <div className="plan-name">{plan.name}</div>
+            <div className="plan-title-row">
+              <div className="plan-icon">{plan.icon}</div>
+              <div className="plan-name">{plan.name}</div>
+            </div>
             <div className="plan-price">
               {pricing.price}
               <span>{pricing.unit}</span>

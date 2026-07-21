@@ -33,7 +33,7 @@ function timerLabel(mode: TimerDisplayMode, phase: SessionPhase, billingStarted:
   if (phase === 'running' && !billingStarted) return 'Chờ xác nhận billing từ server';
   if (mode === 'live') return null;
   if (mode === 'paused' && phase === 'disconnected') return 'Thời gian phiên (tạm dừng hiển thị)';
-  if (mode === 'paused' && phase === 'stopping') return 'Phiên đang đóng · timer dừng';
+  if (mode === 'paused' && phase === 'stopping') return 'Đang lưu dữ liệu · timer dừng';
   if (mode === 'muted') return 'Timer chưa chạy';
   return null;
 }
@@ -61,14 +61,19 @@ export default function DashboardCurrentSessionCard({
   const timerCaption = timerLabel(timerMode, phase, billingStarted);
 
   const primaryAlert =
-    phase === 'running' && (outOfHours || lowCreditWarning)
-      ? { type: 'danger' as const, text: '⏰ Máy sẽ tắt ngay khi hết giờ' }
-      : phase === 'running' && idleWarningActive && minutesUntilAutoStop != null
+    phase === 'running' && outOfHours
+      ? { type: 'danger' as const, text: '⏰ Máy sẽ tắt ngay khi hết giờ gói đang dùng' }
+      : phase === 'running' && lowCreditWarning
         ? {
             type: 'warning' as const,
-            text: `⚠️ Máy sẽ tự tắt sau ${minutesUntilAutoStop} phút nếu không có hoạt động`,
+            text: '⚠️ Gói đang dùng còn ≤ 30 phút — máy sẽ tự tắt khi hết giờ gói này',
           }
-        : null;
+        : phase === 'running' && idleWarningActive && minutesUntilAutoStop != null
+          ? {
+              type: 'warning' as const,
+              text: `⚠️ Máy sẽ tự tắt sau ${minutesUntilAutoStop} phút nếu không có hoạt động`,
+            }
+          : null;
 
   return (
     <div className="card dashboard-session-card">
@@ -86,12 +91,14 @@ export default function DashboardCurrentSessionCard({
 
         {phase === 'running' && !billingStarted && (
           <p className="dashboard-session-callout dashboard-session-callout--warn">
-            Comfy đang hoàn tất — chưa bắt đầu tính giờ
+            Đang xác nhận phiên — giây lát nữa sẽ bắt đầu tính giờ
           </p>
         )}
 
         {phase === 'stopping' && (
-          <p className="dashboard-session-callout">Thanh toán phiên đang được xử lý...</p>
+          <p className="dashboard-session-callout">
+            💾 Đang lưu dữ liệu trước khi tắt máy — timer tạm dừng
+          </p>
         )}
 
         {phase === 'disconnected' && (

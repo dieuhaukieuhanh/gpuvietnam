@@ -1,21 +1,46 @@
 import { GPUConfigurationError, GPUProviderError } from '../../gpu-errors.js';
 import {
-  DEFAULT_DISK_SIZE,
-  DEFAULT_GPU_IMAGE,
   DEFAULT_GPU_PORT,
-  GPU_FALLBACK_LEVELS,
-  GPU_REGION_SCORES,
-  GPU_SCORE_WEIGHTS,
-  GPU_STRICT_FILTERS,
-  MAX_OFFERS_PER_REGION,
-  MAX_PRICE_PREMIUM,
+  NO_AVAILABLE_WORKSTATION_MESSAGE,
+  resolveGpuImage,
+  resolvePackageDiskSize,
+  resolvePackageSpec,
 } from '../../gpu-config.js';
+import {
+  normalizeVastOffer,
+  selectWorkstationOffers,
+} from '../../offer-selection.js';
+import {
+  filterVastOffersBySanity,
+  formatVastBadHostError,
+  readVastDlperf,
+  readVastGpuPricePerHour,
+} from './vast-offer-sanity.js';
+import { rememberVastBadHost, resolveVastHostKey, isVastHostExcluded } from './vast-bad-host-exclusion.js';
+import { runVastProvisionGate, classifyVastGateFailReason } from './vast-provision-gate.js';
+import {
+  appendProvisionJournal,
+  buildProvisionJournalEntry,
+} from '../../provision-journal.js';
+import {
+  applyHostReputationToOffers,
+  rememberHostFailure,
+} from '../../host-reputation/index.js';
+import {
+  applyRetryDecision,
+  decideRetryPolicy,
+  shouldRetryAnotherHost,
+} from '../../../provider-retry-policy/index.js';
+import { walkRentCandidates } from '../../rent-candidate-walk.js';
 import { profStart, profEnd } from '../../../prof.js';
+import { logger } from '../../../logging/index.js';
+import { providerDiag } from '../../../logging/provider-fields.js';
 
 const VAST_API_BASE = 'https://console.vast.ai/api/v0';
 const VAST_V1_API_BASE = 'https://console.vast.ai/api/v1';
+const providerLog = () => logger('provider');
 
-const NO_GPU_MESSAGE = 'Không tìm thấy GPU phù hợp. Vui lòng thử lại sau.';
+const NO_GPU_MESSAGE = NO_AVAILABLE_WORKSTATION_MESSAGE;
 
 /** @type {Record<string, Record<string, unknown>>} */
 const GPU_SEARCH_FILTERS = {
@@ -31,31 +56,13 @@ const GPU_SEARCH_FILTERS = {
     gpu_name: { in: ['RTX 4090'] },
     num_gpus: { eq: 2 },
   },
+  rtx5090_1x: {
+    gpu_name: { in: ['RTX 5090'] },
+    num_gpus: { eq: 1 },
+    // Marketplace reports VRAM in MB — require > 30GB.
+    gpu_ram: { gt: 30 * 1024 },
+  },
 };
-
-const PREFERRED_ASIA_KEYWORDS = [
-  'taiwan',
-  'japan',
-  'singapore',
-  'hong kong',
-  'hongkong',
-  'korea',
-  'thailand',
-  'malaysia',
-  'indonesia',
-  'vietnam',
-  'philippines',
-  'china',
-];
-
-const FULL_ASIA_KEYWORDS = [
-  ...PREFERRED_ASIA_KEYWORDS,
-  'india',
-  'asia',
-  'apac',
-  'sydney',
-  'australia',
-];
 
 /**
  * @typedef {Object} GpuFilterCriteria
@@ -220,316 +227,8 @@ function getOfferRegion(offer) {
   return String(offer.geolocation ?? offer.location ?? offer.region ?? 'Unknown').trim();
 }
 
-/**
- * @param {string} geo
- * @param {'preferred' | 'full'} mode
- */
-function isAsianGeo(geo, mode) {
-  const normalized = geo.toLowerCase();
-  const keywords = mode === 'full' ? FULL_ASIA_KEYWORDS : PREFERRED_ASIA_KEYWORDS;
-  return keywords.some((keyword) => normalized.includes(keyword));
-}
-
-/**
- * @param {string} geo
- */
-function getRegionScore(geo) {
-  const normalized = geo.toLowerCase();
-
-  for (const [keyword, score] of Object.entries(GPU_REGION_SCORES)) {
-    if (normalized.includes(keyword)) {
-      return score;
-    }
-  }
-
-  if (isAsianGeo(geo, 'full')) return 55;
-  return 0;
-}
-
-/**
- * @param {Record<string, unknown>} offer
- * @param {GpuFilterCriteria} criteria
- */
-function passesHardFilters(offer, criteria) {
-  const rentable = offer.rentable ?? offer.search?.rentable;
-  if (!isTruthyFlag(rentable, false)) return false;
-
-  const numGpus = toNumber(offer.num_gpus);
-  if (numGpus !== criteria.numGpus) return false;
-
-  const gpuRamGb = getOfferVramGb(offer);
-  if (gpuRamGb < criteria.minVramGb) return false;
-
-  const openPorts = getOfferOpenPortCount(offer);
-  if (criteria.minOpenPorts > 0 && openPorts < criteria.minOpenPorts) return false;
-
-  const reliability = getOfferReliability(offer);
-  if (reliability < criteria.minReliability) return false;
-
-  const diskGb = getOfferDiskGb(offer);
-  if (diskGb < criteria.minDiskGb) return false;
-
-  const maxDurationDays = getOfferMaxDurationDays(offer);
-  if (maxDurationDays > 0 && maxDurationDays < criteria.minMaxDurationDays) return false;
-
-  const inetDown = getOfferInetDown(offer);
-  if (inetDown < criteria.minInetDownMbps) return false;
-
-  const region = getOfferRegion(offer);
-  if (criteria.asiaMode !== 'global' && !isAsianGeo(region, criteria.asiaMode)) return false;
-
-  return true;
-}
-
-/**
- * @param {Record<string, unknown>} offer
- * @param {{ minPrice: number; maxPrice: number; maxDlperf: number }} context
- */
-function scoreOffer(offer, context) {
-  const pricePerHour = getOfferPricePerHour(offer);
-  const region = getOfferRegion(offer);
-  const reliability = getOfferReliability(offer);
-  const inetDown = getOfferInetDown(offer);
-  const dlperf = getOfferDlperf(offer);
-
-  let priceScore = 100;
-  if (context.maxPrice > context.minPrice) {
-    priceScore =
-      100 - ((pricePerHour - context.minPrice) / (context.maxPrice - context.minPrice)) * 100;
-  }
-
-  const regionScore = getRegionScore(region);
-  const networkScore = Math.min(100, inetDown / 10);
-  const uptimeScore = reliability * 100;
-  const dlperfScore =
-    context.maxDlperf > 0 ? Math.min(100, (dlperf / context.maxDlperf) * 100) : 0;
-
-  const score =
-    priceScore * GPU_SCORE_WEIGHTS.price +
-    regionScore * GPU_SCORE_WEIGHTS.region +
-    networkScore * GPU_SCORE_WEIGHTS.network +
-    uptimeScore * GPU_SCORE_WEIGHTS.uptime +
-    dlperfScore * GPU_SCORE_WEIGHTS.dlperf;
-
-  return {
-    score: Math.round(score * 100) / 100,
-    priceScore: Math.round(priceScore * 10) / 10,
-    regionScore,
-    networkScore: Math.round(networkScore * 10) / 10,
-    uptimeScore: Math.round(uptimeScore * 10) / 10,
-    dlperfScore: Math.round(dlperfScore * 10) / 10,
-    pricePerHour,
-    region,
-    reliability,
-    downloadSpeed: inetDown,
-    gpuType: String(offer.gpu_name ?? offer.gpu_type ?? 'GPU'),
-    vramGb: getOfferVramGb(offer),
-    dlperf,
-  };
-}
-
-/**
- * @param {ReturnType<typeof scoreOffer>} scored
- * @param {string} fallbackLabel
- */
-function buildSelectionReason(scored, fallbackLabel) {
-  const uptimePct = (scored.reliability * 100).toFixed(1);
-  const priceLabel =
-    scored.priceScore >= 90
-      ? 'Giá rẻ nhất trong nhóm phù hợp'
-      : scored.priceScore >= 70
-        ? 'Giá tốt'
-        : 'Cân bằng giá/hiệu năng';
-
-  const parts = [
-    `${priceLabel} khu vực ${scored.region}`,
-    `uptime ${uptimePct}%`,
-    `mạng ${Math.round(scored.downloadSpeed)} Mbps`,
-    `điểm ${scored.score}`,
-  ];
-
-  if (fallbackLabel !== 'asia_preferred') {
-    parts.push(`(${fallbackLabel})`);
-  }
-
-  return parts.join(', ');
-}
-
-/**
- * DEBUG: Log sample rejected offers when hard filters eliminate all candidates.
- * @param {Array<Record<string, unknown>>} candidates
- * @param {GpuFilterCriteria} criteria
- * @param {string} fallbackLabel
- */
-function logHardFilterRejections(candidates, criteria, fallbackLabel) {
-  if (candidates.length === 0) return;
-
-  const sample = candidates.slice(0, 3);
-  const requiredGpus = criteria.numGpus;
-  const minReliability = criteria.minReliability;
-  const minDisk = criteria.minDiskGb;
-  const minMaxDurationDays = criteria.minMaxDurationDays;
-  const minInetDown = criteria.minInetDownMbps;
-
-  console.warn(
-    `[vast/debug] ${fallbackLabel}: 0/${candidates.length} offers passed hard filters — sample rejections:`,
-  );
-
-  sample.forEach((offer, index) => {
-    const rentable = offer.rentable ?? offer.search?.rentable;
-    const region = getOfferRegion(offer);
-    /** @type {string[]} */
-    const reasons = [];
-
-    if (!isTruthyFlag(rentable, false)) {
-      reasons.push(`not rentable (rentable=${rentable})`);
-    }
-    if (toNumber(offer.num_gpus) !== requiredGpus) {
-      reasons.push(`num_gpus=${offer.num_gpus} need=${requiredGpus}`);
-    }
-    const gpuRamGb = getOfferVramGb(offer);
-    if (gpuRamGb < criteria.minVramGb) {
-      reasons.push(`gpu_ram=${offer.gpu_ram}MB (~${gpuRamGb.toFixed(1)}GB < ${criteria.minVramGb}GB)`);
-    }
-    const ports = getOfferOpenPortCount(offer);
-    if (ports < criteria.minOpenPorts) {
-      reasons.push(
-        `ports=${offer.open_port_count ?? offer.direct_port_count ?? ports} need>=${criteria.minOpenPorts}`,
-      );
-    }
-    const reliability = getOfferReliability(offer);
-    if (reliability < minReliability) {
-      reasons.push(`reliability=${offer.reliability ?? reliability} (<${minReliability})`);
-    }
-    const diskGb = getOfferDiskGb(offer);
-    if (diskGb < minDisk) {
-      reasons.push(
-        `disk=${offer.disk_space ?? offer.disk_total ?? offer.dsize ?? diskGb}GB (<${minDisk}GB)`,
-      );
-    }
-    const maxDurationDays = getOfferMaxDurationDays(offer);
-    if (maxDurationDays > 0 && maxDurationDays < minMaxDurationDays) {
-      reasons.push(
-        `max_duration=${offer.max_duration ?? offer.duration} (~${maxDurationDays}d < ${minMaxDurationDays}d)`,
-      );
-    }
-    const inetDown = getOfferInetDown(offer);
-    if (inetDown < minInetDown) {
-      reasons.push(`inet_down=${offer.inet_down ?? inetDown}Mbps (<${minInetDown}Mbps)`);
-    }
-    if (criteria.asiaMode !== 'global' && !isAsianGeo(region, criteria.asiaMode)) {
-      reasons.push(`region=${region} (asiaMode=${criteria.asiaMode})`);
-    }
-
-    console.log(`[vast/debug] Offer #${index + 1} REJECTED: ${reasons.join(', ') || 'unknown'}`);
-    console.log(
-      '[vast/debug] Raw fields:',
-      JSON.stringify({
-        rentable: offer.rentable ?? offer.search?.rentable,
-        num_gpus: offer.num_gpus,
-        gpu_ram_mb: offer.gpu_ram,
-        gpu_ram_gb: gpuRamGb,
-        open_port_count: offer.open_port_count,
-        direct_port_count: offer.direct_port_count,
-        reliability: offer.reliability,
-        disk_space: offer.disk_space,
-        disk_total: offer.disk_total,
-        disk_free: offer.disk_free,
-        dsize: offer.dsize,
-        max_duration: offer.max_duration,
-        duration: offer.duration,
-        inet_down: offer.inet_down,
-        geolocation: offer.geolocation,
-      }),
-    );
-  });
-}
-
-/**
- * @param {Array<Record<string, unknown>>} offers
- * @param {GpuFilterCriteria} criteria
- * @param {string} fallbackLabel
- */
-function rankOffers(offers, criteria, fallbackLabel) {
-  const filtered = offers.filter((offer) => passesHardFilters(offer, criteria));
-
-  if (filtered.length === 0) {
-    logHardFilterRejections(offers, criteria, fallbackLabel);
-    return [];
-  }
-
-  const prices = filtered.map(getOfferPricePerHour).filter((value) => value > 0);
-  const dlperfs = filtered.map(getOfferDlperf).filter((value) => value > 0);
-  const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-  const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
-  const maxDlperf = dlperfs.length > 0 ? Math.max(...dlperfs) : 0;
-
-  /** @type {ScoredGpuOffer[]} */
-  const scoredOffers = filtered.map((offer) => {
-    const metrics = scoreOffer(offer, { minPrice, maxPrice, maxDlperf });
-    const offerId = Number(offer.id ?? offer.ask_contract_id);
-    const reason = buildSelectionReason(metrics, fallbackLabel);
-
-    return {
-      offer,
-      offerId,
-      reason,
-      ...metrics,
-    };
-  });
-
-  scoredOffers.sort((a, b) => b.score - a.score);
-
-  console.info(
-    `[vast/findBestGPU] ${fallbackLabel}: ${filtered.length}/${offers.length} offers passed filters. Top 3:`,
-    scoredOffers.slice(0, 3).map((item) => ({
-      offerId: item.offerId,
-      score: item.score,
-      region: item.region,
-      price: item.pricePerHour,
-      reliability: item.reliability,
-      inet_down: item.downloadSpeed,
-    })),
-  );
-
-  return scoredOffers;
-}
-
-/**
- * @param {ScoredGpuOffer} best
- * @param {string} filterLabel
- */
-function toGpuOfferSelection(best, filterLabel) {
-  const port = Number(best.offer.direct_port_start ?? best.offer.port ?? DEFAULT_GPU_PORT);
-  const ipAddress =
-    typeof best.offer.public_ipaddr === 'string'
-      ? best.offer.public_ipaddr
-      : typeof best.offer.public_ip === 'string'
-        ? best.offer.public_ip
-        : null;
-
-  return {
-    ...best,
-    offer_id: best.offerId,
-    ip_address: ipAddress,
-    port,
-    gpu_type: best.gpuType,
-    vram: best.vramGb,
-    price_per_hour: best.pricePerHour,
-    download_speed: best.downloadSpeed,
-    fallbackLevel: filterLabel,
-  };
-}
-
-/**
- * @param {import('../../domain/gpu-instance').GPULine | string} gpuType
- * @param {string | null | undefined} [plan]
- * @param {Array<Record<string, unknown>>} [offers]
- * @param {number} [limit]
- */
 export function findRankedGPUOffers(gpuType, plan, offers = [], limit = 10) {
   const gpuLine = /** @type {import('../../domain/gpu-instance').GPULine} */ (String(gpuType));
-  const numGpus = getNumGpusForLine(gpuLine);
 
   console.info(
     `[vast/findRankedGPUOffers] Selecting GPU line=${gpuLine}, plan=${plan ?? 'n/a'}, candidates=${offers.length}, limit=${limit}`,
@@ -539,60 +238,104 @@ export function findRankedGPUOffers(gpuType, plan, offers = [], limit = 10) {
     throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
   }
 
-  /** @type {ReturnType<typeof toGpuOfferSelection>[]} */
-  const selections = [];
-
-  for (const level of GPU_FALLBACK_LEVELS) {
-    if (selections.length >= limit) break;
-
-    const criteria = {
-      ...GPU_STRICT_FILTERS,
-      numGpus,
-      asiaMode: level.asiaMode,
-    };
-    const ranked = rankOffers(offers, criteria, level.label);
-    if (ranked.length === 0) continue;
-
-    for (const item of ranked) {
-      if (selections.some((entry) => entry.offer_id === item.offerId)) continue;
-      selections.push(toGpuOfferSelection(item, level.label));
-      if (selections.length >= limit) break;
-    }
+  /** @type {import('../../offer-selection.js').NormalizedOffer[]} */
+  const normalized = [];
+  for (const raw of offers) {
+    const offer = normalizeVastOffer(/** @type {Record<string, unknown>} */ (raw));
+    if (offer) normalized.push(offer);
   }
 
-  if (!selections.length) {
+  const { offers: saneOffers } = filterVastOffersBySanity(normalized, gpuLine, { plan });
+  if (!saneOffers.length) {
     throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
   }
 
-  return selections;
+  const selected = selectWorkstationOffers(saneOffers, { plan, gpuLine });
+  if (!selected.length) {
+    throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
+  }
+
+  const { offers: reputationRanked } = applyHostReputationToOffers(
+    selected,
+    (offer) =>
+      resolveVastHostKey(
+        offer.raw && typeof offer.raw === 'object'
+          ? /** @type {Record<string, unknown>} */ (offer.raw)
+          : null,
+        gpuLine,
+      ),
+  );
+  if (!reputationRanked.length) {
+    throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
+  }
+
+  return reputationRanked.slice(0, limit).map((item) => {
+    const raw = item.raw ?? {};
+    const port = Number(raw.direct_port_start ?? raw.port ?? DEFAULT_GPU_PORT);
+    const ipAddress =
+      typeof raw.public_ipaddr === 'string'
+        ? raw.public_ipaddr
+        : typeof raw.public_ip === 'string'
+          ? raw.public_ip
+          : null;
+    const dlperf = item.dlperf ?? readVastDlperf(/** @type {Record<string, unknown>} */ (raw));
+    const dphBase = item.dphBase ?? readVastGpuPricePerHour(/** @type {Record<string, unknown>} */ (raw), item.pricePerHour);
+
+    return {
+      offer: raw,
+      offerId: item.offerId,
+      offer_id: item.offerId,
+      score: item.uptimePercent,
+      priceScore: 0,
+      regionScore: 0,
+      networkScore: 0,
+      uptimeScore: item.uptimePercent,
+      dlperfScore: dlperf,
+      pricePerHour: item.pricePerHour,
+      price_per_hour: item.pricePerHour,
+      dph_total: item.pricePerHour,
+      dph_base: dphBase,
+      region: item.region,
+      reliability: item.uptimePercent / 100,
+      downloadSpeed: 0,
+      download_speed: 0,
+      gpuType: item.gpuType,
+      gpu_type: item.gpuType,
+      gpu_name: item.gpuType,
+      vramGb: item.vramGb,
+      vram: item.vramGb,
+      dlperf,
+      reason: item.reason,
+      ip_address: ipAddress,
+      port,
+      fallbackLevel: item.uptimeGroup,
+      uptimeGroup: item.uptimeGroup,
+      pingMs: item.pingMs,
+    };
+  });
+}
+
+export function findBestGPU(gpuType, plan, offers = []) {
+  return findRankedGPUOffers(gpuType, plan, offers, 1)[0];
 }
 
 /**
  * @param {unknown} error
+ * @param {{ retryCount?: number; hostId?: string|null; requestId?: string|null }} [options]
  */
-function isOfferRentError(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /no_such_ask|not available|already rented|offer.*unavailable|404\/3603/i.test(message);
-}
-
-/**
- * Find the best Vast.ai offer using hard filters, price-first scoring, and geography fallback.
- * @param {import('../../domain/gpu-instance').GPULine | string} gpuType
- * @param {string | null | undefined} [plan]
- * @param {Array<Record<string, unknown>>} [offers]
- * @returns {ScoredGpuOffer & {
- *   offer_id: number;
- *   ip_address: string | null;
- *   port: number;
- *   gpu_type: string;
- *   vram: number;
- *   price_per_hour: number;
- *   download_speed: number;
- *   fallbackLevel: string;
- * }}
- */
-export function findBestGPU(gpuType, plan, offers = []) {
-  return findRankedGPUOffers(gpuType, plan, offers, 1)[0];
+function isOfferRentError(error, options = {}) {
+  const decision = decideRetryPolicy({
+    provider: 'vast',
+    operation: 'rent',
+    error,
+    retryCount: options.retryCount ?? 0,
+    hostId: options.hostId ?? null,
+    requestId: options.requestId ?? null,
+  });
+  return (
+    !decision.failImmediately &&
+    (shouldRetryAnotherHost(decision) || Boolean(decision.refreshMarketplace))
+  );
 }
 
 /**
@@ -695,32 +438,20 @@ export class VastClient {
       `[vast/createInstance] Fetched ${offerList.length} raw offers for ${params.gpuLine}`,
     );
 
-    let scopedOffers = offerList;
-    if (params.region) {
-      const regionNeedle = params.region.toLowerCase();
-      const regionMatches = offerList.filter((offer) =>
-        getOfferRegion(offer).toLowerCase().includes(regionNeedle),
-      );
-      if (regionMatches.length > 0) {
-        scopedOffers = regionMatches;
-        console.info(
-          `[vast/createInstance] Region hint "${params.region}" narrowed to ${regionMatches.length} offers`,
-        );
-      }
-    }
-
+    const packageSpec = resolvePackageSpec(params.plan, params.gpuLine);
     const comfyPort = params.port ?? DEFAULT_GPU_PORT;
     const portMappingKey = `-p ${comfyPort}:${comfyPort}`;
     const rentBody = {
       label: params.label ?? 'gpuvietnam',
-      image: params.image ?? DEFAULT_GPU_IMAGE,
-      disk: params.diskSize ?? DEFAULT_DISK_SIZE,
+      image: params.image ?? resolveGpuImage(params.gpuLine),
+      disk: params.diskSize ?? resolvePackageDiskSize(params.plan, params.gpuLine),
       runtype: 'args',
       target_state: 'running',
       env: {
         ...(params.env ?? {}),
         [portMappingKey]: '1',
         COMFYUI_PORT: String(comfyPort),
+        GPUVIETNAM_PACKAGE: packageSpec.planKey,
       },
     };
 
@@ -733,74 +464,106 @@ export class VastClient {
      * @param {string} sourceLabel
      */
     const rentFromCandidates = async (candidates, sourceLabel) => {
-      const prices = candidates.map((c) => c.price_per_hour).filter((p) => p > 0);
-      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-      const priceCap = minPrice > 0 ? minPrice * MAX_PRICE_PREMIUM : Infinity;
-
-      const skippedRegions = new Set();
-      /** @type {Map<string, number>} */
-      const triesPerRegion = new Map();
-
-      for (const best of candidates) {
-        const offerId = best.offer_id;
-        if (!offerId || triedOfferIds.has(offerId)) continue;
-
-        const region = best.region ?? 'Unknown';
-        if (skippedRegions.has(region)) continue;
-
-        if (best.price_per_hour > priceCap) {
-          skippedRegions.add(region);
-          console.info(
-            `[vast/createInstance] ${region}: price $${best.price_per_hour} > cap $${priceCap.toFixed(4)} (${sourceLabel}), skipping region`,
+      const walked = await walkRentCandidates({
+        providerId: 'vast',
+        sourceLabel,
+        candidates,
+        getOfferId: (best) =>
+          best && typeof best === 'object' && 'offer_id' in best
+            ? /** @type {{ offer_id?: string|number|null }} */ (best).offer_id
+            : null,
+        shouldSkip: (best, offerId) => {
+          const hostKey = resolveVastHostKey(
+            best && typeof best === 'object' && 'offer' in best && best.offer && typeof best.offer === 'object'
+              ? /** @type {Record<string, unknown>} */ (best.offer)
+              : null,
+            params.gpuLine,
           );
-          continue;
-        }
-
-        const tries = triesPerRegion.get(region) ?? 0;
-        if (tries >= MAX_OFFERS_PER_REGION) continue;
-
-        triedOfferIds.add(offerId);
-        triesPerRegion.set(region, tries + 1);
-
-        try {
-          return await this.rentOffer(best, offerId, rentBody);
-        } catch (error) {
-          if (isOfferRentError(error)) {
+          if (hostKey && isVastHostExcluded(hostKey.split('|')[0])) {
             console.warn(
-              `[vast/createInstance] Offer ${offerId} unavailable (${sourceLabel}), trying next...`,
-              error instanceof Error ? error.message : error,
+              `[vast/createInstance] Skipping excluded bad host ${hostKey} (offer ${offerId})`,
             );
-            lastRentError = error instanceof Error ? error : new Error(String(error));
-            continue;
+            return true;
           }
-          throw error;
-        }
-      }
-      return null;
+          return false;
+        },
+        rentOne: async (best, offerId) => {
+          triedOfferIds.add(offerId);
+          return this.rentOffer(best, offerId, rentBody, params.gpuLine);
+        },
+        cancelOrphan: async (_best, offerId) => {
+          // rentOffer already destroys on post-rent gate failure; this catches
+          // lost-response / partial-create cases before walking to the next host.
+          const label = String(rentBody.label ?? '').trim();
+          if (!label) return;
+          const rows = await this.listInstancesByLabel(label);
+          for (const row of rows) {
+            const id = row?.id ?? row?.new_contract;
+            if (id == null) continue;
+            const ask = row?.ask_contract_id ?? row?.ask_id ?? row?.offer_id;
+            if (ask != null && String(ask) !== String(offerId)) continue;
+            console.warn(
+              `[vast/createInstance] Cancel orphan instance ${id} for offer ${offerId} before next candidate`,
+            );
+            await this.destroyInstance(String(id));
+          }
+        },
+        afterFailure: async ({ candidate: best, offerId, error, triedCount }) => {
+          const hostKey = resolveVastHostKey(
+            best && typeof best === 'object' && 'offer' in best && best.offer && typeof best.offer === 'object'
+              ? /** @type {Record<string, unknown>} */ (best.offer)
+              : null,
+            params.gpuLine,
+          );
+          if (hostKey) {
+            rememberHostFailure(hostKey, {
+              error,
+              phase: 'rent',
+              region:
+                best && typeof best === 'object' && 'region' in best && best.region != null
+                  ? String(best.region)
+                  : null,
+              gpuType:
+                best && typeof best === 'object' && 'gpuType' in best && best.gpuType != null
+                  ? String(best.gpuType)
+                  : null,
+              gpuLine: params.gpuLine != null ? String(params.gpuLine) : null,
+            });
+          }
+          const decision = decideRetryPolicy({
+            provider: 'vast',
+            operation: 'rent',
+            error,
+            retryCount: Math.max(0, triedCount - 1),
+            hostId: offerId,
+          });
+          await applyRetryDecision(decision, {
+            provider: 'vast',
+            operation: 'rent',
+            hostId: offerId,
+            retryCount: Math.max(0, triedCount - 1),
+          });
+          if (
+            !decision.failImmediately &&
+            (shouldRetryAnotherHost(decision) || decision.refreshMarketplace)
+          ) {
+            lastRentError = error instanceof Error ? error : new Error(String(error));
+            return 'continue';
+          }
+          return 'throw';
+        },
+      });
+      if (walked.lastError) lastRentError = walked.lastError;
+      return walked.result;
     };
 
-    let candidates = findRankedGPUOffers(params.gpuLine, params.plan, scopedOffers, 10);
+    let candidates = findRankedGPUOffers(params.gpuLine, params.plan, offerList, 3);
     let rented = await rentFromCandidates(candidates, 'initial');
 
     if (!rented) {
       console.info('[vast/createInstance] All top offers unavailable, refetching offer list...');
-      const freshResponse = await this.request('POST', '/bundles/', searchBody);
-      const freshList = Array.isArray(freshResponse?.offers)
-        ? freshResponse.offers
-        : Array.isArray(freshResponse)
-          ? freshResponse
-          : [];
-      let freshScoped = freshList;
-      if (params.region) {
-        const regionNeedle = params.region.toLowerCase();
-        const regionMatches = freshList.filter((offer) =>
-          getOfferRegion(offer).toLowerCase().includes(regionNeedle),
-        );
-        if (regionMatches.length > 0) {
-          freshScoped = regionMatches;
-        }
-      }
-      candidates = findRankedGPUOffers(params.gpuLine, params.plan, freshScoped, 10);
+      const freshList = await this.searchOffers(params.gpuLine);
+      candidates = findRankedGPUOffers(params.gpuLine, params.plan, freshList, 3);
       rented = await rentFromCandidates(candidates, 'refetch');
     }
 
@@ -814,54 +577,180 @@ export class VastClient {
     return rented;
   }
 
-  /**
-   * @param {ReturnType<typeof findRankedGPUOffers>[number]} best
-   * @param {number} offerId
-   * @param {Record<string, unknown>} rentBody
-   */
-  async rentOffer(best, offerId, rentBody) {
+  async rentOffer(best, offerId, rentBody, gpuLine) {
     const rented = await this.request('PUT', `/asks/${offerId}/`, rentBody);
     const instanceId = String(
       rented?.new_contract ?? rented?.id ?? rented?.instance_id ?? '',
     );
 
+    const hostKeyForMeta = resolveVastHostKey(
+      best?.offer && typeof best.offer === 'object'
+        ? /** @type {Record<string, unknown>} */ (best.offer)
+        : null,
+      gpuLine,
+    );
     const selectionMeta = {
       offer_id: best.offer_id,
+      host_key: hostKeyForMeta,
+      gpu_line: gpuLine != null ? String(gpuLine) : null,
       score: best.score,
       reason: best.reason,
       region: best.region,
       price_per_hour: best.price_per_hour,
+      dph_total: best.dph_total ?? best.price_per_hour,
+      dph_base: best.dph_base ?? null,
+      dlperf: best.dlperf ?? null,
+      gpu_name: best.gpu_name ?? best.gpuType ?? null,
       reliability: best.reliability,
       download_speed: best.download_speed,
       fallback_level: best.fallbackLevel,
     };
 
-    console.info('[vast/createInstance] Rented offer', {
+    providerLog().info(
+      providerDiag({
+        operation: 'vast.createInstance',
+        phase: 'SUCCESS',
+        provider: 'vast',
+        offerId,
+        instanceId: instanceId || null,
+        machineId: instanceId || null,
+        gpuType: selectionMeta.gpu_name != null ? String(selectionMeta.gpu_name) : null,
+        gpuCount: Number(best.num_gpus ?? best.numGpus ?? 1) || 1,
+        region: best.geolocation != null ? String(best.geolocation) : best.region != null ? String(best.region) : null,
+        retryCount: Number(selectionMeta.fallback_level ?? 0) || 0,
+        image: rentBody.image,
+        dph_total: selectionMeta.dph_total,
+        dlperf: selectionMeta.dlperf,
+      }),
+      'vast createInstance rented offer',
+    );
+
+    if (!instanceId) {
+      if (rented && typeof rented === 'object') {
+        rented.gpuvietnam_selection = selectionMeta;
+      }
+      return rented;
+    }
+
+    const internalPort = Number(rentBody?.env?.COMFYUI_PORT) || DEFAULT_GPU_PORT;
+    const rentedAtMs = Date.now();
+    const hostKeyForJournal =
+      resolveVastHostKey(
+        best?.offer && typeof best.offer === 'object'
+          ? /** @type {Record<string, unknown>} */ (best.offer)
+          : null,
+        gpuLine,
+      ) || null;
+    const gate = await runVastProvisionGate(this, {
+      instanceId,
+      internalPort,
+      gpuLine: gpuLine != null ? String(gpuLine) : null,
+    });
+    const ready = gate.ok
+      ? { ok: true, live: gate.live ?? null, ops: gate.ops ?? null }
+      : {
+          ok: false,
+          detail: `${gate.step}: ${gate.detail || 'failed'}`,
+          live: gate.live ?? null,
+          reasonCategory: classifyVastGateFailReason(`${gate.step} ${gate.detail || ''}`),
+          ops: gate.ops ?? null,
+        };
+    const journalBase = {
+      provider: 'vast',
+      hostId: hostKeyForJournal
+        ? String(hostKeyForJournal).replace(/^vast-host:/, '')
+        : null,
       offerId,
-      instanceId: instanceId || '(pending)',
-      image: rentBody.image,
+      instanceId,
+      gpuLine: gpuLine != null ? String(gpuLine) : null,
+      region: best.region != null ? String(best.region) : null,
+      rentOk: true,
+      httpPub: null,
+      gateSteps: gate.steps ?? null,
+      ops: gate.ops ?? null,
+      rentedAtMs,
+      finishedAtMs: Date.now(),
+      source: 'vast.rentOffer',
+    };
+    if (!ready.ok) {
+      appendProvisionJournal(
+        buildProvisionJournalEntry({
+          ...journalBase,
+          gateOk: false,
+          gateStep: gate.step,
+          gateDetail: gate.detail || ready.detail,
+          failCategory: ready.reasonCategory || null,
+        }),
+      );
+      const hostKey =
+        hostKeyForJournal || resolveVastHostKey(ready.live, gpuLine) || null;
+      if (hostKey) {
+        rememberVastBadHost(hostKey.split('|')[0], {
+          reason: ready.detail || 'post_rent_gate_failed',
+          reasonCategory: ready.reasonCategory || null,
+          offerId: String(offerId),
+          instanceId,
+          gpuLine: gpuLine != null ? String(gpuLine) : null,
+        });
+      }
+      try {
+        await this.destroyInstance(instanceId);
+      } catch (destroyError) {
+        console.warn(
+          '[vast/createInstance] destroy bad host failed:',
+          destroyError instanceof Error ? destroyError.message : destroyError,
+        );
+      }
+      throw new GPUProviderError(formatVastBadHostError(instanceId, ready.detail), {
+        retryable: true,
+      });
+    }
+
+    appendProvisionJournal(
+      buildProvisionJournalEntry({
+        ...journalBase,
+        gateOk: true,
+        gateStep: gate.step,
+        gateDetail: gate.detail,
+      }),
+    );
+
+    return {
+      ...rented,
+      ...(ready.live && typeof ready.live === 'object' ? ready.live : {}),
+      new_contract: instanceId,
+      id: instanceId,
+      gpuvietnam_selection: selectionMeta,
+      gpuvietnam_ops: ready.ops ?? null,
+    };
+  }
+
+  /**
+   * Multi-step L2 gate: HTTP customer-path hard, SSH soft (ops_degraded).
+   * @param {string} instanceId
+   * @param {number} internalPort
+   * @param {{ gpuLine?: string | null }} [options]
+   * @returns {Promise<{ ok: true; live: Record<string, unknown> | null; ops?: Record<string, unknown> | null } | { ok: false; detail: string; live?: Record<string, unknown> | null; reasonCategory?: string; ops?: Record<string, unknown> | null }>}
+   */
+  async waitForInstanceProvisionGate(instanceId, internalPort, options = {}) {
+    const gate = await runVastProvisionGate(this, {
+      instanceId,
+      internalPort,
+      gpuLine: options.gpuLine ?? null,
     });
 
-    if (instanceId) {
-      try {
-        const live = await this.getInstance(instanceId);
-        return {
-          ...rented,
-          ...live,
-          new_contract: instanceId,
-          id: instanceId,
-          gpuvietnam_selection: selectionMeta,
-        };
-      } catch (error) {
-        console.warn('[vast/createInstance] Could not fetch instance after rent:', error);
-      }
+    if (gate.ok) {
+      return { ok: true, live: gate.live ?? null, ops: gate.ops ?? null };
     }
 
-    if (rented && typeof rented === 'object') {
-      rented.gpuvietnam_selection = selectionMeta;
-    }
-
-    return rented;
+    const detail = `${gate.step}: ${gate.detail || 'failed'}`;
+    return {
+      ok: false,
+      detail,
+      live: gate.live ?? null,
+      reasonCategory: classifyVastGateFailReason(`${gate.step} ${gate.detail || ''}`),
+      ops: gate.ops ?? null,
+    };
   }
 
   /** @param {string} instanceId */
@@ -899,6 +788,36 @@ export class VastClient {
     }
 
     return null;
+  }
+
+  /**
+   * List instances matching a rent label (orphan recovery after lost rent response).
+   * @param {string} label
+   * @returns {Promise<Record<string, unknown>[]>}
+   */
+  async listInstancesByLabel(label) {
+    const trimmed = String(label ?? '').trim();
+    if (!trimmed) return [];
+
+    const selectFilters = JSON.stringify({ label: { eq: trimmed } });
+    const selectCols = JSON.stringify(['id', 'label', 'actual_status', 'cur_state', 'public_ipaddr']);
+    const query = new URLSearchParams({
+      select_filters: selectFilters,
+      select_cols: selectCols,
+      limit: '20',
+    });
+
+    try {
+      const payload = await this.request('GET', `/instances/?${query.toString()}`, undefined, {
+        baseUrl: VAST_V1_API_BASE,
+      });
+      const instances = payload?.instances;
+      if (!Array.isArray(instances)) return [];
+      return instances.filter((row) => row && typeof row === 'object');
+    } catch (error) {
+      console.warn('[vast/listInstancesByLabel] failed:', error instanceof Error ? error.message : error);
+      return [];
+    }
   }
 
   /** @param {string} instanceId */

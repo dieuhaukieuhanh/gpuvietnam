@@ -167,14 +167,29 @@ export function validateStorageDowngrade(ssdUsed, backupUsed, requestedSsdGb, re
 }
 
 export async function applyUserStoragePlan(supabaseAdmin, userId, ssdGb, backupGb) {
+  const { data: profile, error: readError } = await supabaseAdmin
+    .from('users')
+    .select('backup_upgrade_gb')
+    .eq('id', userId)
+    .maybeSingle();
+  if (readError) throw readError;
+
+  const nextUpgradeGb = Math.max(
+    Math.max(0, Math.floor(Number(profile?.backup_upgrade_gb ?? 0) || 0)),
+    Math.max(0, Math.floor(Number(backupGb) || 0)),
+  );
+
   const { error } = await supabaseAdmin
     .from('users')
     .update({
       ssd_plan_gb: ssdGb,
-      backup_plan_gb: backupGb,
+      backup_upgrade_gb: nextUpgradeGb,
       updated_at: new Date().toISOString(),
     })
     .eq('id', userId);
 
   if (error) throw error;
+
+  const { syncUserBackupEntitlement } = await import('./backup-entitlement.js');
+  await syncUserBackupEntitlement(supabaseAdmin, userId);
 }

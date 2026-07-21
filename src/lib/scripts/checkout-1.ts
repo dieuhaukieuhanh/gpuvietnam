@@ -1,3 +1,7 @@
+/**
+ * @deprecated Dead legacy DOM checkout. Live flow: `Checkout1Page` + `useGpuPricingConfig`
+ * (`/api/gpu-pricing` ← Admin `gpu_pricing_config`). Do not treat prices here as SoT.
+ */
 export function initCheckout1(): void {
   if (typeof window === 'undefined') return;
   const run = new Function(`// ─── Lấy thông tin từ URL ────────────────────────────────────────
@@ -11,7 +15,7 @@ export function initCheckout1(): void {
         document.getElementById('envIcon').textContent = envIcon;
         document.getElementById('envDesc').textContent = envDesc;
 
-        // ─── Plan Data ────────────────────────────────────────────────────
+        // ─── Plan Data (stale mirror of gpu-pricing-defaults — not live SoT) ─
         let currentBilling = 'hourly';
         let activePlan = preselectedPlan;
 
@@ -25,23 +29,22 @@ export function initCheckout1(): void {
                     { icon: '🎨', label: 'Freelancer mới bắt đầu' }
                 ],
                 bestFor: ['Sáng tạo ảnh SDXL chất lượng cao', 'Test workflow và thử model mới', 'Tạo avatar, ảnh nghệ thuật cá nhân'],
-                notFor: 'Cần tốc độ cao cho video AI hoặc batch ảnh lớn (gói Pro nhanh gấp 2.5 lần)',
+                notFor: 'Cần tốc độ cao cho video AI hoặc batch ảnh lớn — Pro nhanh hơn rõ rệt so với RTX 3090',
                 gpuLabel: 'RTX 3090 — 24GB VRAM',
                 pricing: {
-                    hourly:  { price: '18.000đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · RTX 3090 24GB' },
-                    combo1:  { price: '1.400.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 45 ngày' },
-                    combo2:  { price: '2.900.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 120 ngày' },
+                    hourly:  { price: '9.900đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · RTX 3090 24GB' },
+                    combo1:  { price: '990.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 120 ngày' },
+                    combo2:  { price: '1.980.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 180 ngày' },
                 },
                 features: [
                     { text: 'RTX 3090 — 24GB VRAM', included: true },
                     { text: 'ComfyUI + SDXL + Flux cài sẵn', included: true },
                     { text: 'Máy chủ ảo riêng — toàn quyền kiểm soát', included: true },
-                    { text: 'File tự sync Google Drive khi tắt', included: true },
+                    { text: 'SSD 50GB · Auto Backup 100GB (Outputs mỗi 10 phút • Workflows mỗi 20 phút)', included: true },
                     { text: 'Hỗ trợ Zalo khi gặp lỗi', included: true },
-                    { text: 'Lưu trữ cố định', included: false },
                     { text: 'Tốc độ cao như RTX 4090', included: false },
                 ],
-                trust: ['24GB VRAM — đủ sức chạy SDXL, Flux mượt mà', 'Không mất file khi tắt máy — tự sync Drive'],
+                trust: ['24GB VRAM — đủ sức chạy SDXL, Flux mượt mà', 'Không mất file — Auto Backup 100GB khi chạy phiên'],
                 cta: 'Chọn Starter',
                 featured: false,
                 accent: '#4F8EF7'
@@ -58,19 +61,19 @@ export function initCheckout1(): void {
                 bestFor: ['Flux.1 full-quality, SDXL 1024px+, upscale 4x', 'Nhất quán nhân vật (IP-Adapter, ControlNet)', 'AnimateDiff, video ngắn, LoRA inference'],
                 gpuLabel: 'RTX 4090 — 24GB VRAM',
                 pricing: {
-                    hourly:  { price: '30.000đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · RTX 4090 24GB' },
-                    combo1:  { price: '2.400.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 45 ngày' },
-                    combo2:  { price: '4.900.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 120 ngày' },
+                    hourly:  { price: '20.000đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · RTX 4090 24GB' },
+                    combo1:  { price: '2.000.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 120 ngày' },
+                    combo2:  { price: '4.000.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 180 ngày' },
                 },
                 features: [
-                    { text: 'RTX 4090 — 24GB VRAM, nhanh gấp 2.5 lần — tối ưu cho video & batch ảnh lớn', included: true },
+                    { text: 'RTX 4090 — 24GB VRAM, nhanh hơn RTX 3090 rõ rệt — tối ưu cho video & batch ảnh lớn', included: true },
                     { text: 'Toàn bộ tính năng Starter', included: true },
-                    { text: 'Lưu trữ mặc định 20GB & tùy chọn mở rộng', included: true },
+                    { text: 'SSD 80GB · Auto Backup 150GB (Outputs mỗi 3 phút • Workflows mỗi 10 phút)', included: true },
                     { text: 'Đổi phiên không mất model & workflow', included: true },
                     { text: 'Upscale 4x, SUPIR, workflow phức tạp', included: true },
                     { text: 'Nhất quán nhân vật: IP-Adapter + ControlNet', included: true },
                 ],
-                trust: ['Nhanh hơn RTX 3090 gấp 2.5 lần — tiết kiệm thời gian, nhận nhiều đơn hơn', '24GB VRAM — Flux.1, upscale 4K không bao giờ báo hết bộ nhớ'],
+                trust: ['Nhanh hơn RTX 3090 rõ rệt — tiết kiệm thời gian, nhận nhiều đơn hơn', '24GB VRAM — Flux.1 và upscale 4K với headroom tốt hơn Starter'],
                 cta: 'Chọn Pro',
                 featured: true,
                 accent: '#4F8EF7'
@@ -78,28 +81,26 @@ export function initCheckout1(): void {
             {
                 name: 'Studio',
                 icon: '🏢',
-                tagline: 'Cho studio 2–5 người và agency content AI',
+                tagline: 'RTX 5090 cho production AI nặng',
                 bestForAudience: [
-                    { icon: '🏢', label: 'Agency/Team' },
-                    { icon: '📦', label: 'Người bán ảnh số lượng lớn' },
-                    { icon: '🎬', label: 'Video AI chuyên nghiệp' }
+                    { icon: '🎬', label: 'Video AI dài / nặng' },
+                    { icon: '🧠', label: 'Train LoRA / fine-tune' },
+                    { icon: '📦', label: 'Batch lớn, deadline gấp' }
                 ],
-                bestFor: ['Sáng tạo & sản xuất nội dung số lượng lớn', 'Làm việc nhóm với workspace độc lập', 'Dự án video AI và batch processing nặng'],
-                gpuLabel: '2x RTX 4090 — 48GB VRAM (2x24GB riêng biệt)',
+                bestFor: ['Video dài, resolution cao, pipeline nhiều bước', 'Train LoRA / fine-tune khi Pro bắt đầu chậm hoặc chật VRAM', 'Batch lớn — hàng trăm ảnh với tốc độ vượt RTX 4090'],
+                notFor: 'Chỉ cần ảnh đơn / workflow hàng ngày — Pro đủ và tiết kiệm hơn',
+                gpuLabel: 'RTX 5090 — 32GB VRAM',
                 pricing: {
-                    hourly:  { price: '50.000đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · 2x RTX 4090 24GB' },
-                    combo1:  { price: '4.500.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 45 ngày' },
-                    combo2:  { price: '8.800.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 120 ngày' },
+                    hourly:  { price: '35.000đ', unit: '/giờ',  note: 'Trả theo giờ thực dùng · RTX 5090 32GB' },
+                    combo1:  { price: '3.500.000đ', unit: '',   note: '100 giờ + tặng 10 giờ · Hiệu lực 120 ngày' },
+                    combo2:  { price: '7.000.000đ', unit: '',   note: '200 giờ + tặng 30 giờ · Hiệu lực 180 ngày' },
                 },
                 features: [
-                    { text: '2x RTX 4090 — mỗi người 1 GPU riêng, không chia sẻ', included: true },
-                    { text: 'Nhiều người dùng cùng lúc (tối đa 5)', included: true },
-                    { text: 'Workspace riêng biệt cho từng thành viên', included: true },
-                    { text: 'Lưu trữ mặc định 50GB & tùy chọn mở rộng', included: true },
-                    { text: 'Video AI & LoRA training sẵn sàng', included: true },
-                    { text: 'Bảo mật dữ liệu', included: true },
+                    { text: 'RTX 5090 — 32GB VRAM, nhanh hơn Pro (RTX 4090)', included: true },
+                    { text: 'SSD 120GB · Auto Backup 200GB (Outputs mỗi 1 phút • Workflows mỗi 5 phút)', included: true },
+                    { text: 'Workflow nặng: video dài, multi-model, train LoRA', included: true },
                 ],
-                trust: ['Mỗi người 1 GPU riêng — không đụng VRAM, không chờ đợi', 'Đa nhiệm và chuyên dụng cho đội nhóm'],
+                trust: ['32GB VRAM liền — dư sức cho video dài, train LoRA và batch lớn', 'Nhanh hơn Pro rõ rệt — bước tiếp khi 4090 bắt đầu chậm / chật'],
                 cta: 'Chọn Studio',
                 featured: false,
                 accent: '#8B5CF6'

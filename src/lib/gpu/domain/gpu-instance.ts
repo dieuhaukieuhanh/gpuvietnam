@@ -1,6 +1,6 @@
 import type { GPUStatus } from './gpu-status';
 
-export type GPULine = 'rtx3090' | 'rtx4090_1x' | 'rtx4090_2x';
+export type GPULine = 'rtx3090' | 'rtx4090_1x' | 'rtx4090_2x' | 'rtx5090_1x';
 
 export interface GPUInstance {
   id: string;

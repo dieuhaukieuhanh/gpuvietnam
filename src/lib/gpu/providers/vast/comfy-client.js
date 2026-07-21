@@ -57,6 +57,14 @@ export class ComfyClient {
       }
     }
 
+    // Clore HTTP gateway returns 200 + plain "Proxy is starting" while the
+    // tunnel boots. Treat as not-ready (retryable) instead of success HTML/text.
+    if (typeof payload === 'string' && /proxy is starting/i.test(payload)) {
+      throw new GPUProviderError('ComfyUI proxy is starting', {
+        retryable: true,
+      });
+    }
+
     if (!response.ok) {
       throw new GPUProviderError(`ComfyUI ${response.status}: ${typeof payload === 'string' ? payload : response.statusText}`, {
         retryable: response.status >= 500,
@@ -67,7 +75,24 @@ export class ComfyClient {
   }
 
   async healthCheck() {
-    return this.request('/');
+    // Prefer /system_stats: returns JSON when ComfyUI is actually up.
+    // Clore's HTTP proxy often returns plain text "Proxy is starting" on /
+    // (HTTP 200) long before ComfyUI is ready — that must not count as healthy.
+    return this.request('/system_stats');
+  }
+
+  /**
+   * True when payload looks like a live ComfyUI /system_stats response.
+   * @param {unknown} payload
+   */
+  static isReadyPayload(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+    if (typeof payload === 'string') return false;
+    const text = JSON.stringify(payload).toLowerCase();
+    if (text.includes('proxy is starting')) return false;
+    // ComfyUI system_stats typically has system / devices keys.
+    const rec = /** @type {Record<string, unknown>} */ (payload);
+    return Boolean(rec.system || rec.devices || rec.device || rec.comfyui_version != null);
   }
 
   /** @returns {Promise<{ running: number; pending: number }>} */

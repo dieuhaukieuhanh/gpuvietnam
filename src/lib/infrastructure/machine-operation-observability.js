@@ -2,6 +2,8 @@
  * SCB 2.1 Phase 2.5 — Standardized machine operation logs.
  */
 
+import { logger } from '../logging/index.js';
+
 /**
  * @typedef {Object} MachineOperationLogContext
  * @property {string|null|undefined} [correlationId]
@@ -22,19 +24,21 @@
  */
 export function logMachineOperation(scope, ctx, message) {
   const payload = {
+    requestId: ctx.correlationId ?? null,
     correlation_id: ctx.correlationId ?? null,
     operation_id: ctx.operationId ?? null,
+    machineId: ctx.machineId ?? null,
     machine_id: ctx.machineId ?? null,
     provider: ctx.provider ?? null,
     state: ctx.state ?? null,
     attempt: ctx.attempt ?? null,
+    durationMs: ctx.durationMs ?? null,
     duration_ms: ctx.durationMs ?? null,
-    operation: ctx.operation ?? null,
-    message,
+    operation: ctx.operation ?? scope,
     ...(ctx.extra ?? {}),
   };
 
-  console.log(`[${scope}]`, payload);
+  logger('worker').info(payload, message);
 }
 
 /**

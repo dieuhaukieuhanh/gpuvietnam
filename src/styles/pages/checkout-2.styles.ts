@@ -85,8 +85,14 @@ export const styles = `:root {
             text-align: center;
             box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
         }
-        .selected-plan-card .plan-icon { font-size: 36px; margin-bottom: 12px; }
-        .selected-plan-card .plan-name { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+        .selected-plan-card .plan-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+        .selected-plan-card .plan-icon { font-size: 36px; margin-bottom: 0; line-height: 1; }
+        .selected-plan-card .plan-name { font-size: 28px; font-weight: 700; margin-bottom: 0; }
         .selected-plan-card .plan-price { font-size: 36px; font-weight: 700; color: var(--accent-green); }
         .selected-plan-card .plan-price span { font-size: 14px; font-weight: 400; color: var(--text-muted); }
         .selected-plan-card .plan-note { font-size: 12px; color: var(--text-muted); margin-top: 4px; }

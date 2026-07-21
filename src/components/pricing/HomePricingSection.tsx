@@ -1,13 +1,13 @@
 import { useRouter } from 'next/router';
 import { useCallback, useState } from 'react';
 import BillingToggleBar from '@/components/pricing/BillingToggleBar';
-import { planButtonClass } from '@/components/pricing/pricing-section-shared';
+import { isStarterPlan, planButtonClass } from '@/components/pricing/pricing-section-shared';
 import { useActivePlanGate } from '@/hooks/useActivePlanGate';
 import { getStarterPlanCta, usePricingContext } from '@/hooks/usePricingContext';
 import { useCheckoutSession } from '@/hooks/useCheckoutSession';
 import { useGpuPricingConfig } from '@/hooks/useGpuPricingConfig';
 import { buildBangGiaCheckoutUrl, buildLoginRedirectUrl } from '@/lib/checkout-auth';
-import { CHECKOUT_PLANS, type BillingMode } from '@/lib/checkout-plans';
+import { CHECKOUT_PLANS, type BillingMode, type Plan } from '@/lib/checkout-plans';
 import { routes } from '@/lib/routes';
 
 type HomePricingSectionProps = {
@@ -15,6 +15,37 @@ type HomePricingSectionProps = {
   variant?: 'home' | 'standalone';
   onStarterTrial: () => void;
 };
+
+function PlanUpgradeBlock({ plan }: { plan: Plan }) {
+  if (!plan.upgradeTitle) return null;
+  return (
+    <div className="plan-upgrade">
+      <p className="plan-label" style={{ marginBottom: '8px' }}>
+        {plan.upgradeTitle}
+      </p>
+      {plan.upgradeIntro ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+          {plan.upgradeIntro}
+        </p>
+      ) : null}
+      {plan.upgradeItems?.length ? (
+        <ul className="plan-list" style={{ marginBottom: '8px' }}>
+          {plan.upgradeItems.map((item) => (
+            <li key={item}>
+              <span className="check-icon">•</span>
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {plan.upgradeFooter ? (
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          {plan.upgradeFooter}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export default function HomePricingSection({
   id = 'pricing',
@@ -35,7 +66,7 @@ export default function HomePricingSection({
         return;
       }
 
-      const starterTrialEligible = planName === 'Starter' && eligibleForTrial;
+      const starterTrialEligible = isStarterPlan(planName) && eligibleForTrial;
 
       if (starterTrialEligible) {
         onStarterTrial();
@@ -61,13 +92,11 @@ export default function HomePricingSection({
     [currentBilling, eligibleForTrial, isLoggedIn, onStarterTrial, redirectIfActivePlan, router, variant],
   );
 
-  const getPlanCtaLabel = (planName: string) => {
-    if (planName === 'Starter') {
+  const getPlanCtaLabel = (plan: Plan) => {
+    if (isStarterPlan(plan)) {
       return getStarterPlanCta(isReturningCustomer);
     }
-    if (planName === 'Pro') return 'Chọn Pro';
-    if (planName === 'Studio') return 'Chọn Studio';
-    return 'Chọn gói';
+    return plan.cta || 'Chọn gói';
   };
 
   return (
@@ -87,38 +116,33 @@ export default function HomePricingSection({
 
             return (
               <div
-                key={plan.name}
+                key={plan.planKey ?? plan.name}
                 className={`plan-card${plan.featured ? ' featured' : ''}`}
-                id={`plan-${plan.name}`}
+                id={`plan-${plan.planKey ?? plan.name}`}
               >
-                {showFeaturedBadge ? (
-                  <div className="badge">⭐ {plan.badge ?? 'Phổ biến nhất'}</div>
-                ) : null}
-                <div className="plan-icon">{plan.icon}</div>
-                <div className="plan-name">{plan.name}</div>
-                <div className="plan-tagline">{plan.tagline}</div>
-                <div style={{ marginBottom: '20px' }}>
+                <div className="plan-card-head">
+                  {showFeaturedBadge ? (
+                    <div className="badge">⭐ {plan.badge ?? 'Phổ biến nhất'}</div>
+                  ) : null}
+                  <div className="plan-title-row">
+                    <div className="plan-icon">{plan.icon}</div>
+                    <div className="plan-name">{plan.name}</div>
+                  </div>
+                  <div className="plan-tagline">{plan.tagline}</div>
+                </div>
+
+                <div className="plan-audience-block">
                   <p className="plan-label">Đối tượng phù hợp</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <div className="plan-audience-list">
                     {plan.bestForAudience.map((audience) => (
-                      <span
-                        key={audience.label}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          background: 'rgba(79, 142, 247, 0.08)',
-                          padding: '3px 10px',
-                          borderRadius: '14px',
-                          fontSize: '11px',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {audience.icon} {audience.label}
-                      </span>
+                      <div key={audience.label} className="plan-audience-item">
+                        <span aria-hidden>{audience.icon}</span>
+                        <span>{audience.label}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
+
                 <div className="plan-price-row">
                   <div className="plan-price">
                     {pricing.price}
@@ -126,7 +150,8 @@ export default function HomePricingSection({
                   </div>
                   <div className="plan-price-note">{pricing.note}</div>
                 </div>
-                <div>
+
+                <div className="plan-bestfor-block">
                   <p className="plan-label">Phù hợp để làm</p>
                   <ul className="plan-list">
                     {plan.bestFor.map((item) => (
@@ -143,10 +168,12 @@ export default function HomePricingSection({
                     )}
                   </ul>
                 </div>
+
                 <div className="plan-real-output">
                   <strong>GPU:</strong> {plan.gpuLabel}
                 </div>
-                <div>
+
+                <div className="plan-features-block">
                   <p className="plan-label">Tính năng</p>
                   <ul className="plan-list">
                     {plan.features.map((feature) => (
@@ -159,9 +186,10 @@ export default function HomePricingSection({
                     ))}
                   </ul>
                 </div>
+
                 <div className="plan-trust">
                   <p className="plan-label" style={{ marginBottom: '8px' }}>
-                    Tại sao yên tâm
+                    {plan.trustTitle || 'Tại sao yên tâm'}
                   </p>
                   <ul>
                     {plan.trust.map((item) => (
@@ -169,16 +197,20 @@ export default function HomePricingSection({
                     ))}
                   </ul>
                 </div>
-                <button
-                  type="button"
-                  className={planButtonClass(plan)}
-                  onClick={() => handlePlanCTA(plan.name)}
-                  disabled={loadingContext || loadingSession || loadingPricing}
-                >
-                  {loadingContext && plan.name === 'Starter'
-                    ? 'Đang tải...'
-                    : getPlanCtaLabel(plan.name)}
-                </button>
+
+                <div className="plan-card-footer">
+                  <PlanUpgradeBlock plan={plan} />
+                  <button
+                    type="button"
+                    className={planButtonClass(plan)}
+                    onClick={() => handlePlanCTA(plan.name)}
+                    disabled={loadingContext || loadingSession || loadingPricing}
+                  >
+                    {loadingContext && isStarterPlan(plan)
+                      ? 'Đang tải...'
+                      : getPlanCtaLabel(plan)}
+                  </button>
+                </div>
               </div>
             );
           })}

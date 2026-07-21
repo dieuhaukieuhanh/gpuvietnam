@@ -8,6 +8,7 @@
 
 import { MACHINE_OPERATION_STATE } from './machine-operation-core.js';
 import { logMachineOperation } from './machine-operation-observability.js';
+import { logger } from '../logging/index.js';
 
 const DEFAULT_BATCH_LIMIT = 5;
 const DEFAULT_MAX_DRAIN_BATCHES = 50;
@@ -44,7 +45,10 @@ export function kickMachineOperationWorker(supabaseAdmin, options = {}) {
   if (!supabaseAdmin) return;
   void ensureDrain(supabaseAdmin, options).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[machine-op-runner] drain failed:', message);
+    logger('worker').error(
+      { operation: 'machine-op-runner.drain', phase: 'FAILURE', err: { message } },
+      'drain failed',
+    );
   });
 }
 
@@ -64,7 +68,10 @@ function ensureDrain(supabaseAdmin, options) {
       rerunRequested = false;
       void ensureDrain(supabaseAdmin, options).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        console.error('[machine-op-runner] coalesced drain failed:', message);
+        logger('worker').error(
+          { operation: 'machine-op-runner.drain', phase: 'FAILURE', err: { message } },
+          'coalesced drain failed',
+        );
       });
     }
   });

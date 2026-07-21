@@ -39,10 +39,18 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       subscription: result.subscription,
+      grant: result.grant ?? null,
+      hoursAdded: result.hoursAdded ?? null,
+      creditedAs: result.creditedAs ?? null,
       walletBalance: result.walletBalance,
       amountCharged: result.amountCharged,
       plan: input.plan,
-      message: `Thanh toán ví thành công. Gói ${input.plan} đang được kích hoạt.`,
+      message:
+        result.creditedAs === 'hourly'
+          ? `Đã cộng ${result.hoursAdded}h lẻ vào gói ${input.plan}.`
+          : result.creditedAs === 'gift'
+            ? `Đã cộng ${result.hoursAdded}h vào gói ${input.plan}.`
+            : `Thanh toán ví thành công. Gói ${input.plan} đang được kích hoạt.`,
     });
   } catch (err) {
     console.error('[payment/pay-wallet]', err);

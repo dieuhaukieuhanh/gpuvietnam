@@ -50,7 +50,7 @@ export default function DieuKhoanPage() {
                                 </tr>
                                 <tr>
                                     <td>3.3 Chia sẻ tài khoản</td>
-                                    <td>Gói cá nhân (Starter, Pro) không được phép chia sẻ cho nhiều người dùng. Gói Studio cho phép tối đa 5 thành viên trong cùng một tổ chức.</td>
+                                    <td>Mỗi tài khoản dành cho một người dùng. Không chia sẻ đăng nhập cho nhiều người dùng cùng lúc. Gói Studio là máy RTX 5090 cho một phiên làm việc nặng — không phải gói nhiều thành viên / nhiều môi trường song song.</td>
                                 </tr>
                                 <tr>
                                     <td>3.4 Xác thực</td>

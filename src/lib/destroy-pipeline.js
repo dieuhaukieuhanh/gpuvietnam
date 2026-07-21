@@ -11,6 +11,11 @@ import {
   clearMachineBillingFieldsForPipeline,
 } from '@/lib/gpu/billing';
 import { settleSession, skipSessionSettlement } from '@/lib/gpu/settlement';
+import {
+  revokeBackupTokensForMachine,
+  revokeBackupTokensForSubscription,
+} from '@/lib/machine-backup-token';
+import { revokeComfyAccessTokensForMachine } from '@/lib/comfy-proxy';
 import { runDestroyPipeline } from './destroy-pipeline-run.js';
 
 export {
@@ -34,7 +39,7 @@ export { runDestroyPipeline } from './destroy-pipeline-run.js';
  *   reason?: string;
  *   skipBackup?: boolean;
  *   skipMetrics?: boolean;
- *   notifyBackupStart?: boolean;
+ *   notifyBackupStart?: boolean; // default false — card shows “đang lưu”, not the bell
  * }} [options]
  */
 export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, options = {}) {
@@ -49,6 +54,9 @@ export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, optio
       clearMachineBillingFields: clearMachineBillingFieldsForPipeline,
       backupBeforeStop,
       notifyBackupStarted,
+      revokeBackupTokensForMachine,
+      revokeBackupTokensForSubscription,
+      revokeComfyAccessTokensForMachine,
     },
     {
       userId,
@@ -56,7 +64,7 @@ export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, optio
       skipBackup: options.skipBackup,
       skipBilling: options.skipBilling,
       skipMetrics: options.skipMetrics,
-      notifyBackupStart: options.notifyBackupStart,
+      notifyBackupStart: options.notifyBackupStart === true,
     },
   );
 }

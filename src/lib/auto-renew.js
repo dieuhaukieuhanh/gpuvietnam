@@ -143,6 +143,7 @@ export async function executeAutoRenew(supabaseAdmin, userId) {
   const renewResult = await processPlanRenew(supabaseAdmin, userId, {
     plan: evaluation.subscription.plan,
     billing: evaluation.subscription.billing,
+    subscriptionId: evaluation.subscription.id,
     isAutoRenew: true,
   });
 
@@ -169,7 +170,10 @@ export async function executeAutoRenew(supabaseAdmin, userId) {
     userId,
     type: NOTIFICATION_TYPES.PAYMENT_SUCCESS,
     title: `🎁 Gia hạn tự động: +${renewResult.hoursAdded}h ${renewResult.quote?.planName ?? ''}`,
-    message: `Đã tái tục tự động với thưởng ${renewResult.quote?.bonusLabel ?? '3%'} giờ.`,
+    message:
+      renewResult.quote?.renewBonus > 0
+        ? `Đã tái tục tự động với thưởng ${renewResult.quote.bonusLabel ?? '3%'} giờ.`
+        : `Đã gia hạn tự động — cộng ${renewResult.hoursAdded}h vào gói.`,
     link: routes.dashboardGoiCuaToi,
   });
 

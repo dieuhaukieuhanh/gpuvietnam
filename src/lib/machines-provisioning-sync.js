@@ -3,8 +3,26 @@
 export const STALE_BOOT_MS = 15 * 60 * 1000;
 /** Boot stuck in creating/starting under provisioning (no ComfyUI progress). */
 export const STALE_PROVISIONING_BOOT_MS = 3 * 60 * 1000;
+/**
+ * @deprecated Prefer lease expiry via isProvisionLeaseExpired / PROVISION_LEASE_MS.
+ * Kept as legacy fallback window when lease columns are null.
+ */
+export { LEGACY_STALE_PROVISIONING_CLAIM_MS as STALE_PROVISIONING_CLAIM_MS } from './provision-lease-config.js';
+export {
+  PROVISION_LEASE_MS,
+  PROVISION_HEARTBEAT_MS,
+  PROVISION_MAX_IDLE_MS,
+} from './provision-lease-config.js';
 /** Max wait for ComfyUI boot before projection read path auto-cleanup (local/slow loads). */
 export const PROVISIONING_BOOT_MAX_MS = 30 * 60 * 1000;
+
+/**
+ * Whether a provisioning claim is expired (lease-based; legacy started_at fallback).
+ * @param {Record<string, unknown> | null | undefined} subscription
+ * @param {number} [nowMs]
+ * @param {number} [_staleMs] ignored — lease expiry is authoritative
+ */
+export { isProvisionLeaseExpired as isStaleProvisioningClaim, isProvisionLeaseExpired } from './provision-lease.js';
 
 /**
  * @param {Record<string, unknown>} machine

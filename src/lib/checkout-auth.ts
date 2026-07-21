@@ -30,7 +30,18 @@ export function buildCheckoutEnvUrl(order: Partial<CheckoutOrder>): string {
   return `${routes.checkout2}?${params.toString()}`;
 }
 
-export function buildBangGiaCheckoutUrl(plan: string, billing: string): string {
+export function buildBangGiaCheckoutUrl(
+  plan: string,
+  billing: string,
+  hours?: number,
+  options?: { additional?: boolean },
+): string {
   const params = new URLSearchParams({ plan, billing });
+  if (billing === 'hourly' && hours != null && hours > 0) {
+    params.set('hours', String(Math.floor(hours)));
+  }
+  if (options?.additional) {
+    params.set('additional', '1');
+  }
   return `${routes.bangGiaCheckout}?${params.toString()}`;
 }

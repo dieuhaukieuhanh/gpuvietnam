@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { USER_PLANS_CHANGED_EVENT } from '@/hooks/useUserPlans';
 import { formatSessionDate, formatSessionTime } from '@/lib/gpu-sessions';
+import SocialShareButtons from '@/components/dashboard/SocialShareButtons';
 import {
   filterBillingHistorySessions,
   mapSessionApiToHistoryView,
@@ -133,6 +134,14 @@ function SessionCard({ session }: { session: HistoryView }) {
           <span className="label">🖼️ Output:</span>
           <span className="value">{session.outputSummary}</span>
         </div>
+        {session.status !== 'running' && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+            <SocialShareButtons
+              compact
+              shareDescription={`Phiên #${session.sessionNumber} - ${session.template} trên GPUVietnam`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

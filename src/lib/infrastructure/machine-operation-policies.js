@@ -118,5 +118,7 @@ export function hasExhaustedRetryPolicy(attempts, policyName) {
  */
 export function resolveProviderFromMachine(machine) {
   const provider = machine && typeof machine.provider === 'string' ? machine.provider : null;
-  return provider && provider.trim() ? provider.trim() : 'vast';
+  if (provider && provider.trim()) return provider.trim();
+  // Missing provider: treat as Vast (historical default + current primary).
+  return 'vast';
 }

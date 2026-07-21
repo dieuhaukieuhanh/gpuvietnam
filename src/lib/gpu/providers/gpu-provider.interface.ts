@@ -26,6 +26,10 @@ export interface UploadWorkflowParams {
 export interface GPUProvider {
   getInfo(): GPUProviderInfo;
 
+  /**
+   * Rent one workstation. Marketplace providers (clore, vast, salad, runpod) that walk multiple offers
+   * MUST use `walkRentCandidates` (cancel orphan before next host).
+   */
   createInstance(params: CreateInstanceParams): Promise<GPUInstance>;
   destroyInstance(instanceId: string): Promise<void>;
   getInstanceStatus(instanceId: string): Promise<GPUInstance>;

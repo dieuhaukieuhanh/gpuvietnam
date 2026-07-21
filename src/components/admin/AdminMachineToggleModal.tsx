@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   formatSessionDurationShort,
+  formatMachineProviderLabel,
   type AdminCustomerRow,
 } from '@/lib/admin-customers-shared';
 import { adminFetch } from '@/lib/admin-session';
@@ -198,6 +199,14 @@ export function AdminMachineManagementSection({
         {row.currentTemplate && (
           <span className="text-muted" style={{ marginLeft: 8 }}>
             · {row.currentTemplate}
+          </span>
+        )}
+        {formatMachineProviderLabel(row.currentProvider) && (
+          <span
+            className={`provider-badge provider-badge-${String(row.currentProvider).toLowerCase().startsWith('clore') ? 'clore' : 'vast'}`}
+            title="GPU marketplace provider"
+          >
+            {formatMachineProviderLabel(row.currentProvider)}
           </span>
         )}
       </div>

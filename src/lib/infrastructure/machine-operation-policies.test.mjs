@@ -49,6 +49,7 @@ describe('machine-operation-policies (Phase 2.5)', () => {
   it('resolveProviderFromMachine defaults to vast', () => {
     assert.equal(resolveProviderFromMachine(null), 'vast');
     assert.equal(resolveProviderFromMachine({ provider: 'vast' }), 'vast');
+    assert.equal(resolveProviderFromMachine({ provider: 'clore' }), 'clore');
   });
 
   it('MACHINE_OPERATION_RETRY_POLICIES is the single config source', () => {

@@ -31,5 +31,6 @@ describe('machine-lifecycle-persist', () => {
     assert.match(srcText, /persistDestroyCompleted/);
     assert.match(srcText, /persistProviderRunning/);
     assert.match(srcText, /persistDriftRepair/);
+    assert.match(srcText, /claimSubscriptionForProvision/);
   });
 });

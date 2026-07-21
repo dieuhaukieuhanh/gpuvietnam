@@ -4,6 +4,7 @@ import { USER_PLANS_CHANGED_EVENT } from '@/hooks/useUserPlans';
 import { formatSessionDate } from '@/lib/gpu-sessions';
 import { mapSessionsApiList } from '@/lib/scb-session-history-view-model';
 import { routes } from '@/lib/routes';
+import SocialShareButtons from '@/components/dashboard/SocialShareButtons';
 
 type SessionsApiResponse = {
   sessions?: Array<Record<string, unknown>>;
@@ -113,6 +114,12 @@ export default function DashboardRecentSessionsCard({ accessToken }: DashboardRe
           <div className="dashboard-stat-summary">
             <span className="dashboard-stat-pill">{formatUsageHours(totalSeconds)} tổng gần đây</span>
             <span className="dashboard-stat-pill muted">{sessions.length} phiên</span>
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+            <SocialShareButtons
+              accessToken={accessToken}
+              compact
+            />
           </div>
           <div className="dashboard-stat-list">
             {byDate.map((row) => (
