@@ -3,7 +3,8 @@
 > **Mục đích:** Tài liệu context cho dev / chat mới — mô tả **thực tế đã triển khai** và phân biệt rõ với kế hoạch tương lai.  
 > **Tiến độ chi tiết theo milestone:** [`docs/PROGRESS.md`](PROGRESS.md)  
 > **Kiến trúc SCB:** [`docs/scb/`](./scb/) — đóng băng tại tag `scb-4.0` (commit `bbed8da`); ADR-001..004 là closed set.  
-> **Kiến trúc Control Plane / Runtime v2.0:** [`docs/architecture/ARCHITECTURE_V2_FREEZE.md`](./architecture/ARCHITECTURE_V2_FREEZE.md) + [ADR-005](./architecture/ADR-005-control-plane-runtime-v2.md) — Frozen 2026-07-21; code checkpoint tag `checkpoint/pre-cp-runtime-split`.
+> **Kiến trúc Control Plane / Runtime v2.0:** [`docs/architecture/ARCHITECTURE_V2_FREEZE.md`](./architecture/ARCHITECTURE_V2_FREEZE.md) + [ADR-005](./architecture/ADR-005-control-plane-runtime-v2.md) — Frozen 2026-07-21; code checkpoint tag `checkpoint/pre-cp-runtime-split`.  
+> **Roadmap triển khai:** [`docs/architecture/IMPLEMENTATION_ROADMAP_V2.md`](./architecture/IMPLEMENTATION_ROADMAP_V2.md).
 
 **Thư mục dự án:** `D:\GPU + AI\Web\gpuvietnam\`  
 **Nguồn HTML gốc:** `D:\GPU + AI\Web\*.html` (chuyển đổi qua `npm run convert`)

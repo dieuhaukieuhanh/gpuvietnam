@@ -193,12 +193,15 @@ GPU Compute
 
 ## Recommended Implementation Order (post-freeze)
 
-Không mở lại kiến trúc; thứ tự triển khai gợi ý:
+**Kế hoạch chính thức (có Deliverable từng bước):**  
+[IMPLEMENTATION_ROADMAP_V2.md](./IMPLEMENTATION_ROADMAP_V2.md)
 
-1. **B1** — Job/Attempt + Runtime Port + Comfy Adapter; submit/monitor/fetch; failover = Attempt mới; durable input/output.  
-2. **B2** — Session/Project continuity trên UI khi đổi Runtime.  
+Tóm tắt:
+
+1. **B1** — Job/Attempt → Persistent Storage → **Runtime Image Spec** → Runtime Port → Comfy Adapter → failover Attempt mới.  
+2. **B2** — Session Restore + **Project Snapshot** + history trên CP.  
 3. **B3** — Dual-run policy (render an toàn).  
-4. Cứng hóa — health, auto-replace, Warm/Ephemeral policy, đo CUDA thật.
+4. **B4** — **CUDA Benchmark trước** → parity → health → Warm/Ephemeral policy.
 
 ---
 
