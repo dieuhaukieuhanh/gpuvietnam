@@ -44,6 +44,7 @@ import {
  * @property {string} imageSpecRef
  * @property {string} endpointUrl
  * @property {string | null} machineId
+ * @property {string | null} instanceId
  * @property {string | null} provider
  * @property {'ready' | 'provisioning' | 'starting' | 'destroyed' | 'error'} status
  * @property {string | null} externalExecutionId
@@ -117,6 +118,7 @@ function interpretHistoryStatus(historyPayload, promptId) {
  *     endpointUrl: string;
  *     runtimeId?: string;
  *     machineId?: string | null;
+ *     instanceId?: string | null;
  *     provider?: string | null;
  *     imageSpecRef?: string;
  *     status?: 'ready' | 'provisioning' | 'starting';
@@ -127,6 +129,13 @@ function interpretHistoryStatus(historyPayload, promptId) {
  *   evaluateParity?: typeof evaluateImageSpecParity;
  *   idFactory?: () => string;
  *   defaultAttemptNumber?: number;
+ *   onRuntimeReady?: (runtime: ComfyAdapterRuntimeRecord) => Promise<void> | void;
+ *   onAttemptSubmitted?: (info: {
+ *     runtime: ComfyAdapterRuntimeRecord;
+ *     externalExecutionId: string;
+ *     jobId: string;
+ *     attemptId: string;
+ *   }) => Promise<void> | void;
  * }} [deps]
  * @returns {RuntimePort & { _debug: { runtimes: Map<string, ComfyAdapterRuntimeRecord> } }}
  */
@@ -200,6 +209,7 @@ export function createComfyRuntimePort(deps = {}) {
 
         let endpointUrl = String(meta.endpointUrl ?? meta.endpoint_url ?? '').trim();
         let machineId = meta.machineId != null ? String(meta.machineId) : null;
+        let instanceId = meta.instanceId != null ? String(meta.instanceId) : null;
         let provider = meta.provider != null ? String(meta.provider) : 'comfy';
         let runtimeId = String(params.runtimeId ?? meta.runtimeId ?? '').trim() || idFactory();
         let status = /** @type {ComfyAdapterRuntimeRecord['status']} */ ('ready');
@@ -214,6 +224,8 @@ export function createComfyRuntimePort(deps = {}) {
           endpointUrl = String(provisioned.endpointUrl ?? '').trim();
           runtimeId = String(provisioned.runtimeId ?? runtimeId).trim();
           machineId = provisioned.machineId != null ? String(provisioned.machineId) : machineId;
+          instanceId =
+            provisioned.instanceId != null ? String(provisioned.instanceId) : instanceId;
           provider = provisioned.provider != null ? String(provisioned.provider) : provider;
           if (provisioned.imageSpecRef) imageSpecRef = String(provisioned.imageSpecRef);
           if (provisioned.status) status = provisioned.status;
@@ -261,12 +273,17 @@ export function createComfyRuntimePort(deps = {}) {
           imageSpecRef,
           endpointUrl: endpointUrl.replace(/\/$/, ''),
           machineId,
+          instanceId,
           provider,
           status: status === 'ready' ? 'ready' : status,
           externalExecutionId: null,
           attemptNumber,
         };
         runtimes.set(runtimeId, record);
+
+        if (record.status === 'ready' && typeof deps.onRuntimeReady === 'function') {
+          await deps.onRuntimeReady(record);
+        }
 
         return {
           runtimeId,
@@ -329,6 +346,14 @@ export function createComfyRuntimePort(deps = {}) {
         }
 
         rt.externalExecutionId = promptId;
+        if (typeof deps.onAttemptSubmitted === 'function') {
+          await deps.onAttemptSubmitted({
+            runtime: rt,
+            externalExecutionId: promptId,
+            jobId: String(params.jobId),
+            attemptId: String(params.attemptId),
+          });
+        }
         return {
           externalExecutionId: promptId,
           status: 'queued',

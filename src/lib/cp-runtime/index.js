@@ -51,3 +51,12 @@ export {
   COMFY_SMOKE_WORKFLOW,
   TINY_PNG_BYTES,
 } from './comfy-smoke-workflow.js';
+
+export { createMemoryRuntimeRegistryStore } from './runtime-registry-store.js';
+
+export {
+  createProviderBackedComfyRuntimePort,
+  createProviderRuntimeBindings,
+  runProviderBackedJobAttempt,
+  waitForProviderEndpoint,
+} from './provider-runtime-bind.js';

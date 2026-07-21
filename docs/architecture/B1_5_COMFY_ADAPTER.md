@@ -74,7 +74,7 @@ Live GPU (tuỳ chọn, ops): trỏ `metadata.endpointUrl` tới Comfy thật + 
 
 ## Out of scope
 
-- Provider rent/walk offers (**1.6**)  
+- Provider rent/walk offers → [B1_6_PROVIDER_ATTEMPT.md](./B1_6_PROVIDER_ATTEMPT.md)  
 - Failover Attempt 2 (**1.7**)  
-- Persist `runtime_registry` rows (orchestrator/CP DB wiring)  
+- Persist Supabase `runtime_registry` rows (store abstraction ready in 1.6)  
 - Live `object_info` parity (B4)

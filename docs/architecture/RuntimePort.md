@@ -250,7 +250,7 @@ Dual-run (B3): hai lần `create`/`submit` (hai Attempt); Port không biết “
 - [x] `RuntimePort.md` contract (create / submit / monitor / fetch / destroy)  
 - [x] Code interface + stub + tests  
 - [x] Comfy Adapter implement — [B1_5_COMFY_ADAPTER.md](./B1_5_COMFY_ADAPTER.md)  
-- [ ] Provider wiring inside `create`/`destroy` — **1.6**  
+- [x] Provider wiring inside `create`/`destroy` — [B1_6_PROVIDER_ATTEMPT.md](./B1_6_PROVIDER_ATTEMPT.md)  
 
 ---
 
