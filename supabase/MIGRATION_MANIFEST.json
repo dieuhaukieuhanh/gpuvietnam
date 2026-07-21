@@ -446,6 +446,18 @@
       "depends_on": [
         "0019"
       ]
+    },
+    {
+      "id": "0043",
+      "file": "supabase/cp-runtime-v2-foundation.sql",
+      "category": "migration",
+      "description": "Architecture v2.0 CP foundation: cp_sessions, projects, workflows, jobs, job_attempts, runtime_registry (B1.2)",
+      "idempotent": true,
+      "depends_on": [
+        "0001",
+        "0019",
+        "0021"
+      ]
     }
   ],
   "seeds": [

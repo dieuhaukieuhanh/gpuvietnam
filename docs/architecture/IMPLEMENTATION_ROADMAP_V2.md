@@ -50,7 +50,7 @@ Dashboard tối thiểu
 | Step | Việc | Deliverable | Xong khi |
 |------|------|-------------|----------|
 | 1.1 | Branch làm việc từ freeze/checkpoint | Branch `feat/cp-runtime-b1` (hoặc tên tương đương) | Làm việc trên branch, không phá lung tung baseline |
-| 1.2 | Mô hình Session / Project / Workflow / Job / Attempt / Runtime Registry + trạng thái | **Schema + Migration** (và spec trạng thái) | Lưu được Job/Attempt độc lập với một GPU |
+| 1.2 | Mô hình Session / Project / Workflow / Job / Attempt / Runtime Registry + trạng thái | **Schema + Migration** (`supabase/cp-runtime-v2-foundation.sql` id **0043**) + [B1_2_DATA_MODEL.md](./B1_2_DATA_MODEL.md) | Lưu được Job/Attempt độc lập với một GPU |
 | 1.3 | Kho bền: input/output (+ quy ước model) ngoài ổ GPU | **Storage Spec** (đường dẫn, ownership, lifecycle) | Hủy máy không mất file cần cho Attempt sau |
 | **1.3.5** | **Runtime Image Spec** (parity): Docker image, custom nodes, models, LoRA, extensions bắt buộc cho một Attempt | **RuntimeImageSpec.md** (+ chỗ gắn vào Registry/Attempt) | Trước submit biết Runtime “đủ môi trường” hay không |
 | 1.4 | Runtime Port (create / submit / monitor / fetch / destroy) | **RuntimePort.md** (contract) + stub/interface trong code khi implement | CP chỉ nói chuyện qua Port |
