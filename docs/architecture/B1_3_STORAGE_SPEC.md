@@ -262,7 +262,7 @@ Không index Plane B từ các path này. Destroy Runtime = xóa working dirs.
 ## Out of scope
 
 - Runtime Port / Comfy Adapter (1.4–1.5)  
-- Runtime Image Spec đầy đủ (1.3.5)  
+- Runtime Image Spec đầy đủ → [RuntimeImageSpec.md](./RuntimeImageSpec.md)  
 - Dual-run winner GC policy chi tiết (B3)  
 - Thay thế toàn bộ Plane A backup UX  
 

@@ -52,7 +52,7 @@ Dashboard tối thiểu
 | 1.1 | Branch làm việc từ freeze/checkpoint | Branch `feat/cp-runtime-b1` (từ `architecture/v2.0-freeze` / roadmap baseline) | Làm việc trên branch, không phá lung tung baseline |
 | 1.2 | Mô hình Session / Project / Workflow / Job / Attempt / Runtime Registry + trạng thái | **Schema + Migration** (`supabase/cp-runtime-v2-foundation.sql` id **0043**) + [B1_2_DATA_MODEL.md](./B1_2_DATA_MODEL.md) | Lưu được Job/Attempt độc lập với một GPU |
 | 1.3 | Kho bền: input/output (+ quy ước model) ngoài ổ GPU | **Storage Spec** [B1_3_STORAGE_SPEC.md](./B1_3_STORAGE_SPEC.md) + `cp_assets` (**0044**) + `src/lib/cp-runtime/storage-paths.js` | Hủy máy không mất file cần cho Attempt sau |
-| **1.3.5** | **Runtime Image Spec** (parity): Docker image, custom nodes, models, LoRA, extensions bắt buộc cho một Attempt | **RuntimeImageSpec.md** (+ chỗ gắn vào Registry/Attempt) | Trước submit biết Runtime “đủ môi trường” hay không |
+| **1.3.5** | **Runtime Image Spec** (parity): Docker image, custom nodes, models, LoRA, extensions bắt buộc cho một Attempt | [RuntimeImageSpec.md](./RuntimeImageSpec.md) + `runtime-image-spec.js` + `jobs.required_image_spec_ref` (**0045**) | Trước submit biết Runtime “đủ môi trường” hay không |
 | 1.4 | Runtime Port (create / submit / monitor / fetch / destroy) | **RuntimePort.md** (contract) + stub/interface trong code khi implement | CP chỉ nói chuyện qua Port |
 | 1.5 | Comfy Adapter implement Port | **ComfyAdapter** (module) + smoke chạy 1 Job | Một Job end-to-end qua Adapter, CP không gọi Comfy trực tiếp |
 | 1.6 | Provider gắn Attempt: thuê máy → metadata → submit | Provision → Runtime Registry → Attempt running | Một Attempt = một Runtime/GPU |

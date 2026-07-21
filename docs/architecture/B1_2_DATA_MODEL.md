@@ -55,7 +55,7 @@ User
 1. Destroying `runtime_registry` / machine **must not** cascade-delete Project, Workflow, or Job history (`ON DELETE SET NULL` where linked).  
 2. GPU death ⇒ mark Attempt `failed` ⇒ create new Attempt (no CUDA/queue resume).  
 3. `jobs.workflow_snapshot` holds the document used for execution; editor may keep evolving `workflows.document`.  
-4. `image_spec_ref` on Runtime/Attempt is a forward reference for **B1.3.5 Runtime Image Spec** (parity).  
+4. `image_spec_ref` on Runtime/Attempt + `jobs.required_image_spec_ref` → [RuntimeImageSpec.md](./RuntimeImageSpec.md) (B1.3.5 parity).  
 5. Control Plane APIs will use **service_role**; RLS policies match existing token tables.
 
 ---
@@ -64,7 +64,7 @@ User
 
 - Runtime Port / Comfy Adapter code (1.4–1.5)  
 - Persistent object-storage paths detail → [B1_3_STORAGE_SPEC.md](./B1_3_STORAGE_SPEC.md)  
-- Full Runtime Image Spec document (1.3.5)  
+- Full Runtime Image Spec document → [RuntimeImageSpec.md](./RuntimeImageSpec.md)  
 - Applying migration to production (ops; run `scripts/run-migrations.mjs` when ready)
 
 ---

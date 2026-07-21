@@ -468,6 +468,16 @@
       "depends_on": [
         "0043"
       ]
+    },
+    {
+      "id": "0045",
+      "file": "supabase/cp-runtime-v2-image-spec-ref.sql",
+      "category": "migration",
+      "description": "Architecture v2.0 jobs.required_image_spec_ref for B1.3.5 Runtime Image Spec parity gate",
+      "idempotent": true,
+      "depends_on": [
+        "0043"
+      ]
     }
   ],
   "seeds": [
