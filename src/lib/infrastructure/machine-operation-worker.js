@@ -5,10 +5,12 @@
 
 import { getGpuService } from '@/lib/gpu';
 import { executeSubscriptionMachineDriftRepair } from '@/lib/machines-drift';
+import { completeUserStartProvision } from '@/lib/gpu/user-start-provision';
 import {
   detectResultFromOperationPayload,
   MACHINE_OPERATION,
 } from './machine-operation-core.js';
+import { PROVISION_LEASE_MS } from './machine-operation-policies.js';
 import { logMachineOperation, logContextFromOperationRow } from './machine-operation-observability.js';
 import { logQueueMetricsSnapshot } from './machine-operation-metrics.js';
 import { prepareMachineOperationQueue } from './machine-operation-scheduler.js';
@@ -19,6 +21,7 @@ import {
 } from './projection-verify-trace.js';
 import {
   complete,
+  extendLease,
   fail,
   leaseNext,
   markRunning,
@@ -41,10 +44,14 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
   const userId = String(row.user_id);
   const ctx = logContextFromOperationRow(row);
   const startedMs = Date.now();
-  const isProjectionVerify = String(row.operation) === MACHINE_OPERATION.PROJECTION_VERIFY;
+  const opType = String(row.operation);
+  const isProjectionVerify = opType === MACHINE_OPERATION.PROJECTION_VERIFY;
+  const isUserStartProvision = opType === MACHINE_OPERATION.USER_START_PROVISION;
   const pvTrace = isProjectionVerify ? createProjectionVerifyTraceContext(row) : null;
 
-  const running = await markRunning(supabaseAdmin, operationId);
+  const running = await markRunning(supabaseAdmin, operationId, {
+    leaseMs: isUserStartProvision ? PROVISION_LEASE_MS : undefined,
+  });
   if (isProjectionVerify) {
     logProjectionVerifyTrace('markRunning()', pvTrace, {
       success: Boolean(running),
@@ -55,8 +62,18 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
 
   logMachineOperation('machine-op-worker', { ...ctx, state: 'running' }, 'execute start');
 
+  /** @type {ReturnType<typeof setInterval> | null} */
+  let provisionHeartbeat = null;
+  if (isUserStartProvision) {
+    provisionHeartbeat = setInterval(() => {
+      void extendLease(supabaseAdmin, operationId, { leaseMs: PROVISION_LEASE_MS }).catch(() => {
+        /* best-effort; self-heal uses lease_until */
+      });
+    }, 60_000);
+  }
+
   try {
-    if (String(row.operation) === MACHINE_OPERATION.PROJECTION_VERIFY) {
+    if (isProjectionVerify) {
       const payload =
         row.payload && typeof row.payload === 'object'
           ? /** @type {Record<string, unknown>} */ (row.payload)
@@ -73,6 +90,47 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
           pvTrace,
         },
       );
+    } else if (isUserStartProvision) {
+      const payload =
+        row.payload && typeof row.payload === 'object'
+          ? /** @type {Record<string, unknown>} */ (row.payload)
+          : {};
+      const subscriptionId = String(payload.subscriptionId ?? '');
+      if (!subscriptionId) {
+        throw new Error('user_start_provision payload missing subscriptionId');
+      }
+
+      const { data: subscription, error: subErr } = await supabaseAdmin
+        .from('subscriptions')
+        .select('*')
+        .eq('id', subscriptionId)
+        .maybeSingle();
+      if (subErr) throw subErr;
+      if (!subscription) {
+        throw new Error(`subscription not found: ${subscriptionId}`);
+      }
+
+      await completeUserStartProvision(supabaseAdmin, {
+        userId: String(payload.userId ?? userId),
+        subscriptionId,
+        subscription,
+        selected: payload.selected && typeof payload.selected === 'object' ? payload.selected : {},
+        planKey: String(payload.planKey ?? ''),
+        planName: String(payload.planName ?? ''),
+        gpuLine: String(payload.gpuLine ?? ''),
+        envName: String(payload.envName ?? ''),
+        workstationContainerEnv:
+          payload.workstationContainerEnv && typeof payload.workstationContainerEnv === 'object'
+            ? payload.workstationContainerEnv
+            : null,
+        backupTokenId: payload.backupTokenId != null ? String(payload.backupTokenId) : null,
+        lifecycleCtx:
+          payload.lifecycleCtx && typeof payload.lifecycleCtx === 'object'
+            ? payload.lifecycleCtx
+            : null,
+        correlationId: String(payload.correlationId ?? row.correlation_id ?? ''),
+        provisionLabel: String(payload.provisionLabel ?? ''),
+      });
     } else {
       const detectResult = detectResultFromOperationRow(row);
       if (!detectResult.repair) {
@@ -102,9 +160,11 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
       });
     }
     const completeMessage =
-      String(row.operation) === MACHINE_OPERATION.PROJECTION_VERIFY
+      opType === MACHINE_OPERATION.PROJECTION_VERIFY
         ? 'projection verify completed'
-        : 'execute complete';
+        : opType === MACHINE_OPERATION.USER_START_PROVISION
+          ? 'user start provision completed'
+          : 'execute complete';
     logMachineOperation(
       'machine-op-worker',
       { ...ctx, state: 'completed', durationMs: executionMs },
@@ -126,6 +186,8 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
     const outcome =
       failedRow && String(failedRow.state) === 'dead_letter' ? 'dead_letter' : 'retry_scheduled';
     return { outcome, executionMs, error: message };
+  } finally {
+    if (provisionHeartbeat) clearInterval(provisionHeartbeat);
   }
 }
 

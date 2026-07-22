@@ -142,20 +142,21 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(source.includes('billingView'));
   });
 
-  it('start-machine accepts boot via lifecycle SM and background provision', () => {
+  it('start-machine accepts boot via lifecycle SM and durable provision enqueue', () => {
     const source = readApiSrc('user/start-machine.js');
     const provision = readFileSync(path.join(__dirname, 'user-start-provision.js'), 'utf8');
     assert.ok(source.includes('repairUserBillingState'));
     assert.ok(source.includes('persistStartRequested'));
     assert.ok(source.includes('machineSessionView'));
     assert.ok(source.includes('billingViewForStart'));
-    assert.ok(source.includes('completeUserStartProvision'));
+    assert.ok(source.includes('enqueueUserStartProvision'));
+    assert.ok(!source.includes('completeUserStartProvision'));
     assert.ok(source.includes('reclaimStaleProvisionClaim'));
     assert.ok(source.includes('buildProvisionAttemptLabel'));
     assert.ok(!source.includes('retry background provision'));
     assert.ok(provision.includes('createProvisioningPendingSession'));
     assert.ok(provision.includes('persistProviderRunning'));
-    assert.ok(provision.includes('recoverRentedInstanceByLabel'));
+    assert.ok(provision.includes('recoverRentedInstance'));
     assert.ok(provision.includes("liveStatus.status === 'running'"));
     assert.ok(!source.includes('syncSubscriptionWithMachineState'));
   });

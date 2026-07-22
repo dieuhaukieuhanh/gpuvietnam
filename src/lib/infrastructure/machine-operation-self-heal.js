@@ -6,7 +6,6 @@ import { MACHINE_OPERATION_STATE } from './machine-operation-core.js';
 import {
   LEASE_DURATION_MS,
   PENDING_STALE_MS,
-  RUNNING_ORPHAN_MS,
 } from './machine-operation-policies.js';
 import { logMachineOperation } from './machine-operation-observability.js';
 
@@ -18,7 +17,6 @@ import { logMachineOperation } from './machine-operation-observability.js';
 export async function runQueueSelfHealing(supabaseAdmin, options = {}) {
   const now = options.now ?? new Date();
   const nowIso = now.toISOString();
-  const runningCutoff = new Date(now.getTime() - RUNNING_ORPHAN_MS).toISOString();
   const pendingStaleCutoff = new Date(now.getTime() - PENDING_STALE_MS).toISOString();
 
   const { data: releasedLeasesRows, error: releasedError } = await supabaseAdmin
@@ -52,7 +50,7 @@ export async function runQueueSelfHealing(supabaseAdmin, options = {}) {
       retry_reason: 'stale_running_recovered',
     })
     .eq('state', MACHINE_OPERATION_STATE.RUNNING)
-    .lt('started_at', runningCutoff)
+    .lt('lease_until', nowIso)
     .select('id');
   if (runningError) throw runningError;
 

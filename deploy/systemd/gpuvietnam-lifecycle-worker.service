@@ -1,0 +1,34 @@
+[Unit]
+Description=GPUVietnam P0-A Lifecycle Worker
+Documentation=https://github.com/gpuvietnam/gpuvietnam
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gpuvietnam
+Group=gpuvietnam
+WorkingDirectory=/opt/gpuvietnam
+EnvironmentFile=-/etc/gpuvietnam/lifecycle.env
+# Keep HOME/cache under ReadWritePaths (ProtectSystem=strict makes /opt RO otherwise).
+Environment=HOME=/opt/gpuvietnam/tmp
+Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
+Environment=TMPDIR=/tmp
+ExecStart=/usr/bin/node --import ./scripts/register-src-alias.mjs scripts/lifecycle-worker.mjs
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# Hardening — worker writes only:
+#   logs/          → file logger (cwd/logs)
+#   tmp/           → host-reputation.json, clore-bad-hosts.json, vast-bad-hosts.json,
+#                    provision-progress.json (cwd-relative)
+#   PrivateTmp     → OS /tmp (no npm install at runtime; no Node package cache needed)
+# Do NOT add broader ReadWritePaths unless a new code path writes elsewhere.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/gpuvietnam/logs /opt/gpuvietnam/tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

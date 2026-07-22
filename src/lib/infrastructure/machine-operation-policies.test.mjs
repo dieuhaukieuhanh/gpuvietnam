@@ -54,7 +54,15 @@ describe('machine-operation-policies (Phase 2.5)', () => {
 
   it('MACHINE_OPERATION_RETRY_POLICIES is the single config source', () => {
     assert.ok(MACHINE_OPERATION_RETRY_POLICIES.default_drift);
-    assert.equal(Object.keys(MACHINE_OPERATION_RETRY_POLICIES).length >= 1, true);
+    assert.ok(MACHINE_OPERATION_RETRY_POLICIES.user_start_provision);
+    assert.equal(Object.keys(MACHINE_OPERATION_RETRY_POLICIES).length >= 2, true);
+  });
+
+  it('user_start_provision retry policy is tighter than default_drift', () => {
+    const policy = getRetryPolicy('user_start_provision');
+    assert.equal(policy.maxAttempts, 3);
+    assert.deepEqual(policy.delaysMs, [60_000, 300_000]);
+    assert.equal(priorityForOperation('user_start_provision'), PRIORITY_CLASS.PROVISION);
   });
 
   it('PENDING_STALE_MS is exported for queue self-heal', async () => {

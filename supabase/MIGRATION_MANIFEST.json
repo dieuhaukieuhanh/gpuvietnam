@@ -451,7 +451,7 @@
       "id": "0043",
       "file": "supabase/cp-runtime-v2-foundation.sql",
       "category": "migration",
-      "description": "Architecture v2.0 CP foundation: cp_sessions, projects, workflows, jobs, job_attempts, runtime_registry (B1.2)",
+      "description": "Architecture v2.0 CP foundation: cp_sessions, projects, jobs, job_attempts, runtime_registry (B1.2; skips catalog workflows)",
       "idempotent": true,
       "depends_on": [
         "0001",
@@ -497,6 +497,26 @@
       "idempotent": true,
       "depends_on": [
         "0043"
+      ]
+    },
+    {
+      "id": "0048",
+      "file": "supabase/a1-comfy-access-editor-tokens.sql",
+      "category": "migration",
+      "description": "A1 M1: comfy_access_tokens.machine_id and upstream_url nullable for editor-only Workspace sessions",
+      "idempotent": true,
+      "depends_on": [
+        "0040"
+      ]
+    },
+    {
+      "id": "0049",
+      "file": "supabase/p0a-user-start-provision-op.sql",
+      "category": "migration",
+      "description": "P0-A: machine_operations.user_start_provision for durable Lifecycle Worker",
+      "idempotent": true,
+      "depends_on": [
+        "0032"
       ]
     }
   ],

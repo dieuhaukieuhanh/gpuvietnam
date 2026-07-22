@@ -40,7 +40,6 @@ import {
   logger,
   resolveRequestId,
   withApiLogging,
-  withBackgroundLogContext,
 } from '@/lib/logging';
 
 import {
@@ -55,7 +54,7 @@ import {
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
-import { completeUserStartProvision } from '@/lib/gpu/user-start-provision';
+import { enqueueUserStartProvision } from '@/lib/infrastructure/enqueue-user-start-provision';
 import { resolveBillingViewForCommand } from '@/lib/gpu/billing-session-view';
 
 import { activateInventoryPlan, parseInventoryId } from '@/lib/user-plan-inventory';
@@ -644,44 +643,37 @@ async function startMachineHandler(req, res) {
               tokenErr instanceof Error ? tokenErr.message : tokenErr,
             );
           }
-          void withBackgroundLogContext(
-            {
-              requestId: correlationId,
+          try {
+            await enqueueUserStartProvision(supabaseAdmin, {
               userId: user.id,
               subscriptionId: subscription.id,
-              operation: 'user.startProvision',
-              channel: 'api',
-            },
-            () =>
-              completeUserStartProvision(supabaseAdmin, {
+              correlationId,
+              selected,
+              planKey,
+              planName: planNameForClaim,
+              gpuLine,
+              envName,
+              workstationContainerEnv: reclaimEnv,
+              backupTokenId: reclaimBackupTokenId,
+              lifecycleCtx: machineLifecycleContext(subscription),
+              provisionLabel: buildProvisionAttemptLabel({
                 userId: user.id,
                 subscriptionId: subscription.id,
-                subscription,
-                selected,
-                planKey,
-                planName: planNameForClaim,
-                gpuLine,
-                envName,
-                workstationContainerEnv: reclaimEnv,
-                backupTokenId: reclaimBackupTokenId,
-                lifecycleCtx: machineLifecycleContext(subscription),
                 correlationId,
-                provisionLabel: buildProvisionAttemptLabel({
-                  userId: user.id,
-                  subscriptionId: subscription.id,
-                  correlationId,
-                }),
               }),
-          ).catch((err) => {
+            });
+          } catch (enqueueErr) {
             log.error(
               {
                 operation: 'user.startProvision',
                 phase: 'FAILURE',
-                err: { message: err instanceof Error ? err.message : String(err) },
+                err: {
+                  message: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
+                },
               },
-              'background provision reclaim error',
+              'durable enqueue reclaim failed',
             );
-          });
+          }
         } else {
           console.info('[user/start-machine] Lease reclaim lost race — waiting');
         }
@@ -972,10 +964,50 @@ async function startMachineHandler(req, res) {
       supabaseAdmin,
     });
 
-    res.status(200).json({
+    const provisionLabel = buildProvisionAttemptLabel({
+      userId: user.id,
+      subscriptionId: subscription.id,
+      correlationId,
+    });
+
+    let enqueued;
+    try {
+      enqueued = await enqueueUserStartProvision(supabaseAdmin, {
+        userId: user.id,
+        subscriptionId: subscription.id,
+        correlationId,
+        selected,
+        planKey,
+        planName,
+        gpuLine,
+        envName,
+        workstationContainerEnv,
+        backupTokenId,
+        lifecycleCtx,
+        provisionLabel,
+      });
+    } catch (enqueueErr) {
+      log.error(
+        {
+          operation: 'user.startProvision',
+          phase: 'FAILURE',
+          err: {
+            message: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
+          },
+        },
+        'durable enqueue failed',
+      );
+      return res.status(503).json({
+        error: 'Không thể xếp hàng khởi tạo GPU. Thử lại sau.',
+        code: 'PROVISION_ENQUEUE_FAILED',
+      });
+    }
+
+    return res.status(200).json({
       success: true,
       accepted: true,
       message: 'Đang khởi tạo máy GPU...',
+      operationId: enqueued.operation?.id ?? null,
       selectedPlan: selected,
       subscription: {
         id: subscription.id,
@@ -987,47 +1019,6 @@ async function startMachineHandler(req, res) {
       billingView,
       progress,
     });
-
-    void withBackgroundLogContext(
-      {
-        requestId: correlationId,
-        userId: user.id,
-        subscriptionId: subscription.id,
-        operation: 'user.startProvision',
-        channel: 'api',
-      },
-      () =>
-        completeUserStartProvision(supabaseAdmin, {
-          userId: user.id,
-          subscriptionId: subscription.id,
-          subscription,
-          selected,
-          planKey,
-          planName,
-          gpuLine,
-          envName,
-          workstationContainerEnv,
-          backupTokenId,
-          lifecycleCtx,
-          correlationId,
-          provisionLabel: buildProvisionAttemptLabel({
-            userId: user.id,
-            subscriptionId: subscription.id,
-            correlationId,
-          }),
-        }),
-    ).catch((err) => {
-      log.error(
-        {
-          operation: 'user.startProvision',
-          phase: 'FAILURE',
-          err: { message: err instanceof Error ? err.message : String(err) },
-        },
-        'background provision error',
-      );
-    });
-
-    return;
   } catch (err) {
 
     log.error(

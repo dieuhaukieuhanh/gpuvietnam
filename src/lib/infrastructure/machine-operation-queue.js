@@ -234,6 +234,29 @@ export async function markRunning(supabaseAdmin, operationId, options = {}) {
 }
 
 /**
+ * Extend lease_until while a long-running op (provision) is still executing.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} operationId
+ * @param {{ leaseMs?: number; now?: Date }} [options]
+ */
+export async function extendLease(supabaseAdmin, operationId, options = {}) {
+  const leaseMs = options.leaseMs ?? LEASE_DURATION_MS;
+  const now = options.now ?? new Date();
+  const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
+
+  const { data, error } = await supabaseAdmin
+    .from('machine_operations')
+    .update({ lease_until: leaseUntil })
+    .eq('id', operationId)
+    .eq('state', MACHINE_OPERATION_STATE.RUNNING)
+    .select('id,lease_until')
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {string} operationId
  * @param {{ executionMs?: number; now?: Date }} [options]

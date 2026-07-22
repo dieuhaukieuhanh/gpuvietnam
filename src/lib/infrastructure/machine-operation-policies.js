@@ -3,7 +3,7 @@
  * Worker and scheduler read from here only — no magic numbers in queue code.
  */
 
-/** @typedef {'default_drift'} MachineOperationRetryPolicyName */
+/** @typedef {'default_drift' | 'user_start_provision'} MachineOperationRetryPolicyName */
 
 /**
  * @typedef {Object} MachineOperationRetryPolicy
@@ -24,6 +24,9 @@ export const PRIORITY_CLASS = {
 /** Worker lease duration while executing one operation. */
 export const LEASE_DURATION_MS = 90_000;
 
+/** Longer lease for durable provision (heartbeat extends while running). */
+export const PROVISION_LEASE_MS = 10 * 60_000;
+
 /** Running row older than this without completion is treated as orphan. */
 export const RUNNING_ORPHAN_MS = LEASE_DURATION_MS * 2;
 
@@ -41,6 +44,12 @@ export const MACHINE_OPERATION_RETRY_POLICIES = {
     maxAttempts: 5,
     delaysMs: [5_000, 20_000, 60_000, 300_000],
   },
+  /** Fewer retries — partial Clore rent relies on recoverRentedInstance / orphan reconcile. */
+  user_start_provision: {
+    name: 'user_start_provision',
+    maxAttempts: 3,
+    delaysMs: [60_000, 300_000],
+  },
 };
 
 /** @type {Record<string, keyof typeof PRIORITY_CLASS>} */
@@ -49,6 +58,7 @@ export const OPERATION_PRIORITY_CLASS = {
   drift_destroy_and_subscription_offline: 'DESTROY',
   drift_mark_destroyed_local: 'RECOVER',
   drift_update_subscription: 'REPAIR',
+  user_start_provision: 'PROVISION',
   projection_verify: 'PROBE',
 };
 

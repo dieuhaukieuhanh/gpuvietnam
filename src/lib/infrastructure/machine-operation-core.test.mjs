@@ -15,6 +15,7 @@ import {
   projectionVerifySkipReason,
   repairKindToOperation,
   resolveRetryAfterFailure,
+  userStartProvisionIdempotencyKey,
 } from './machine-operation-core.js';
 import { buildOperationMetrics } from './machine-operation-metrics.js';
 import { resolveAdminStateFilter } from './machine-operation-admin.js';
@@ -61,6 +62,20 @@ describe('machine-operation-core (SCB 2.1 Phase 2)', () => {
     assert.equal(
       projectionVerifyIdempotencyKey('user-1', null),
       'projection_verify:user-1:none',
+    );
+  });
+
+  it('userStartProvisionIdempotencyKey is stable per subscription+correlation', () => {
+    assert.equal(
+      userStartProvisionIdempotencyKey('sub-1', 'corr-1'),
+      'user_start_provision:sub-1:corr-1',
+    );
+  });
+
+  it('user_start_provision has higher priority than projection_verify', () => {
+    assert.ok(
+      priorityForOperation(MACHINE_OPERATION.USER_START_PROVISION) >
+        priorityForOperation(MACHINE_OPERATION.PROJECTION_VERIFY),
     );
   });
 
