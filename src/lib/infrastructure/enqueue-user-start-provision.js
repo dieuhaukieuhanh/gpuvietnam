@@ -1,13 +1,98 @@
 /**
  * P0-A — Enqueue durable user_start_provision (replaces void completeUserStartProvision).
+ * At most one active provision op per user (open idempotency slot).
  */
 
 import {
   MACHINE_OPERATION,
+  MACHINE_OPERATION_STATE,
   PRIORITY_CLASS,
+  isActiveQueueState,
   userStartProvisionIdempotencyKey,
+  userStartProvisionReleasedIdempotencyKey,
 } from './machine-operation-core.js';
-import { enqueue } from './machine-operation-queue.js';
+import { cancel, enqueue } from './machine-operation-queue.js';
+
+const ACTIVE_OP_STATES = [
+  MACHINE_OPERATION_STATE.PENDING,
+  MACHINE_OPERATION_STATE.LEASED,
+  MACHINE_OPERATION_STATE.RUNNING,
+  MACHINE_OPERATION_STATE.RETRY_SCHEDULED,
+];
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ */
+export async function findActiveUserStartProvision(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin
+    .from('machine_operations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('operation', MACHINE_OPERATION.USER_START_PROVISION)
+    .in('state', ACTIVE_OP_STATES)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data && isActiveQueueState(data)) return data;
+  return null;
+}
+
+/**
+ * Cancel in-flight start provisions so cancel-start frees the open slot
+ * (including RUNNING — queue.cancel alone only covers pending/leased).
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ * @param {string} [reason]
+ */
+export async function cancelActiveUserStartProvisions(
+  supabaseAdmin,
+  userId,
+  reason = 'user_cancel_start',
+) {
+  const { data: rows, error } = await supabaseAdmin
+    .from('machine_operations')
+    .select('id,state,user_id,operation')
+    .eq('user_id', userId)
+    .eq('operation', MACHINE_OPERATION.USER_START_PROVISION)
+    .in('state', ACTIVE_OP_STATES);
+
+  if (error) throw error;
+  const list = Array.isArray(rows) ? rows : [];
+  /** @type {string[]} */
+  const cancelledIds = [];
+
+  for (const row of list) {
+    const id = String(row.id);
+    const soft = await cancel(supabaseAdmin, id, reason);
+    if (soft) {
+      cancelledIds.push(id);
+      continue;
+    }
+    // Force-terminal RUNNING / raced rows + release open idempotency slot.
+    const { data: forced, error: forceErr } = await supabaseAdmin
+      .from('machine_operations')
+      .update({
+        state: MACHINE_OPERATION_STATE.CANCELLED,
+        finished_at: new Date().toISOString(),
+        lease_until: null,
+        next_retry_at: null,
+        last_error: reason,
+        idempotency_key: userStartProvisionReleasedIdempotencyKey(userId, id),
+      })
+      .eq('id', id)
+      .in('state', ACTIVE_OP_STATES)
+      .select('id')
+      .maybeSingle();
+    if (forceErr) throw forceErr;
+    if (forced?.id) cancelledIds.push(String(forced.id));
+  }
+
+  return { cancelledIds, count: cancelledIds.length };
+}
 
 /**
  * @typedef {Object} UserStartProvisionEnqueueInput
@@ -31,10 +116,12 @@ import { enqueue } from './machine-operation-queue.js';
  * @param {UserStartProvisionEnqueueInput} input
  */
 export async function enqueueUserStartProvision(supabaseAdmin, input) {
-  const idempotencyKey = userStartProvisionIdempotencyKey(
-    input.subscriptionId,
-    input.correlationId,
-  );
+  const existing = await findActiveUserStartProvision(supabaseAdmin, input.userId);
+  if (existing) {
+    return { operation: existing, created: false, deduped: true };
+  }
+
+  const idempotencyKey = userStartProvisionIdempotencyKey(input.userId);
 
   const payload = {
     userId: input.userId,
@@ -70,5 +157,5 @@ export async function enqueueUserStartProvision(supabaseAdmin, input) {
     );
   }
 
-  return result;
+  return { ...result, deduped: !result.created };
 }

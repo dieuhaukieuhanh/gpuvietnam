@@ -58,9 +58,13 @@ function mapRowToRecord(row) {
 /**
  * Detect and lifecycle-close orphan `running` gpu_sessions for a user.
  *
- * An orphan is a `gpu_sessions` row with `status='running'` whose `id` is NOT
- * referenced by any active machine (`machines.gpu_session_id` where
- * `machines.status` is creating|starting|running).
+ * An orphan is a `gpu_sessions` row with `status='running'` that is NOT linked
+ * to any active machine (`machines.status` in creating|starting|running), by
+ * either:
+ *   - `machines.gpu_session_id` === session.id, or
+ *   - `gpu_sessions.machine_id` === an active machine's id
+ * (projection `gpu_session_id` can drift NULL while the FK `machine_id` still
+ * points at a live machine — closing that row as orphan resets billing).
  *
  * For each orphan: run `closeSession()` (running -> closed) and persist ONLY
  * lifecycle fields. No settlement, no billing, no wallet, no inventory.
@@ -85,7 +89,7 @@ export async function closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId,
       .eq('status', SESSION_STATUS.RUNNING),
     supabaseAdmin
       .from('machines')
-      .select('gpu_session_id')
+      .select('id, gpu_session_id')
       .eq('user_id', userId)
       .in('status', ACTIVE_MACHINE_STATUSES),
   ]);
@@ -98,6 +102,11 @@ export async function closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId,
       .map((row) => (row.gpu_session_id ? String(row.gpu_session_id) : null))
       .filter(Boolean),
   );
+  const activeMachineIds = new Set(
+    (activeMachines ?? [])
+      .map((row) => (row.id != null ? String(row.id) : null))
+      .filter(Boolean),
+  );
 
   let closed = 0;
   let skipped = 0;
@@ -106,6 +115,10 @@ export async function closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId,
   for (const row of runningSessions ?? []) {
     const sessionId = String(row.id);
     if (linkedSessionIds.has(sessionId)) continue; // has an active machine — not orphan
+    const sessionMachineId = row.machine_id != null ? String(row.machine_id) : null;
+    // Projection gpu_session_id may be NULL while FK machine_id still points at
+    // a live machine — do not treat that as orphan (would reset billing clock).
+    if (sessionMachineId && activeMachineIds.has(sessionMachineId)) continue;
 
     const record = mapRowToRecord(row);
 

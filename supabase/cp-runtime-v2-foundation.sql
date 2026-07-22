@@ -1,11 +1,15 @@
 -- Architecture v2.0 (ADR-005) — Control Plane data model foundation (B1.2)
--- Tables: cp_sessions, projects, workflows, jobs, job_attempts, runtime_registry
+-- Tables: cp_sessions, projects, jobs, job_attempts, runtime_registry
 --
 -- Naming:
 --   * cp_sessions = Architecture "Session" (user work context). NOT public.gpu_sessions
 --     (SCB billing truth for rented GPU hours).
 --   * jobs / job_attempts = Architecture Job / Attempt (execution units).
 --   * runtime_registry = disposable Runtime metadata (endpoint, provider, machine link).
+--
+-- IMPORTANT — do NOT recreate public.workflows here.
+-- Catalog/marketplace `public.workflows` already exists (supabase/workflows.sql).
+-- Architecture Workflow SoT lives in public.cp_workflows (migration 0046).
 --
 -- Idempotent. Apply via scripts/run-migrations.mjs (manifest id 0043).
 
@@ -62,33 +66,6 @@ comment on table public.projects is
   'Architecture v2.0 Project SoT. Survives Runtime/GPU replacement.';
 
 -- ---------------------------------------------------------------------------
--- workflows — graph documents owned by Control Plane
--- ---------------------------------------------------------------------------
-create table if not exists public.workflows (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id) on delete cascade,
-  project_id uuid not null references public.projects(id) on delete cascade,
-  name text not null default 'Untitled',
-  -- Comfy-compatible prompt/graph JSON (and related editor state)
-  document jsonb not null default '{}'::jsonb,
-  revision integer not null default 1,
-  status text not null default 'draft'
-    check (status in ('draft', 'ready', 'archived')),
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists workflows_project_id_idx
-  on public.workflows (project_id);
-
-create index if not exists workflows_user_id_idx
-  on public.workflows (user_id);
-
-comment on table public.workflows is
-  'Architecture v2.0 Workflow SoT (document). Runtime validates/executes a copy on Attempt.';
-
--- ---------------------------------------------------------------------------
 -- runtime_registry — disposable Runtime metadata (not user data SoT)
 -- ---------------------------------------------------------------------------
 create table if not exists public.runtime_registry (
@@ -143,6 +120,8 @@ comment on table public.runtime_registry is
 -- ---------------------------------------------------------------------------
 -- jobs — unit of work requested by the user / Control Plane
 -- ---------------------------------------------------------------------------
+-- workflow_id may point at catalog public.workflows (legacy) or stay null;
+-- Architecture editor SoT uses jobs.cp_workflow_id (migration 0046).
 create table if not exists public.jobs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
@@ -247,7 +226,6 @@ comment on table public.job_attempts is
 -- ---------------------------------------------------------------------------
 alter table public.cp_sessions enable row level security;
 alter table public.projects enable row level security;
-alter table public.workflows enable row level security;
 alter table public.runtime_registry enable row level security;
 alter table public.jobs enable row level security;
 alter table public.job_attempts enable row level security;
@@ -260,11 +238,6 @@ create policy "Service role manages cp_sessions"
 drop policy if exists "Service role manages projects" on public.projects;
 create policy "Service role manages projects"
   on public.projects for all to service_role
-  using (true) with check (true);
-
-drop policy if exists "Service role manages workflows" on public.workflows;
-create policy "Service role manages workflows"
-  on public.workflows for all to service_role
   using (true) with check (true);
 
 drop policy if exists "Service role manages runtime_registry" on public.runtime_registry;

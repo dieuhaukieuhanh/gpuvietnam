@@ -9,6 +9,8 @@ import {
   revokeComfyAccessTokensForMachine,
 } from '../comfy-proxy/comfy-access-token.js';
 import { isComfyProxyEnabled } from '../comfy-proxy/comfy-proxy-config.js';
+import { encodeComfyCpBootstrapHash } from './comfy-graph-document.js';
+import { ensureActiveCpWorkflow } from './ensure-active-workflow.js';
 
 /**
  * @param {{
@@ -102,12 +104,40 @@ export async function rebindComfyProxyToRuntime(supabaseAdmin, input) {
     ttlSeconds: input.ttlSeconds,
   });
 
+  let workflowId = null;
+  let revision = null;
+  try {
+    const workflow = await ensureActiveCpWorkflow(supabaseAdmin, userId);
+    workflowId = workflow?.id ?? null;
+    revision = workflow?.revision != null ? Number(workflow.revision) : null;
+  } catch {
+    /* CP tables optional until migration */
+  }
+
+  const apiBase = String(
+    process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.APP_PUBLIC_URL ||
+      process.env.GPUVIETNAM_PUBLIC_API_URL ||
+      '',
+  )
+    .trim()
+    .replace(/\/$/, '');
+
+  const bootstrapHash = encodeComfyCpBootstrapHash({
+    token: issued.token,
+    workflowId,
+    apiBase: apiBase || null,
+    revision,
+  });
+  const workUrl = `${issued.workUrl}#${bootstrapHash}`;
+
   return {
     plan,
-    workUrl: issued.workUrl,
+    workUrl,
     token: issued.token,
     expiresAt: issued.expiresAt,
     revoked: true,
     mode: 'proxy_rebind',
+    cpSync: { workflowId, revision, apiBase: apiBase || null, syncPath: '/gpuvietnam/cp/sync' },
   };
 }

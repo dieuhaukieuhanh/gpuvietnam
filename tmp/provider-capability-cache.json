@@ -1,0 +1,24 @@
+{
+  "updatedAt": "2026-07-22T14:19:46.121Z",
+  "entries": [
+    {
+      "key": "clore:currencies",
+      "provider": "clore",
+      "cacheType": "currencies",
+      "fetchedAt": 1784729986121,
+      "ttlMs": 600000,
+      "data": {
+        "supportedCurrencies": [
+          "CLORE-Blockchain",
+          "USD-Blockchain",
+          "bitcoin"
+        ],
+        "allowedCoins": [
+          "CLORE-Blockchain",
+          "USD-Blockchain",
+          "bitcoin"
+        ]
+      }
+    }
+  ]
+}

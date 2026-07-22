@@ -1,0 +1,16 @@
+{
+  "at": "2026-07-10T17:18:02.235Z",
+  "candidateCount": 53,
+  "target": {
+    "id": 88028,
+    "gpu": "1x NVIDIA GeForce RTX 3090",
+    "daily": 2
+  },
+  "create": {
+    "status": 200,
+    "payload": {
+      "code": 0
+    }
+  },
+  "parsedOrderId": null
+}

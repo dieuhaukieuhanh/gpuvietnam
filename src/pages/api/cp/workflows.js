@@ -64,16 +64,31 @@ export default async function handler(req, res) {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const workflowId = String(body.workflowId ?? body.id ?? '').trim();
       if (!workflowId) return res.status(400).json({ error: 'Thiếu workflowId.' });
-      const row = await upsertCpWorkflowDocument(supabaseAdmin, {
-        workflowId,
-        userId: user.id,
-        name: body.name,
-        document: body.document,
-        settings: body.settings,
-        status: body.status,
-        metadata: body.metadata,
-      });
-      return res.status(200).json({ workflow: toWorkflowClientSyncPayload(row) });
+      try {
+        const row = await upsertCpWorkflowDocument(supabaseAdmin, {
+          workflowId,
+          userId: user.id,
+          name: body.name,
+          document: body.document,
+          settings: body.settings,
+          status: body.status,
+          metadata: body.metadata,
+          expectedRevision:
+            body.expectedRevision != null ? Number(body.expectedRevision) : null,
+        });
+        return res.status(200).json({ workflow: toWorkflowClientSyncPayload(row) });
+      } catch (error) {
+        if (error?.code === 'REVISION_CONFLICT') {
+          return res.status(409).json({
+            code: 'REVISION_CONFLICT',
+            error: 'Workflow revision conflict',
+            workflow: error.workflow
+              ? toWorkflowClientSyncPayload(error.workflow)
+              : null,
+          });
+        }
+        throw error;
+      }
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

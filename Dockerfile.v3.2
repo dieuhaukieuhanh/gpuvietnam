@@ -1,0 +1,9 @@
+# Continuity hardening — Official Pack v3 + gpuvietnam_cp_sync (empty-canvas guard + keepalive flush)
+# Does NOT replace production :v3 or Gate1 :v3.1.
+FROM dieuhaukieuhanh/gpuvietnam-comfyui:v3
+
+COPY comfyui-extensions/gpuvietnam_cp_sync/ /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/
+RUN find /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync -type f \( -name '*.py' -o -name '*.js' \) -exec sed -i 's/\r$//' {} \; \
+    && test -f /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/__init__.py \
+    && test -f /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/web/cp_sync.js \
+    && grep -q 'empty_document_overwrite\|không ghi đè bằng canvas trống' /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/web/cp_sync.js

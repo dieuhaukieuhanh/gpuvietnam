@@ -405,6 +405,18 @@ export function normalizeVastOffer(raw) {
 
   const vramRaw = toFiniteNumber(raw.gpu_ram ?? raw.vram);
   const vramGb = vramRaw > 64 ? vramRaw / 1024 : vramRaw;
+  // Fail-closed: disk/storage listings often omit or zero GPU fields.
+  // Never coerce num_gpus=0 → 1 (that previously let storage-only asks through).
+  const numGpusRaw = toFiniteNumber(raw.num_gpus);
+  if (!(numGpusRaw > 0)) return null;
+  if (!(vramGb > 0)) return null;
+  const gpuType = String(raw.gpu_name ?? raw.gpu_type ?? '').trim();
+  if (!gpuType) return null;
+
+  const gpuFrac = toFiniteNumber(raw.gpu_frac ?? raw.gpu_fraction);
+  // Partial/shared GPU fractions are not full workstation GPUs for us.
+  if (gpuFrac != null && gpuFrac > 0 && gpuFrac < 0.99) return null;
+
   const diskGb = parseHostDiskGb(raw.disk_space ?? raw.disk_total ?? raw.dsize ?? raw.disk_size);
   const region = resolveOfferRegionLabel(raw.geolocation ?? raw.location ?? raw.region);
   const uptimePercent = normalizeUptimePercent(raw.reliability ?? raw.reliability2);
@@ -436,8 +448,8 @@ export function normalizeVastOffer(raw) {
     pingMs,
     vramGb,
     diskGb,
-    numGpus: toFiniteNumber(raw.num_gpus) || 1,
-    gpuType: String(raw.gpu_name ?? raw.gpu_type ?? 'GPU'),
+    numGpus: numGpusRaw,
+    gpuType,
     region,
     ramGb: normalizedRam || undefined,
     cudaVersion,

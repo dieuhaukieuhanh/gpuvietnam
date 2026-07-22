@@ -1,0 +1,19 @@
+{
+  "milestone": "A1-M4",
+  "target": "local",
+  "work": "http://127.0.0.1:5191",
+  "marker": "a1-m4-1784727277936",
+  "checks": {
+    "health": {
+      "ok": true,
+      "detail": "{\"ok\":true,\"milestone\":\"A1-M4\",\"fe\":\"D:\\\\GPU + AI\\\\Web\\\\gpuvietnam\\\\workers\\\\com"
+    },
+    "enter": {
+      "ok": false,
+      "detail": {
+        "status": 401,
+        "setCookie": ""
+      }
+    }
+  }
+}

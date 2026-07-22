@@ -1,0 +1,258 @@
+{
+  "summary": {
+    "at": "2026-07-19T12:22:47.089Z",
+    "gpu": "rtx3090",
+    "plan": "starter",
+    "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+    "countRequested": 5,
+    "countRan": 5,
+    "byVerdict": {
+      "self_start_ok": 4,
+      "self_start_fail:bad_gateway_502": 1
+    },
+    "trials": [
+      {
+        "index": 1,
+        "offerId": 88028,
+        "region": "US Central",
+        "orderId": "1964582",
+        "observeOnly": true,
+        "before": "bad_gateway_502",
+        "restartOk": null,
+        "localBefore": null,
+        "localAfter": null,
+        "after": "json_ok",
+        "after2m": null,
+        "verdict": "self_start_ok"
+      },
+      {
+        "index": 2,
+        "offerId": 106362,
+        "region": "Canada",
+        "orderId": "1964587",
+        "observeOnly": true,
+        "before": "bad_gateway_502",
+        "restartOk": null,
+        "localBefore": null,
+        "localAfter": null,
+        "after": "json_ok",
+        "after2m": null,
+        "verdict": "self_start_ok"
+      },
+      {
+        "index": 3,
+        "offerId": 88411,
+        "region": "Ukraine",
+        "orderId": "1964595",
+        "observeOnly": true,
+        "before": "bad_gateway_502",
+        "restartOk": null,
+        "localBefore": null,
+        "localAfter": null,
+        "after": "bad_gateway_502",
+        "after2m": null,
+        "verdict": "self_start_fail:bad_gateway_502"
+      },
+      {
+        "index": 4,
+        "offerId": 97866,
+        "region": "Argentina",
+        "orderId": "1964604",
+        "observeOnly": true,
+        "before": "fetch_error",
+        "restartOk": null,
+        "localBefore": null,
+        "localAfter": null,
+        "after": "json_ok",
+        "after2m": null,
+        "verdict": "self_start_ok"
+      },
+      {
+        "index": 5,
+        "offerId": 106263,
+        "region": "Argentina",
+        "orderId": "1964612",
+        "observeOnly": true,
+        "before": "bad_gateway_502",
+        "restartOk": null,
+        "localBefore": null,
+        "localAfter": null,
+        "after": "json_ok",
+        "after2m": null,
+        "verdict": "self_start_ok"
+      }
+    ]
+  },
+  "trials": [
+    {
+      "at": "2026-07-19T12:04:27.534Z",
+      "index": 1,
+      "offerId": 88028,
+      "region": "US Central",
+      "pricePerHour": 0.09999999999999999,
+      "uptimePercent": 100,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+      "orderId": "1964582",
+      "httpPub": "ft8how1fzqk49.us.clorecloud.net",
+      "publicUrl": "https://ft8how1fzqk49.us.clorecloud.net",
+      "before": {
+        "ok": false,
+        "kind": "bad_gateway_502",
+        "status": 502,
+        "snippet": "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\""
+      },
+      "ssh": null,
+      "restart": null,
+      "after": {
+        "ok": true,
+        "kind": "json_ok",
+        "status": 200,
+        "snippet": "{\"system\": {\"os\": \"linux\", \"ram_total\": 135067844608, \"ram_free\": 129647149056, \"comfyui_version\": \"0.28.0\", \"required_frontend_version\": \"1.45.21\", \"installed_"
+      },
+      "after2m": null,
+      "verdict": "self_start_ok",
+      "error": null,
+      "cancel": {
+        "code": 0
+      },
+      "autossh": true,
+      "observeOnly": true
+    },
+    {
+      "at": "2026-07-19T12:05:25.376Z",
+      "index": 2,
+      "offerId": 106362,
+      "region": "Canada",
+      "pricePerHour": 0.13708333333333333,
+      "uptimePercent": 99.86,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+      "orderId": "1964587",
+      "httpPub": "spajlbq05cptc.us.clorecloud.net",
+      "publicUrl": "https://spajlbq05cptc.us.clorecloud.net",
+      "before": {
+        "ok": false,
+        "kind": "bad_gateway_502",
+        "status": 502,
+        "snippet": "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\""
+      },
+      "ssh": null,
+      "restart": null,
+      "after": {
+        "ok": true,
+        "kind": "json_ok",
+        "status": 200,
+        "snippet": "{\"system\": {\"os\": \"linux\", \"ram_total\": 32548683776, \"ram_free\": 29641408512, \"comfyui_version\": \"0.28.0\", \"required_frontend_version\": \"1.45.21\", \"installed_te"
+      },
+      "after2m": null,
+      "verdict": "self_start_ok",
+      "error": null,
+      "cancel": {
+        "code": 0
+      },
+      "autossh": true,
+      "observeOnly": true
+    },
+    {
+      "at": "2026-07-19T12:08:13.330Z",
+      "index": 3,
+      "offerId": 88411,
+      "region": "Ukraine",
+      "pricePerHour": 0.125,
+      "uptimePercent": 100,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+      "orderId": "1964595",
+      "httpPub": "vn2k5jny2fyp1.clorecloud.net",
+      "publicUrl": "https://vn2k5jny2fyp1.clorecloud.net",
+      "before": {
+        "ok": false,
+        "kind": "bad_gateway_502",
+        "status": 502,
+        "snippet": "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\""
+      },
+      "ssh": null,
+      "restart": null,
+      "after": {
+        "ok": false,
+        "kind": "bad_gateway_502",
+        "status": 502,
+        "snippet": "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\""
+      },
+      "after2m": null,
+      "verdict": "self_start_fail:bad_gateway_502",
+      "error": null,
+      "cancel": {
+        "code": 0
+      },
+      "autossh": true,
+      "observeOnly": true
+    },
+    {
+      "at": "2026-07-19T12:15:05.198Z",
+      "index": 4,
+      "offerId": 97866,
+      "region": "Argentina",
+      "pricePerHour": 0.125,
+      "uptimePercent": 100,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+      "orderId": "1964604",
+      "httpPub": "h1pu2qm80492u.us.clorecloud.net",
+      "publicUrl": "https://h1pu2qm80492u.us.clorecloud.net",
+      "before": {
+        "ok": false,
+        "kind": "fetch_error",
+        "status": 0,
+        "snippet": "fetch failed"
+      },
+      "ssh": null,
+      "restart": null,
+      "after": {
+        "ok": true,
+        "kind": "json_ok",
+        "status": 200,
+        "snippet": "{\"system\": {\"os\": \"linux\", \"ram_total\": 33568534528, \"ram_free\": 30687719424, \"comfyui_version\": \"0.28.0\", \"required_frontend_version\": \"1.45.21\", \"installed_te"
+      },
+      "after2m": null,
+      "verdict": "self_start_ok",
+      "error": null,
+      "cancel": {
+        "code": 0
+      },
+      "autossh": true,
+      "observeOnly": true
+    },
+    {
+      "at": "2026-07-19T12:19:25.621Z",
+      "index": 5,
+      "offerId": 106263,
+      "region": "Argentina",
+      "pricePerHour": 0.14583333333333334,
+      "uptimePercent": 99.91,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3",
+      "orderId": "1964612",
+      "httpPub": "jrofdc6fhtdoa.us.clorecloud.net",
+      "publicUrl": "https://jrofdc6fhtdoa.us.clorecloud.net",
+      "before": {
+        "ok": false,
+        "kind": "bad_gateway_502",
+        "status": 502,
+        "snippet": "{\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502/\",\"title\":\"Error 502: Bad gateway\",\"status\""
+      },
+      "ssh": null,
+      "restart": null,
+      "after": {
+        "ok": true,
+        "kind": "json_ok",
+        "status": 200,
+        "snippet": "{\"system\": {\"os\": \"linux\", \"ram_total\": 67305066496, \"ram_free\": 63541067776, \"comfyui_version\": \"0.28.0\", \"required_frontend_version\": \"1.45.21\", \"installed_te"
+      },
+      "after2m": null,
+      "verdict": "self_start_ok",
+      "error": null,
+      "cancel": {
+        "code": 0
+      },
+      "autossh": true,
+      "observeOnly": true
+    }
+  ]
+}

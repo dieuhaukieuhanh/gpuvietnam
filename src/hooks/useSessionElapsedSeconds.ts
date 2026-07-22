@@ -21,7 +21,11 @@ export function useSessionElapsedSeconds(
   useEffect(() => {
     if (!active) {
       anchorRef.current = null;
-      setElapsed(0);
+      // Only clear when billing anchor is gone (session truly ended).
+      // Avoids 00:00 flash when phase briefly leaves `running` (e.g. optimistic stopping).
+      if (!billingStartedAt) {
+        setElapsed(0);
+      }
       return;
     }
 

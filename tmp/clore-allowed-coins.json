@@ -1,0 +1,178 @@
+{
+  "at": "2026-07-10T17:59:59.672Z",
+  "total": 2098,
+  "hasUsdPrice": 1156,
+  "allowedUsd": 1075,
+  "both": 1075,
+  "priceButNotAllowed": 81,
+  "samples": [
+    {
+      "id": 112289,
+      "gpu": "4x NVIDIA GeForce GTX 1070",
+      "daily": 5,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 112203,
+      "gpu": "6x Mixed GPUs",
+      "daily": 10,
+      "allowed": [
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 112180,
+      "gpu": "1x NVIDIA GeForce RTX 4070",
+      "daily": 3,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 112095,
+      "gpu": "6x Mixed GPUs",
+      "daily": 5,
+      "allowed": [
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 112035,
+      "gpu": "1x NVIDIA GeForce RTX 5080",
+      "daily": 5,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 111999,
+      "gpu": "1x NVIDIA GeForce RTX 5070 Ti",
+      "daily": 5,
+      "allowed": [
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 111917,
+      "gpu": "1x NVIDIA GeForce RTX 5070 Ti",
+      "daily": 5,
+      "allowed": [
+        "CLORE-Blockchain"
+      ]
+    },
+    {
+      "id": 111907,
+      "gpu": "1x NVIDIA GeForce RTX 5080",
+      "daily": 5,
+      "allowed": [
+        "CLORE-Blockchain"
+      ]
+    }
+  ],
+  "both3090Top": [
+    {
+      "id": 88028,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 101046,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.08,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 98551,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.08,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 105730,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.15,
+      "allowed": [
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 105728,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.15,
+      "allowed": [
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 111981,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.2,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 109068,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.4,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 111696,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.5,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 111029,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.5,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    },
+    {
+      "id": 111027,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "daily": 2.5,
+      "allowed": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ]
+    }
+  ],
+  "both3090Count": 97
+}

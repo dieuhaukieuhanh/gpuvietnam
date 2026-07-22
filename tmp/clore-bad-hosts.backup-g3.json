@@ -1,0 +1,197 @@
+{
+  "updatedAt": "2026-07-21T23:26:25.053Z",
+  "entries": [
+    {
+      "hostKey": "clore-host:99",
+      "reason": "http_endpoint: Proxy Not Found",
+      "excludedAt": 1784464278813,
+      "expiresAt": 1787056278813,
+      "offerId": null,
+      "instanceId": null
+    },
+    {
+      "hostKey": "clore-host:88028",
+      "reason": "comfy_smoke: comfy_smoke: prompt status 400 {\"error\": {\"type\": \"prompt_no_outputs\", \"message\": \"Prompt has no outputs\", \"details\": \"\", \"extra_info\": {}}, \"node_errors\": {}}",
+      "excludedAt": 1784465284017,
+      "expiresAt": 1787057284017,
+      "offerId": "88028",
+      "instanceId": "1964642"
+    },
+    {
+      "hostKey": "clore-host:106362",
+      "reason": "comfy_smoke: comfy_smoke: prompt status 400 {\"error\": {\"type\": \"prompt_no_outputs\", \"message\": \"Prompt has no outputs\", \"details\": \"\", \"extra_info\": {}}, \"node_errors\": {}}",
+      "excludedAt": 1784465596678,
+      "expiresAt": 1787057596678,
+      "offerId": "106362",
+      "instanceId": "1964651"
+    },
+    {
+      "hostKey": "clore-host:101501",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>clorecloud.net | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<me",
+      "excludedAt": 1784465908986,
+      "expiresAt": 1787057908986,
+      "offerId": "101501",
+      "instanceId": "1964662"
+    },
+    {
+      "hostKey": "clore-host:97866",
+      "reason": "comfy_smoke: comfy_smoke: prompt status 400 {\"error\": {\"type\": \"prompt_no_outputs\", \"message\": \"Prompt has no outputs\", \"details\": \"\", \"extra_info\": {}}, \"node_errors\": {}}",
+      "excludedAt": 1784466219963,
+      "expiresAt": 1787058219963,
+      "offerId": "97866",
+      "instanceId": "1964671"
+    },
+    {
+      "hostKey": "clore-host:106604",
+      "reason": "comfy_smoke: comfy_smoke: prompt status 400 {\"error\": {\"type\": \"prompt_no_outputs\", \"message\": \"Prompt has no outputs\", \"details\": \"\", \"extra_info\": {}}, \"node_errors\": {}}",
+      "excludedAt": 1784466531824,
+      "expiresAt": 1787058531824,
+      "offerId": "106604",
+      "instanceId": "1964687"
+    },
+    {
+      "hostKey": "clore-host:85498",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>clorecloud.net | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<me",
+      "excludedAt": 1784475037984,
+      "expiresAt": 1787067037984,
+      "offerId": "85498",
+      "instanceId": "1964906"
+    },
+    {
+      "hostKey": "clore-host:104242",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://xoids7szbxzjl.us.clorecloud.net)",
+      "excludedAt": 1784479580013,
+      "expiresAt": 1787071580013,
+      "offerId": "104242",
+      "instanceId": "1965073"
+    },
+    {
+      "hostKey": "clore-host:98264",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://uhxrg4xh8kjf9.us.clorecloud.net)",
+      "excludedAt": 1784479785684,
+      "expiresAt": 1787071785684,
+      "offerId": "98264",
+      "instanceId": "1965079"
+    },
+    {
+      "hostKey": "clore-host:107713",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://0kmnb6aeio5eu.us.clorecloud.net)",
+      "excludedAt": 1784479986401,
+      "expiresAt": 1787071986401,
+      "offerId": "107713",
+      "instanceId": "1965096"
+    },
+    {
+      "hostKey": "clore-host:107258",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://r2pz23en9lw8r.us.clorecloud.net)",
+      "excludedAt": 1784480188350,
+      "expiresAt": 1787072188350,
+      "offerId": "107258",
+      "instanceId": "1965115"
+    },
+    {
+      "hostKey": "clore-host:81490",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://lgyou1l25c3ve.us.clorecloud.net)",
+      "excludedAt": 1784480402782,
+      "expiresAt": 1787072402782,
+      "offerId": "81490",
+      "instanceId": "1965137"
+    },
+    {
+      "hostKey": "clore-host:106718",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://ps8561m0xijqg.clorecloud.net)",
+      "excludedAt": 1784480701761,
+      "expiresAt": 1787072701761,
+      "offerId": "106718",
+      "instanceId": "1965172"
+    },
+    {
+      "hostKey": "clore-host:103455",
+      "reason": "http_endpoint: http_endpoint: Proxy Not Found for 90s (Clore edge has no backend on https://2lrli5igezda7.clorecloud.net)",
+      "excludedAt": 1784480947613,
+      "expiresAt": 1787072947613,
+      "offerId": "103455",
+      "instanceId": "1965207"
+    },
+    {
+      "hostKey": "clore-host:91558",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://oalgjecd5i3ny.cloreai.ru)",
+      "excludedAt": 1784481141906,
+      "expiresAt": 1787073141906,
+      "offerId": "91558",
+      "instanceId": "1965216"
+    },
+    {
+      "hostKey": "clore-host:77049",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://rfsg453l3p1qw.cloreai.ru)",
+      "excludedAt": 1784481335145,
+      "expiresAt": 1787073335145,
+      "offerId": "77049",
+      "instanceId": "1965221"
+    },
+    {
+      "hostKey": "clore-host:108226",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://msonmtqgsb294.clorecloud.net)",
+      "excludedAt": 1784481538941,
+      "expiresAt": 1787073538941,
+      "offerId": "108226",
+      "instanceId": "1965225"
+    },
+    {
+      "hostKey": "clore-host:85500",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://e07ay4ihhgxxz.us.clorecloud.net)",
+      "excludedAt": 1784641466827,
+      "expiresAt": 1787233466827,
+      "offerId": "85500",
+      "instanceId": "1969820"
+    },
+    {
+      "hostKey": "clore-host:97978",
+      "reason": "http_endpoint: http_endpoint: Proxy Not Found for 90s (Clore edge has no backend on https://8bjdhgfsd6p36.us.clorecloud.net)",
+      "excludedAt": 1784672714076,
+      "expiresAt": 1787264714076,
+      "offerId": "97978",
+      "instanceId": "1970951"
+    },
+    {
+      "hostKey": "clore-host:104082",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://agjg9di8l8l1w.cloreai.ru)",
+      "excludedAt": 1784672917919,
+      "expiresAt": 1787264917919,
+      "offerId": "104082",
+      "instanceId": "1970955"
+    },
+    {
+      "hostKey": "clore-host:104458",
+      "reason": "http_endpoint: http_endpoint: Proxy Not Found for 90s (Clore edge has no backend on https://cn2y3dszqjq8s.cloreai.ru)",
+      "excludedAt": 1784673182260,
+      "expiresAt": 1787265182260,
+      "offerId": "104458",
+      "instanceId": "1970964"
+    },
+    {
+      "hostKey": "clore-host:104078",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://mqjh5pwzx7kq8.cloreai.ru)",
+      "excludedAt": 1784673430142,
+      "expiresAt": 1787265430142,
+      "offerId": "104078",
+      "instanceId": "1970975"
+    },
+    {
+      "hostKey": "clore-host:11882",
+      "reason": "http_endpoint: http_endpoint: status 502 for 180s (sustained Bad Gateway on https://1k6mtjuq9rx6c.cloreai.ru)",
+      "excludedAt": 1784673625989,
+      "expiresAt": 1787265625989,
+      "offerId": "11882",
+      "instanceId": "1970978"
+    },
+    {
+      "hostKey": "clore-host:92600",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>cloreai.ru | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<meta h",
+      "excludedAt": 1784676385052,
+      "expiresAt": 1787268385052,
+      "offerId": "92600",
+      "instanceId": "1971041"
+    }
+  ]
+}

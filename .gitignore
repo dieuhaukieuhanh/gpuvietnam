@@ -43,6 +43,15 @@ local-models/
 
 # Local provision funnel journal (Clore/Vast smoke stats)
 /tmp/provision-journal.jsonl
+/tmp/a05-token.txt
+
+# A0.5 lab captures (large / ephemeral)
+/labs/a0.5-editor-without-runtime/fixtures/object_info.full.json
+/labs/a0.5-editor-without-runtime/results/
+
+# A1 Workspace FE vendored from comfyui-frontend-package (large)
+/workers/comfy-proxy/public/**
+!/workers/comfy-proxy/public/.gitkeep
 
 
 .vercel

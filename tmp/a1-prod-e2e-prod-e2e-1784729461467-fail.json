@@ -1,0 +1,84 @@
+{
+  "milestone": "PROD-E2E-GPU-CONTINUITY",
+  "marker": "prod-e2e-1784729461467",
+  "apex": "https://gpuvietnam.com",
+  "work": "https://work.gpuvietnam.com",
+  "steps": {
+    "cleanup_stale_local_machines": {
+      "ok": true,
+      "detail": {
+        "destroyed": 0
+      }
+    },
+    "step1_open_workspace_offline": {
+      "ok": true,
+      "detail": {
+        "mode": "editor"
+      }
+    },
+    "step1_generate_blocked_offline": {
+      "ok": true,
+      "detail": {
+        "code": "A1_RUNTIME_OFFLINE"
+      }
+    },
+    "step2_3_compose_and_cp_save": {
+      "ok": true,
+      "detail": {
+        "revision": 89,
+        "note": "Đã lưu Control Plane (Worker→apex)"
+      }
+    },
+    "step4_close_browser_new_session": {
+      "ok": true,
+      "detail": {
+        "mode": "editor"
+      }
+    },
+    "step5_restore_from_cp": {
+      "ok": true,
+      "detail": {
+        "revision": 89,
+        "gate": "prod-e2e-1784729461467",
+        "note": "new session — graph from CP, not localStorage"
+      }
+    },
+    "step6_provision_runtime_A": {
+      "ok": true,
+      "detail": {
+        "machineId": "8eb4b5d1-beb1-49f7-936f-88ec61c4d897",
+        "orderId": "1972806",
+        "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3.2",
+        "upstream": "https://1ny6tgr3nifw6.us.clorecloud.net"
+      }
+    },
+    "step7_bind_runtime_A": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime",
+        "upstreamHost": "1ny6tgr3nifw6.us.clorecloud.net"
+      }
+    },
+    "ckpt_A": {
+      "ok": false,
+      "detail": {
+        "count": 0
+      }
+    }
+  },
+  "runtimeA": {
+    "machineId": "8eb4b5d1-beb1-49f7-936f-88ec61c4d897",
+    "orderId": "1972806",
+    "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3.2",
+    "upstream": "https://1ny6tgr3nifw6.us.clorecloud.net"
+  },
+  "runtimeB": null,
+  "workflow": {
+    "id": "f287ec3d-f268-4ddb-a0cd-460deec8e5bf",
+    "revisionAfterCompose": 89
+  },
+  "outputs": {},
+  "provisionApp": "http://127.0.0.1:3000",
+  "ok": false,
+  "error": "ckpt_A: {\"count\":0}"
+}

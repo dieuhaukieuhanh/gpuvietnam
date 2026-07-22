@@ -296,10 +296,36 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
         machine,
         userId,
         destroyReason,
+        {
+          mode: input.backupMode ?? null,
+          timeoutMs: input.backupTimeoutMs ?? null,
+          allowSshFallback: input.allowSshBackupFallback === true,
+        },
       );
     } catch (error) {
       console.error('[destroy-pipeline] backup failed:', error);
       backupSuccess = false;
+    }
+
+    // Interactive user stop: do not cancel GPU until backup fully succeeds,
+    // unless caller set forceStop (skipBackup) or requireBackupSuccess=false.
+    if (input.requireBackupSuccess === true && backupSuccess !== true) {
+      return {
+        destroyed: false,
+        outcome: DESTROY_PIPELINE_OUTCOME.BACKUP_FAILED,
+        lastStep: DESTROY_PIPELINE_STEP.BACKUP,
+        machine,
+        session: null,
+        settlement: null,
+        verify: null,
+        backupSuccess: false,
+        reason: destroyReason,
+        retryable: true,
+        billingResult: null,
+        metrics: null,
+        stepTrace,
+        backupStatus: backupSuccess === false ? 'failed' : 'incomplete',
+      };
     }
   }
 

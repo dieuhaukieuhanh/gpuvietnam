@@ -1,0 +1,216 @@
+{
+  "at": "2026-07-11T15:42:49.859Z",
+  "dbMachines": [
+    {
+      "id": "c9fa2462",
+      "status": "destroyed",
+      "instance_id": "1942209",
+      "sub": "489016b0",
+      "created_at": "2026-07-11T13:12:26.364892+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "73cdbc61",
+      "status": "destroyed",
+      "instance_id": "44466180",
+      "sub": "489016b0",
+      "created_at": "2026-07-11T00:52:24.182338+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "afd83f06",
+      "status": "destroyed",
+      "instance_id": "44464319",
+      "sub": "489016b0",
+      "created_at": "2026-07-11T00:25:24.713375+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "ef5c7641",
+      "status": "destroyed",
+      "instance_id": "44434502",
+      "sub": "489016b0",
+      "created_at": "2026-07-10T17:56:56.573719+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "39d8959e",
+      "status": "destroyed",
+      "instance_id": "44433519",
+      "sub": "489016b0",
+      "created_at": "2026-07-10T17:44:17.548234+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "be9f081d",
+      "status": "destroyed",
+      "instance_id": "44431826",
+      "sub": "489016b0",
+      "created_at": "2026-07-10T17:23:49.570135+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "3a63d947",
+      "status": "destroyed",
+      "instance_id": "44430282",
+      "sub": "489016b0",
+      "created_at": "2026-07-10T17:08:50.228213+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "a1798067",
+      "status": "destroyed",
+      "instance_id": "44049147",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T17:51:28.905597+00:00",
+      "billing_started_at": "2026-07-06T17:55:35.299+00:00"
+    },
+    {
+      "id": "7247b45f",
+      "status": "destroyed",
+      "instance_id": "44044668",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T16:43:35.743396+00:00",
+      "billing_started_at": "2026-07-06T16:52:05.709+00:00"
+    },
+    {
+      "id": "1a03a229",
+      "status": "destroyed",
+      "instance_id": "44041477",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T15:55:45.716018+00:00",
+      "billing_started_at": "2026-07-06T16:07:08.091+00:00"
+    },
+    {
+      "id": "08e6d0fc",
+      "status": "destroyed",
+      "instance_id": "44038569",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T15:14:14.710863+00:00",
+      "billing_started_at": "2026-07-06T15:24:20.286+00:00"
+    },
+    {
+      "id": "df96362a",
+      "status": "destroyed",
+      "instance_id": "44037709",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T15:00:43.126012+00:00",
+      "billing_started_at": null
+    },
+    {
+      "id": "668c7bd8",
+      "status": "destroyed",
+      "instance_id": "44036092",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T14:35:27.34316+00:00",
+      "billing_started_at": "2026-07-06T14:40:44.787+00:00"
+    },
+    {
+      "id": "e866594c",
+      "status": "destroyed",
+      "instance_id": "44032718",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T13:45:51.000442+00:00",
+      "billing_started_at": "2026-07-06T13:56:13.192+00:00"
+    },
+    {
+      "id": "3a9a3596",
+      "status": "destroyed",
+      "instance_id": "44031300",
+      "sub": "b204ac48",
+      "created_at": "2026-07-06T13:26:02.909723+00:00",
+      "billing_started_at": "2026-07-06T13:32:27.268+00:00"
+    }
+  ],
+  "activeDb": [],
+  "cloreCode": 0,
+  "cloreOrderCount": 7,
+  "cloreOnline": [
+    {
+      "id": 1942721,
+      "si": 97866,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942720,
+      "si": 107406,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942718,
+      "si": 105330,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942717,
+      "si": 106537,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942715,
+      "si": 106557,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942714,
+      "si": 106362,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942713,
+      "si": 100890,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    }
+  ],
+  "cloreRecent": [
+    {
+      "id": 1942721,
+      "si": 97866,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942720,
+      "si": 107406,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942718,
+      "si": 105330,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942717,
+      "si": 106537,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942715,
+      "si": 106557,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942714,
+      "si": 106362,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    },
+    {
+      "id": 1942713,
+      "si": 100890,
+      "online": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    }
+  ]
+}

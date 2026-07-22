@@ -1,0 +1,23 @@
+{
+  "billableSeconds": 6869,
+  "hoursUsed": 1.91,
+  "sessionUpd": {
+    "id": "0f016550-4bff-461b-b0cb-06de8db75ffd",
+    "status": "closed",
+    "settlement_status": "skipped"
+  },
+  "sessionErr": null,
+  "machineUpd": {
+    "id": "c9fa2462-a501-4162-971f-3acaa6f0f038",
+    "status": "destroyed",
+    "billing_started_at": null,
+    "gpu_session_id": null
+  },
+  "machineErr": null,
+  "hoursUpdate": {
+    "before": 0,
+    "added": 1.91,
+    "data": null,
+    "error": "Could not find the 'updated_at' column of 'subscriptions' in the schema cache"
+  }
+}

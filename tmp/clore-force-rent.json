@@ -1,0 +1,28 @@
+{
+  "at": "2026-07-11T12:11:01.997Z",
+  "configured": true,
+  "currency": "USD-Blockchain",
+  "rankedCount": 5,
+  "top3": [
+    {
+      "id": 109068,
+      "price": 0.09999999999999999,
+      "region": "Russia",
+      "reason": "Offer #1: group_A_only, uptime group A, $0.1000/h, ping 240ms"
+    },
+    {
+      "id": 107406,
+      "price": 0.13333333333333333,
+      "region": "Turkey",
+      "reason": "Offer #5: group_A_only, uptime group A, $0.1333/h, ping 240ms"
+    },
+    {
+      "id": 97866,
+      "price": 0.125,
+      "region": "Argentina",
+      "reason": "Offer #4: group_A_only, uptime group A, $0.1250/h, ping 250ms"
+    }
+  ],
+  "error": "Clore.ai 429 (code 5): Too Many Requests",
+  "stack": "GPUProviderError: Clore.ai 429 (code 5): Too Many Requests\n    at CloreClient.request (file:///D:/GPU%20+%20AI/Web/gpuvietnam/src/lib/gpu/providers/clore/clore-client.js:427:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async CloreClient.searchOffers (file:///D:/GPU%20+%20AI/Web/gpuvietnam/src/lib/gpu/providers/clore/clore-client.js:455:21)\n    at async CloreClient.findRankedOffers (file:///D:/GPU%20+%20AI/Web/gpuvietnam/src/lib/gpu/providers/clore/clore-client.js:543:21)\n    at async CloreClient.createInstance (file:///D:/GPU%20+%20AI/Web/gpuvietnam/src/lib/gpu/providers/clore/clore-client.js:728:22)\n    at async file:///D:/GPU%20+%20AI/Web/gpuvietnam/scripts/diag-clore-force-rent.mjs:55:17"
+}

@@ -1,0 +1,8 @@
+# Gate 1 / continuity test image — Official Pack v3 + gpuvietnam_cp_sync
+# Does NOT replace production :v3. Promote only after Gate 1 Continuity PASS.
+FROM dieuhaukieuhanh/gpuvietnam-comfyui:v3
+
+COPY comfyui-extensions/gpuvietnam_cp_sync/ /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/
+RUN find /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync -type f \( -name '*.py' -o -name '*.js' \) -exec sed -i 's/\r$//' {} \; \
+    && test -f /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/__init__.py \
+    && test -f /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/web/cp_sync.js

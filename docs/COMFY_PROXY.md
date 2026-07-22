@@ -67,12 +67,13 @@ npm run db:migrate
 
 ## How it works
 
-1. Dashboard POST `/api/session/comfy-access` → brand `workUrl` (upstream never returned)
+1. Dashboard POST `/api/session/comfy-access` → brand `workUrl` (+ CP bootstrap hash) (upstream never returned)
 2. App mirrors token hash → Cloudflare KV (if `CF_*` configured)
 3. Browser opens `https://work.gpuvietnam.com/enter/{token}`
-4. Worker sets HttpOnly cookie, redirects to `/`
+4. Worker sets HttpOnly cookie, redirects to `/#gvn_cp=…` (extension bootstrap)
 5. All `/` and `/ws` traffic proxied to upstream; address bar stays on brand domain
-6. Stop/destroy revokes tokens
+6. Extension sync: `/gpuvietnam/cp/sync` → origin `/api/cp/comfy-sync` (Bearer `gvc.*`)
+7. Stop/destroy revokes tokens
 
 Cookie routing (not `/s/:token` path prefix) is required so ComfyUI absolute paths (`/ws`, `/api/...`) keep working.
 

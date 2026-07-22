@@ -1,0 +1,159 @@
+{
+  "sub": {
+    "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "hours_total": 10,
+    "hours_used": 3.42,
+    "status": "active",
+    "expires_at": "2026-09-05T16:00:22.604+00:00"
+  },
+  "kept_inventory_id": 14,
+  "starter_sum": {
+    "total": 617,
+    "remaining": 613.58,
+    "used": 3.42
+  },
+  "inv": [
+    {
+      "id": 19,
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 1,
+      "hours_remaining": 1,
+      "status": "active",
+      "valid_until": "2026-09-09T14:08:50.125+00:00",
+      "subscription_id": "46609ace-17e6-4851-9977-a04c6e1e8496",
+      "grant_id": null
+    },
+    {
+      "id": 21,
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "status": "active",
+      "valid_until": "2027-01-07T14:27:57.85+00:00",
+      "subscription_id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+      "grant_id": null
+    },
+    {
+      "id": 15,
+      "plan_type": "gift",
+      "billing": null,
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "status": "active",
+      "valid_until": "2026-09-09T14:13:40.999+00:00",
+      "subscription_id": null,
+      "grant_id": 2
+    },
+    {
+      "id": 14,
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 10,
+      "hours_remaining": 6.58,
+      "status": "active",
+      "valid_until": "2026-09-05T16:00:22.604+00:00",
+      "subscription_id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+      "grant_id": null
+    },
+    {
+      "id": 11,
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "status": "active",
+      "valid_until": "2026-11-04T15:26:56.99+00:00",
+      "subscription_id": "19a5db4b-2dbb-4cce-95cd-092ce83334c6",
+      "grant_id": null
+    },
+    {
+      "id": 9,
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "status": "active",
+      "valid_until": "2027-01-03T15:26:33.998+00:00",
+      "subscription_id": "898e8414-9da4-4d78-a728-8cb52d77767c",
+      "grant_id": null
+    },
+    {
+      "id": 18,
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 11,
+      "hours_remaining": 11,
+      "status": "active",
+      "valid_until": "2026-09-09T13:58:30.009+00:00",
+      "subscription_id": "da85c4ef-f8e8-4819-bc78-f63695a1e96d",
+      "grant_id": null
+    },
+    {
+      "id": 20,
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 15,
+      "hours_remaining": 15,
+      "status": "active",
+      "valid_until": "2026-09-09T14:13:42.795+00:00",
+      "subscription_id": "9bfce136-4468-453c-a4cc-0c13b728d8f0",
+      "grant_id": null
+    }
+  ],
+  "sessions": [
+    {
+      "id": "da57eb03",
+      "status": "settled",
+      "charged": 1116,
+      "applied": [
+        {
+          "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+          "hours": 0.31,
+          "table": "subscriptions",
+          "final_hours_used": 2.22
+        }
+      ]
+    },
+    {
+      "id": "6a45fd71",
+      "status": "settled",
+      "charged": 720,
+      "applied": [
+        {
+          "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+          "hours": 0.2,
+          "table": "subscriptions",
+          "final_hours_used": 2.42
+        }
+      ]
+    },
+    {
+      "id": "52707bf4",
+      "status": "settled",
+      "charged": 2268,
+      "applied": [
+        {
+          "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+          "hours": 0.63,
+          "table": "subscriptions",
+          "final_hours_used": 3.05
+        }
+      ]
+    },
+    {
+      "id": "8a36b700",
+      "status": "settled",
+      "charged": 1332,
+      "applied": [
+        {
+          "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+          "hours": 0.37,
+          "table": "subscriptions",
+          "final_hours_used": 3.42
+        }
+      ]
+    }
+  ]
+}

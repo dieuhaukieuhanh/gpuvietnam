@@ -1,0 +1,82 @@
+{
+  "scannedAt": "2026-07-14T15:56:59.677Z",
+  "package": "studio / rtx5090_1x",
+  "criteria": {
+    "minHostDiskGb": 100,
+    "numGpus": 1,
+    "minVramGb": 30,
+    "minVramExclusive": true,
+    "maxPingMs": 250,
+    "minMaxDurationDays": 3,
+    "minInetDownMbps": 100,
+    "minRamGb": 16,
+    "minCudaVersion": 11,
+    "vastSanityFloorUsd": 0.28
+  },
+  "vast": {
+    "normalized": 45,
+    "afterSanity": 45,
+    "uptime>=99.8": {
+      "minUptime": 99.8,
+      "afterHardFilters": 41,
+      "afterUptime": 1,
+      "priceUsdPerHour": {
+        "n": 1,
+        "min": 1.0116,
+        "p25": 1.0116,
+        "median": 1.0116,
+        "p75": 1.0116,
+        "max": 1.0116
+      },
+      "afterSelectTop": 1,
+      "selectPriceUsdPerHour": {
+        "n": 1,
+        "min": 1.0116,
+        "p25": 1.0116,
+        "median": 1.0116,
+        "p75": 1.0116,
+        "max": 1.0116
+      },
+      "cheapestSample": [
+        {
+          "id": 44851404,
+          "usdPerHour": 1.0116,
+          "uptime": 99.821,
+          "pingMs": 230,
+          "diskGb": 1264,
+          "region": "Germany"
+        }
+      ]
+    },
+    "uptime>=99.9": {
+      "minUptime": 99.9,
+      "afterHardFilters": 41,
+      "afterUptime": 0,
+      "priceUsdPerHour": null,
+      "afterSelectTop": 0,
+      "selectPriceUsdPerHour": null,
+      "cheapestSample": []
+    }
+  },
+  "clore": {
+    "normalized": 0,
+    "uptime>=99.8": {
+      "minUptime": 99.8,
+      "afterHardFilters": 0,
+      "afterUptime": 0,
+      "priceUsdPerHour": null,
+      "afterSelectTop": 0,
+      "selectPriceUsdPerHour": null,
+      "cheapestSample": []
+    },
+    "uptime>=99.9": {
+      "minUptime": 99.9,
+      "afterHardFilters": 0,
+      "afterUptime": 0,
+      "priceUsdPerHour": null,
+      "afterSelectTop": 0,
+      "selectPriceUsdPerHour": null,
+      "cheapestSample": []
+    }
+  }
+}

@@ -42,7 +42,7 @@ describe('cp-runtime B2 session continuity', () => {
     });
     assert.equal(vm.jobRerunning, false);
     assert.equal(vm.projectContinues, true);
-    assert.match(vm.message, /tiếp tục soạn/i);
+    assert.match(vm.message, /khôi phục graph|không cần bắt đầu lại/i);
   });
 
   it('B2.3 rebind plan detects upstream change', () => {

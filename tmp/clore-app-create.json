@@ -1,0 +1,76 @@
+{
+  "at": "2026-07-11T12:57:22.015Z",
+  "currency": "USD-Blockchain",
+  "rankedCount": 9,
+  "ranked": [
+    {
+      "id": 100890,
+      "uptime": 100,
+      "price": 0.14166666666666666,
+      "region": "US Central",
+      "group": "A"
+    },
+    {
+      "id": 106362,
+      "uptime": 100,
+      "price": 0.13708333333333333,
+      "region": "Canada",
+      "group": "A"
+    },
+    {
+      "id": 106557,
+      "uptime": 100,
+      "price": 0.14583333333333334,
+      "region": "Canada",
+      "group": "A"
+    },
+    {
+      "id": 106537,
+      "uptime": 100,
+      "price": 0.16625,
+      "region": "Canada",
+      "group": "A"
+    },
+    {
+      "id": 105330,
+      "uptime": 100,
+      "price": 0.10416666666666667,
+      "region": "Germany",
+      "group": "A"
+    }
+  ],
+  "created": {
+    "id": "1942154",
+    "si": 100890,
+    "keys": [
+      "code",
+      "id",
+      "creation_fee",
+      "price",
+      "mrl",
+      "image",
+      "currency",
+      "spend",
+      "ct",
+      "specs",
+      "si",
+      "mon_container",
+      "online",
+      "pub_cluster",
+      "tcp_ports",
+      "http_port",
+      "http_pub",
+      "rating",
+      "reliability",
+      "owner",
+      "cuda_version",
+      "gpu_array",
+      "order_id",
+      "region",
+      "gpuvietnam_selection"
+    ]
+  },
+  "cancel": {
+    "code": 0
+  }
+}

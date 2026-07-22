@@ -1,0 +1,80 @@
+{
+  "at": "2026-07-11T15:28:53.002Z",
+  "machines": null,
+  "sessions": [
+    {
+      "id": "0f016550-4bff-461b-b0cb-06de8db75ffd",
+      "status": "closed",
+      "settlement_status": "skipped",
+      "started_at": "2026-07-11T13:16:45.71+00:00",
+      "ended_at": "2026-07-11T15:11:15.096+00:00",
+      "machine_id": "c9fa2462-a501-4162-971f-3acaa6f0f038",
+      "created_at": "2026-07-11T13:16:48.776018+00:00"
+    },
+    {
+      "id": "86b8fc39-ef5c-4cb6-b233-5aea62b900c3",
+      "status": "closed",
+      "settlement_status": "pending",
+      "started_at": "2026-07-06T17:55:35.299+00:00",
+      "ended_at": "2026-07-06T18:00:20.485+00:00",
+      "machine_id": "a1798067-1f97-49a2-8820-ff7f237c7419",
+      "created_at": "2026-07-06T17:55:38.806684+00:00"
+    },
+    {
+      "id": "c1160dcf-9b0d-4991-ab50-a7b9543abcd7",
+      "status": "closed",
+      "settlement_status": "pending",
+      "started_at": "2026-07-06T16:52:05.709+00:00",
+      "ended_at": "2026-07-06T16:55:04.919+00:00",
+      "machine_id": "7247b45f-3fb3-42a7-aa4f-d8fe78acede0",
+      "created_at": "2026-07-06T16:52:09.964203+00:00"
+    },
+    {
+      "id": "6110b47c-c787-4191-8610-5e17fc4ace2c",
+      "status": "closed",
+      "settlement_status": "pending",
+      "started_at": "2026-07-06T16:07:08.091+00:00",
+      "ended_at": "2026-07-06T16:15:41.89+00:00",
+      "machine_id": "1a03a229-28f6-4894-bc42-a859f339e734",
+      "created_at": "2026-07-06T16:07:11.616822+00:00"
+    },
+    {
+      "id": "651f0031-34aa-4d3a-86b4-c7145919aeae",
+      "status": "closed",
+      "settlement_status": "pending",
+      "started_at": "2026-07-06T15:24:20.286+00:00",
+      "ended_at": "2026-07-06T15:39:57.628+00:00",
+      "machine_id": "08e6d0fc-0782-4de6-b8e9-513318360a77",
+      "created_at": "2026-07-06T15:24:24.727562+00:00"
+    }
+  ],
+  "sub": [
+    {
+      "id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+      "server_status": "offline",
+      "status": "active",
+      "env_name": "ComfyUI — Character & Art",
+      "hours_total": 230,
+      "hours_used": 1.91
+    },
+    {
+      "id": "9bfce136-4468-453c-a4cc-0c13b728d8f0",
+      "server_status": "offline",
+      "status": "active",
+      "env_name": "ComfyUI — Commerce & Product",
+      "hours_total": 15,
+      "hours_used": 0
+    }
+  ],
+  "rpc": {
+    "error": null,
+    "code": null,
+    "data": {
+      "state": "ERROR",
+      "code": "CLAIM_PRECONDITION",
+      "message": "provider_destroyed_verified is false",
+      "rolled_back": true,
+      "settlement_status": null
+    }
+  }
+}

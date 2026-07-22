@@ -127,6 +127,8 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(source.includes('interruptPendingSessionForUser'));
     assert.ok(source.includes('destroyMachineWithBackup'));
     assert.ok(source.includes('billingView'));
+    assert.ok(source.includes('cancelActiveUserStartProvisions'));
+    assert.ok(source.includes('listActiveMachinesForUser'));
   });
 
   it('stop-machine returns machineSessionView and billingView', () => {
@@ -150,6 +152,8 @@ describe('M9 API legacy caller removal', () => {
     assert.ok(source.includes('machineSessionView'));
     assert.ok(source.includes('billingViewForStart'));
     assert.ok(source.includes('enqueueUserStartProvision'));
+    assert.ok(source.includes('findActiveUserStartProvision'));
+    assert.ok(source.includes('listActiveMachinesForUser'));
     assert.ok(!source.includes('completeUserStartProvision'));
     assert.ok(source.includes('reclaimStaleProvisionClaim'));
     assert.ok(source.includes('buildProvisionAttemptLabel'));

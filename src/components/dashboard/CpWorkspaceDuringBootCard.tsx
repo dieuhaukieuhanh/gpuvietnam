@@ -16,8 +16,9 @@ type CpWorkspaceDuringBootCardProps = {
 };
 
 /**
- * Architecture v2 — CP usable while GPU boots.
- * Edit/save workflow + snapshot on Control Plane; Comfy/Generate stay gated elsewhere.
+ * DEV/internal scaffold only — NOT mounted on the customer dashboard.
+ * Product path: Comfy editor sync (`gpuvietnam_cp_sync`) + SessionRestoreBanner.
+ * Do not re-wire this card into DashboardPage without an explicit product decision.
  */
 export default function CpWorkspaceDuringBootCard({
   accessToken,

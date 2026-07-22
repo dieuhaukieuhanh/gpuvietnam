@@ -153,9 +153,18 @@ POST start-machine
 | Orphan | Worker reconcile được order/machine lệch trạng thái |
 | Service | systemd tự restart khi process chết |
 
-**42/42 unit tests** = code sẵn sàng; **không** thay acceptance smoke.
+**Unit tests** = code sẵn sàng; **không** thay acceptance smoke.
 
-Sau khi bảng trên PASS → chuyển **P0-B — T11 billing proof**.
+### Concurrency / marketplace guards (cùng P0-A hardening)
+
+| Rule | Hành vi |
+|------|---------|
+| Single start | 1 `user_start_provision` open slot / user; bấm Start lại → dedupe |
+| Cancel start | Hủy op (kể cả `running`) + giải phóng slot + destroy machine leftovers |
+| Dual-run | Tối đa **2 GPU** qua `/api/cp/dual-run` (không qua `start-machine`) |
+| Vast | Reject storage-only (`num_gpus`/`vram`/`gpu_frac`); search `gpu_frac=1` |
+
+Sau khi bảng acceptance PASS → chuyển **P0-B — T11 billing proof**.
 
 ---
 

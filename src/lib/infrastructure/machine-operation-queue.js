@@ -7,6 +7,9 @@ import {
   DEFAULT_RETRY_POLICY,
   resolveRetryAfterFailure,
   isMachineOperationsTableUnavailable,
+  isUserStartProvisionOperation,
+  userStartProvisionIdempotencyKey,
+  userStartProvisionReleasedIdempotencyKey,
 } from './machine-operation-core.js';
 import {
   LEASE_DURATION_MS,
@@ -19,6 +22,35 @@ import { buildOperationMetrics, mergeMetrics } from './machine-operation-metrics
 import { kickMachineOperationWorkerForRow } from './machine-operation-worker-runner.js';
 
 const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Free per-user open provision slot after terminal outcome.
+ * @param {Record<string, unknown>} row
+ * @returns {Record<string, unknown>}
+ */
+function releasedIdempotencyPatch(row) {
+  if (!isUserStartProvisionOperation(row)) return {};
+  const userId = String(row.user_id ?? '');
+  const operationId = String(row.id ?? '');
+  if (!userId || !operationId) return {};
+  return {
+    idempotency_key: userStartProvisionReleasedIdempotencyKey(userId, operationId),
+  };
+}
+
+/**
+ * Re-claim open slot when manually retrying a terminal user_start_provision.
+ * @param {Record<string, unknown>} row
+ * @returns {Record<string, unknown>}
+ */
+function reopenIdempotencyPatch(row) {
+  if (!isUserStartProvisionOperation(row)) return {};
+  const userId = String(row.user_id ?? '');
+  if (!userId) return {};
+  return {
+    idempotency_key: userStartProvisionIdempotencyKey(userId),
+  };
+}
 
 function skipEnqueueWhenQueueUnavailable(error, context) {
   if (!isMachineOperationsTableUnavailable(error)) return null;
@@ -284,6 +316,7 @@ export async function complete(supabaseAdmin, operationId, options = {}) {
       next_retry_at: null,
       last_error: null,
       metrics,
+      ...releasedIdempotencyPatch(current),
     })
     .eq('id', operationId)
     .in('state', [MACHINE_OPERATION_STATE.LEASED, MACHINE_OPERATION_STATE.RUNNING])
@@ -379,6 +412,12 @@ export async function fail(supabaseAdmin, operationId, errorMessage, options = {
  */
 async function moveToDeadLetter(supabaseAdmin, operationId, input) {
   const now = input.now ?? new Date();
+  const { data: current } = await supabaseAdmin
+    .from('machine_operations')
+    .select('id,user_id,operation')
+    .eq('id', operationId)
+    .maybeSingle();
+
   const { data, error } = await supabaseAdmin
     .from('machine_operations')
     .update({
@@ -391,6 +430,7 @@ async function moveToDeadLetter(supabaseAdmin, operationId, input) {
       retry_count: input.retryCount,
       last_error: input.finalError,
       metrics: input.metrics,
+      ...(current ? releasedIdempotencyPatch(current) : {}),
     })
     .eq('id', operationId)
     .select('*')
@@ -407,6 +447,13 @@ async function moveToDeadLetter(supabaseAdmin, operationId, input) {
  * @param {string} operationId
  */
 export async function retry(supabaseAdmin, operationId) {
+  const { data: current, error: fetchError } = await supabaseAdmin
+    .from('machine_operations')
+    .select('id,user_id,operation')
+    .eq('id', operationId)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+
   const { data, error } = await supabaseAdmin
     .from('machine_operations')
     .update({
@@ -418,6 +465,7 @@ export async function retry(supabaseAdmin, operationId) {
       final_error: null,
       last_error: null,
       retry_reason: 'manual_retry',
+      ...(current ? reopenIdempotencyPatch(current) : {}),
     })
     .eq('id', operationId)
     .in('state', [
@@ -442,6 +490,13 @@ export async function retry(supabaseAdmin, operationId) {
  * @param {string} [reason]
  */
 export async function cancel(supabaseAdmin, operationId, reason) {
+  const { data: current, error: fetchError } = await supabaseAdmin
+    .from('machine_operations')
+    .select('id,user_id,operation')
+    .eq('id', operationId)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+
   const { data, error } = await supabaseAdmin
     .from('machine_operations')
     .update({
@@ -450,6 +505,7 @@ export async function cancel(supabaseAdmin, operationId, reason) {
       lease_until: null,
       next_retry_at: null,
       last_error: reason ?? null,
+      ...(current ? releasedIdempotencyPatch(current) : {}),
     })
     .eq('id', operationId)
     .in('state', [

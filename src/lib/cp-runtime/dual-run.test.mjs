@@ -4,12 +4,15 @@ import { describe, it } from 'node:test';
 import { COMFY_SMOKE_WORKFLOW, TINY_PNG_BYTES } from './comfy-smoke-workflow.js';
 import {
   DUAL_RUN_BILLING,
+  DUAL_RUN_MAX_GPUS,
+  assertDualRunGpuCap,
   buildDualRunUxState,
   estimateDualRunCustomerCharge,
   evaluateDualRunEligibility,
   isDualRunAllowedForPlan,
 } from './dual-run-policy.js';
 import { runJobWithDualRun, selectDualRunWinner } from './dual-run.js';
+import { RuntimePortError } from './runtime-port.js';
 import { createProviderBackedComfyRuntimePort } from './provider-runtime-bind.js';
 import { SPEC_ID_V3 } from './runtime-image-spec.js';
 import { createMemoryRuntimeRegistryStore } from './runtime-registry-store.js';
@@ -160,6 +163,18 @@ function createDualFakeProvider(urls) {
 }
 
 describe('cp-runtime dual-run policy (B3.1 / B3.3)', () => {
+  it('hard-caps dual-run at 2 GPUs', () => {
+    assert.equal(DUAL_RUN_MAX_GPUS, 2);
+    assert.equal(DUAL_RUN_BILLING.maxGpus, 2);
+    assert.equal(assertDualRunGpuCap(1).ok, true);
+    assert.equal(assertDualRunGpuCap(2).ok, true);
+    assert.equal(assertDualRunGpuCap(3).ok, false);
+    assert.equal(assertDualRunGpuCap(3).code, 'DUAL_RUN_MAX_GPUS');
+    const ux = buildDualRunUxState({ planKey: 'pro', enabled: true, availableHostCount: 4 });
+    assert.equal(ux.maxGpus, 2);
+    assert.equal(ux.billing.maxGpus, 2);
+  });
+
   it('gates plans and estimates capped charge', () => {
     assert.equal(isDualRunAllowedForPlan('pro'), true);
     assert.equal(isDualRunAllowedForPlan('starter'), false);
@@ -332,5 +347,29 @@ describe('cp-runtime dual-run orchestrator (B3.2)', () => {
     } finally {
       await comfy.close();
     }
+  });
+
+  it('rejects more than 2 attemptIds', async () => {
+    const bundle = createProviderBackedComfyRuntimePort({
+      provider: createDualFakeProvider({
+        urlA: 'http://127.0.0.1:9',
+        urlB: 'http://127.0.0.1:9',
+      }),
+      registryStore: createMemoryRuntimeRegistryStore(),
+      putObject: async ({ key }) => key,
+    });
+    await assert.rejects(
+      () =>
+        runJobWithDualRun(bundle, {
+          userId: 'u',
+          requiredImageSpecRef: SPEC_ID_V3,
+          workflowSnapshot: { ...COMFY_SMOKE_WORKFLOW },
+          planKey: 'pro',
+          availableHostCount: 5,
+          forceDual: true,
+          attemptIds: ['a', 'b', 'c'],
+        }),
+      (err) => err instanceof RuntimePortError && /at most 2 GPUs/i.test(err.message),
+    );
   });
 });

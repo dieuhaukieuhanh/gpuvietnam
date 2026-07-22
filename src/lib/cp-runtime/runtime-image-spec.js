@@ -38,6 +38,7 @@ export const SPEC_ID_V4 = `gpuvietnam.comfy.v4@${PACK_VERSION}`;
 export const GPUVIETNAM_EXTENSIONS = Object.freeze([
   'gpuvietnam_branding',
   'gpuvietnam_backup',
+  'gpuvietnam_cp_sync',
 ]);
 
 /** MVP stock models aligned with scripts/download-models.sh */

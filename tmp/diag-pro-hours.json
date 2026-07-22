@@ -1,0 +1,157 @@
+{
+  "invErr": null,
+  "inventoryAllCount": 21,
+  "proRows": [
+    {
+      "id": 1,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 20.02,
+      "status": "expired",
+      "source": "purchased",
+      "subscription_id": "b204ac48-e01f-47fe-b0bd-00b8b100c210",
+      "grant_id": null,
+      "created_at": "2026-06-27T20:28:48.827435+00:00"
+    },
+    {
+      "id": 3,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "status": "expired",
+      "source": "purchased",
+      "subscription_id": "c22f564f-7462-4f7a-aa09-be752ee93a42",
+      "grant_id": null,
+      "created_at": "2026-07-07T15:18:21.249476+00:00"
+    },
+    {
+      "id": 4,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 109.52,
+      "status": "active",
+      "source": "purchased",
+      "subscription_id": "6585aa31-a0eb-4649-bb30-fe5475260a79",
+      "grant_id": null,
+      "created_at": "2026-07-07T15:18:45.715008+00:00"
+    },
+    {
+      "id": 5,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "status": "active",
+      "source": "purchased",
+      "subscription_id": "1a38aad4-9c8a-4fa5-b674-674470305608",
+      "grant_id": null,
+      "created_at": "2026-07-07T15:25:59.741489+00:00"
+    },
+    {
+      "id": 6,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "status": "active",
+      "source": "purchased",
+      "subscription_id": "57708613-1ffe-4cd0-be1f-1e5fd3496294",
+      "grant_id": null,
+      "created_at": "2026-07-07T15:26:13.411995+00:00"
+    },
+    {
+      "id": 7,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "status": "expired",
+      "source": "purchased",
+      "subscription_id": "57708613-1ffe-4cd0-be1f-1e5fd3496294",
+      "grant_id": null,
+      "created_at": "2026-07-07T15:26:13.447024+00:00"
+    }
+  ],
+  "proActiveSumTotal": 450,
+  "proActiveSumRemaining": 449.52,
+  "proAllStatusesSumTotal": 1020,
+  "proAllStatusesSumRemaining": 929.54,
+  "allActiveNonHourlySumRemaining": 1139.52,
+  "proSubs": [
+    {
+      "id": "d71d7b83-818f-4951-9272-6a7525606011",
+      "plan": "Pro",
+      "billing": "hourly",
+      "hours_total": 0,
+      "hours_used": 0,
+      "remaining": 0,
+      "status": "replaced",
+      "created_at": "2026-06-26T13:44:40.024218+00:00"
+    },
+    {
+      "id": "b204ac48-e01f-47fe-b0bd-00b8b100c210",
+      "plan": "Pro",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_used": 89.97753944444445,
+      "remaining": 20.022460555555554,
+      "status": "replaced",
+      "created_at": "2026-06-26T15:54:00.055717+00:00"
+    },
+    {
+      "id": "c22f564f-7462-4f7a-aa09-be752ee93a42",
+      "plan": "Pro",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_used": 0,
+      "remaining": 230,
+      "status": "replaced",
+      "created_at": "2026-07-07T15:18:18.438+00:00"
+    },
+    {
+      "id": "6585aa31-a0eb-4649-bb30-fe5475260a79",
+      "plan": "Pro",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_used": 0.48,
+      "remaining": 109.52,
+      "status": "active",
+      "created_at": "2026-07-07T15:18:43.161+00:00"
+    },
+    {
+      "id": "1a38aad4-9c8a-4fa5-b674-674470305608",
+      "plan": "Pro",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_used": 0,
+      "remaining": 110,
+      "status": "active",
+      "created_at": "2026-07-07T15:25:57.714+00:00"
+    },
+    {
+      "id": "57708613-1ffe-4cd0-be1f-1e5fd3496294",
+      "plan": "Pro",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_used": 0,
+      "remaining": 230,
+      "status": "active",
+      "created_at": "2026-07-07T15:26:11.35+00:00"
+    }
+  ],
+  "proSubsSumTotal": 790,
+  "proSubsSumRemaining": 699.5424605555555,
+  "allSubsSumTotal": 1519,
+  "proGrants": [],
+  "proGrantsSumGranted": 0,
+  "allGrantsSumGranted": 22
+}

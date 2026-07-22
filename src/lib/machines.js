@@ -43,6 +43,24 @@ export async function getActiveMachineForUser(supabaseAdmin, userId) {
 }
 
 /**
+ * All non-destroyed machines still bootstrapping or running for a user.
+ * Used to block multi-start (except CP dual-run / Render an toàn).
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ */
+export async function listActiveMachinesForUser(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin
+    .from('machines')
+    .select('*')
+    .eq('user_id', userId)
+    .in('status', ACTIVE_MACHINE_STATUSES)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+/**
  * @param {Record<string, unknown> | null | undefined} machine
  */
 export function extractEndpointFromMachine(machine) {

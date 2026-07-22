@@ -218,6 +218,38 @@ describe('runDestroyPipeline', () => {
     assert.equal(settleCalls, 0);
   });
 
+  it('requireBackupSuccess — backup fail blocks provider destroy', async () => {
+    const mock = createMockSupabase(runningSession());
+    let destroyCalls = 0;
+
+    const result = await runDestroyPipeline(
+      mock.client,
+      {
+        gpuService: {
+          destroyInstance: async () => {
+            destroyCalls += 1;
+          },
+        },
+        backupBeforeStop: async () => false,
+        verifyDestroyed: async () => destroyedVerify(),
+        settle: async () => ({ state: 'OK' }),
+        skipSettlement: async () => ({ state: 'SKIPPED' }),
+      },
+      {
+        userId: USER_ID,
+        machine: mock.machine,
+        reason: 'user_stop',
+        requireBackupSuccess: true,
+        backupMode: 'required',
+      },
+    );
+
+    assert.equal(result.destroyed, false);
+    assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.BACKUP_FAILED);
+    assert.equal(destroyCalls, 0);
+    assert.equal(mock.session.status, 'running');
+  });
+
   it('T4 — idempotent when provider already destroyed', async () => {
     const mock = createMockSupabase(runningSession());
     let destroyCalls = 0;

@@ -8,7 +8,9 @@ import { randomUUID } from 'node:crypto';
 import { runJobAttemptViaRuntimePort } from './comfy-adapter.js';
 import { RuntimePortError } from './runtime-port.js';
 import {
+  DUAL_RUN_MAX_GPUS,
   assertDistinctHosts,
+  assertDualRunGpuCap,
   evaluateDualRunEligibility,
   mergeExcludeHostKeys,
   normalizeHostKey,
@@ -151,11 +153,22 @@ export async function runJobWithDualRun(bundle, opts) {
     };
   }
 
+  if (Array.isArray(opts.attemptIds) && opts.attemptIds.length > DUAL_RUN_MAX_GPUS) {
+    throw new RuntimePortError(
+      'INVALID_ARGUMENT',
+      `Dual-run allows at most ${DUAL_RUN_MAX_GPUS} GPUs (got ${opts.attemptIds.length} attemptIds)`,
+      { details: { maxGpus: DUAL_RUN_MAX_GPUS } },
+    );
+  }
+
   const attemptIdA = String(opts.attemptIds?.[0] ?? randomUUID());
   const attemptIdB = String(opts.attemptIds?.[1] ?? randomUUID());
 
   /** @type {{ winnerAttemptId: string | null; hostKeyA: string | null; hostKeyB: string | null }} */
   const race = { winnerAttemptId: null, hostKeyA: null, hostKeyB: null };
+
+  /** Hard cap: never rent a 3rd GPU for this dual Job (one slot per branch). */
+  const rentedBranches = new Set();
 
   /** @type {(key: string) => void} */
   let resolveHostA = () => {};
@@ -205,6 +218,16 @@ export async function runJobWithDualRun(bundle, opts) {
         inputManifest: opts.inputManifest,
         createMetadata,
         beforeCreate: async () => {
+          if (!rentedBranches.has(branch)) {
+            const nextCount = rentedBranches.size + 1;
+            const cap = assertDualRunGpuCap(nextCount);
+            if (!cap.ok) {
+              throw new RuntimePortError('INVALID_ARGUMENT', cap.message, {
+                details: { maxGpus: cap.maxGpus, dualGroupId, branch },
+              });
+            }
+            rentedBranches.add(branch);
+          }
           if (branch !== 'B') return;
           const hostA = await hostKeyAReady;
           if (!hostA) {

@@ -1,0 +1,62 @@
+{
+  "at": "2026-07-11T15:53:34.069Z",
+  "verdict": {
+    "ok": false,
+    "issues": [
+      "no_active_machine_in_db",
+      "no_clore_online_orders"
+    ]
+  },
+  "activeMachine": null,
+  "session": {
+    "id": "0f016550-4bff-461b-b0cb-06de8db75ffd",
+    "status": "closed",
+    "settlement_status": "skipped",
+    "started_at": "2026-07-11T13:16:45.71+00:00",
+    "ended_at": "2026-07-11T15:11:15.096+00:00",
+    "plan": "Starter",
+    "subscription_id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "machine_id": "c9fa2462-a501-4162-971f-3acaa6f0f038",
+    "verified_running_at": "2026-07-11T13:16:45.71+00:00"
+  },
+  "onlineSubs": [],
+  "cloreOnlineCount": 0,
+  "cloreOnline": [],
+  "recentMachines": [
+    {
+      "id": "c9fa2462",
+      "status": "destroyed",
+      "instance_id": "1942209",
+      "billing": null,
+      "created": "2026-07-11T13:12:26.364892+00:00"
+    },
+    {
+      "id": "73cdbc61",
+      "status": "destroyed",
+      "instance_id": "44466180",
+      "billing": null,
+      "created": "2026-07-11T00:52:24.182338+00:00"
+    },
+    {
+      "id": "afd83f06",
+      "status": "destroyed",
+      "instance_id": "44464319",
+      "billing": null,
+      "created": "2026-07-11T00:25:24.713375+00:00"
+    },
+    {
+      "id": "ef5c7641",
+      "status": "destroyed",
+      "instance_id": "44434502",
+      "billing": null,
+      "created": "2026-07-10T17:56:56.573719+00:00"
+    },
+    {
+      "id": "39d8959e",
+      "status": "destroyed",
+      "instance_id": "44433519",
+      "billing": null,
+      "created": "2026-07-10T17:44:17.548234+00:00"
+    }
+  ]
+}

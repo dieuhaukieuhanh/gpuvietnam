@@ -42,7 +42,7 @@ export function normalizeUpstreamComfyUrl(url) {
 /**
  * Optional Cloudflare KV mirror for edge lookups.
  * @param {string} tokenHash
- * @param {{ upstream: string; userId: string; machineId: string; exp: number }} payload
+ * @param {{ upstream: string | null; userId: string; machineId: string | null; exp: number; mode: string }} payload
  * @param {number} ttlSeconds
  */
 function resolveCloudflareApiToken() {
@@ -98,14 +98,17 @@ async function deleteTokenFromCloudflareKv(tokenHash) {
 /**
  * Mint a short-lived access token and return brand work URL.
  *
+ * A1 M1: pass `mode: 'editor'` (or omit upstreamUrl) for Workspace without Runtime.
+ *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {{
  *   userId: string;
- *   machineId: string;
- *   upstreamUrl: string;
+ *   machineId?: string | null;
+ *   upstreamUrl?: string | null;
+ *   mode?: 'runtime' | 'editor';
  *   ttlSeconds?: number;
  * }} input
- * @returns {Promise<{ token: string; workUrl: string; expiresAt: string }>}
+ * @returns {Promise<{ token: string; workUrl: string; expiresAt: string; mode: 'runtime' | 'editor' }>}
  */
 export async function issueComfyAccessToken(supabaseAdmin, input) {
   if (!isComfyProxyEnabled()) {
@@ -115,9 +118,23 @@ export async function issueComfyAccessToken(supabaseAdmin, input) {
     throw new Error('COMFY_PROXY_BASE_URL is not configured');
   }
 
-  const upstream = normalizeUpstreamComfyUrl(input.upstreamUrl);
-  if (!upstream) {
+  const mode =
+    input.mode === 'editor' || !String(input.upstreamUrl ?? '').trim()
+      ? 'editor'
+      : 'runtime';
+
+  const upstream =
+    mode === 'editor' ? null : normalizeUpstreamComfyUrl(input.upstreamUrl);
+  if (mode === 'runtime' && !upstream) {
     throw new Error('Invalid upstream Comfy URL');
+  }
+
+  const machineId =
+    mode === 'editor'
+      ? null
+      : String(input.machineId ?? '').trim() || null;
+  if (mode === 'runtime' && !machineId) {
+    throw new Error('machineId is required for runtime Comfy access tokens');
   }
 
   const ttlSeconds = Math.max(
@@ -130,7 +147,7 @@ export async function issueComfyAccessToken(supabaseAdmin, input) {
 
   const { error } = await supabaseAdmin.from('comfy_access_tokens').insert({
     user_id: input.userId,
-    machine_id: input.machineId,
+    machine_id: machineId,
     token_hash: tokenHash,
     upstream_url: upstream,
     expires_at: expiresAt,
@@ -145,8 +162,9 @@ export async function issueComfyAccessToken(supabaseAdmin, input) {
     {
       upstream,
       userId: input.userId,
-      machineId: input.machineId,
+      machineId,
       exp: Math.floor(new Date(expiresAt).getTime() / 1000),
+      mode,
     },
     ttlSeconds,
   );
@@ -156,15 +174,21 @@ export async function issueComfyAccessToken(supabaseAdmin, input) {
     throw new Error('Failed to build work URL');
   }
 
-  return { token: rawToken, workUrl, expiresAt };
+  return { token: rawToken, workUrl, expiresAt, mode };
 }
 
 /**
- * Resolve a live token to upstream (Worker / internal API).
+ * Resolve a live token (Worker / internal API / CP sync auth).
  *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {string} rawToken
- * @returns {Promise<{ upstreamUrl: string; userId: string; machineId: string; expiresAt: string } | null>}
+ * @returns {Promise<{
+ *   upstreamUrl: string | null;
+ *   userId: string;
+ *   machineId: string | null;
+ *   expiresAt: string;
+ *   mode: 'runtime' | 'editor';
+ * } | null>}
  */
 export async function resolveComfyAccessToken(supabaseAdmin, rawToken) {
   const token = String(rawToken ?? '').trim();
@@ -182,13 +206,14 @@ export async function resolveComfyAccessToken(supabaseAdmin, rawToken) {
   if (new Date(data.expires_at).getTime() <= Date.now()) return null;
 
   const upstreamUrl = normalizeUpstreamComfyUrl(data.upstream_url);
-  if (!upstreamUrl) return null;
+  const mode = upstreamUrl ? 'runtime' : 'editor';
 
   return {
     upstreamUrl,
     userId: String(data.user_id),
-    machineId: String(data.machine_id),
+    machineId: data.machine_id != null ? String(data.machine_id) : null,
     expiresAt: String(data.expires_at),
+    mode,
   };
 }
 

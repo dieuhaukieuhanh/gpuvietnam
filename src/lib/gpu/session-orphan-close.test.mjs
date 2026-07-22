@@ -8,7 +8,7 @@ import { closeOrphanRunningSessionsLifecycle } from './session-orphan-close.js';
  *
  * Query shapes used by the helper:
  *   from('gpu_sessions').select(cols).eq('user_id',u).eq('status','running')  -> {data: SessionRow[], error}
- *   from('machines').select('gpu_session_id').eq('user_id',u).in('status',[..]) -> {data: MachineRow[], error}
+ *   from('machines').select('id, gpu_session_id').eq('user_id',u).in('status',[..]) -> {data: MachineRow[], error}
  *   from('gpu_sessions').update(patch).eq('id',s).eq('status','running').select('id').maybeSingle()
  *                                                                               -> {data: {id}|null, error}
  *
@@ -194,6 +194,19 @@ describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
     const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
     assert.equal(res.closed, 0, 'linked session must not be closed');
     assert.equal(updates.length, 0, 'no persist update for linked session');
+  });
+
+  it('session with NULL projection gpu_session_id but FK machine_id on active machine is NOT orphan', async () => {
+    // Regression: openBillableSession used to close a live billable session as
+    // orphan when machines.gpu_session_id drifted NULL, then open a new session
+    // and reset the dashboard clock from 00:00:00.
+    const { supabaseAdmin, updates } = makeClient({
+      sessions: [orphanRow('sess_live', 'mach_live')],
+      machines: [{ id: 'mach_live', gpu_session_id: null }],
+    });
+    const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
+    assert.equal(res.closed, 0, 'FK-linked live session must not be closed as orphan');
+    assert.equal(updates.length, 0);
   });
 
   it('concurrent close (0-row persist) -> skipped, not retried, not forced', async () => {

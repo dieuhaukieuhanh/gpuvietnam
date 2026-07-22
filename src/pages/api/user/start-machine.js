@@ -44,6 +44,7 @@ import {
 
 import {
   getActiveMachineForUser,
+  listActiveMachinesForUser,
   resolveLiveMachineStatus,
   syncMachineFromLiveStatus,
   updateSubscriptionServerStatus,
@@ -54,7 +55,10 @@ import {
 
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
-import { enqueueUserStartProvision } from '@/lib/infrastructure/enqueue-user-start-provision';
+import {
+  enqueueUserStartProvision,
+  findActiveUserStartProvision,
+} from '@/lib/infrastructure/enqueue-user-start-provision';
 import { resolveBillingViewForCommand } from '@/lib/gpu/billing-session-view';
 
 import { activateInventoryPlan, parseInventoryId } from '@/lib/user-plan-inventory';
@@ -689,11 +693,13 @@ async function startMachineHandler(req, res) {
         machineSessionView,
         null,
       );
+      const activeProvision = await findActiveUserStartProvision(supabaseAdmin, user.id);
       return res.status(200).json(withResumeMeta({
         success: true,
         alreadyStarting: true,
         message: 'Đang khởi tạo máy GPU. Vui lòng đợi...',
         selectedPlan: selected,
+        operationId: activeProvision?.id ?? null,
         machineSessionView,
         billingView,
       }, {
@@ -970,6 +976,36 @@ async function startMachineHandler(req, res) {
       correlationId,
     });
 
+    // Single-session guard: one active GPU (or one in-flight provision) per user.
+    // Dual-run / Render an toàn provisions via /api/cp/dual-run — not this endpoint.
+    const activeMachines = await listActiveMachinesForUser(supabaseAdmin, user.id);
+    if (activeMachines.length > 0) {
+      const bootMachine = activeMachines[0];
+      const machineSessionView = buildMachineSessionView(subscription, bootMachine, user.id);
+      const billingView = await billingViewForStart(
+        supabaseAdmin,
+        user.id,
+        gpuService,
+        machineSessionView,
+        bootMachine,
+      );
+      const activeProvision = await findActiveUserStartProvision(supabaseAdmin, user.id);
+      return res.status(200).json(withResumeMeta({
+        success: true,
+        alreadyStarting: true,
+        message: 'Máy GPU đang chạy hoặc đang khởi động. Không mở thêm máy song song.',
+        selectedPlan: selected,
+        operationId: activeProvision?.id ?? null,
+        machine: buildMachineResponse(bootMachine, { status: bootMachine.status ?? 'creating' }),
+        machineSessionView,
+        billingView,
+      }, {
+        subscription,
+        machine: bootMachine,
+        requestId: correlationId,
+      }));
+    }
+
     let enqueued;
     try {
       enqueued = await enqueueUserStartProvision(supabaseAdmin, {
@@ -1006,7 +1042,10 @@ async function startMachineHandler(req, res) {
     return res.status(200).json({
       success: true,
       accepted: true,
-      message: 'Đang khởi tạo máy GPU...',
+      alreadyStarting: Boolean(enqueued.deduped),
+      message: enqueued.deduped
+        ? 'Đang khởi tạo máy GPU (yêu cầu trùng — giữ một hàng đợi)...'
+        : 'Đang khởi tạo máy GPU...',
       operationId: enqueued.operation?.id ?? null,
       selectedPlan: selected,
       subscription: {

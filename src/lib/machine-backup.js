@@ -140,8 +140,27 @@ async function indexBackupArchivesInStorageFiles(supabaseAdmin, userId, archives
  * @param {Record<string, unknown>} machine
  * @param {string} userId
  * @param {string} reason
+ * @param {{
+ *   mode?: 'required' | 'wait' | 'fast' | null;
+ *   timeoutMs?: number | null;
+ *   allowSshFallback?: boolean;
+ * }} [options]
  */
-export async function backupBeforeStop(supabaseAdmin, machine, userId, reason) {
+export async function backupBeforeStop(supabaseAdmin, machine, userId, reason, options = {}) {
+  const mode = String(options.mode ?? 'required');
+  /** Wait path: longer flush + optional SSH. Required: solid timeout, SSH only if allowSshFallback. */
+  const allowSshFallback = options.allowSshFallback === true || mode === 'wait';
+  const flushTimeoutMs = (() => {
+    if (options.timeoutMs != null && Number.isFinite(Number(options.timeoutMs))) {
+      return Math.max(5_000, Math.floor(Number(options.timeoutMs)));
+    }
+    const fromEnv = Number(process.env.GPUVIETNAM_BACKUP_FLUSH_TIMEOUT_MS);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+    if (mode === 'wait') return 90_000;
+    if (mode === 'fast') return 15_000;
+    return 45_000; // required (first interactive attempt)
+  })();
+
   try {
     const autoOn = await isAutoBackupEnabledForUser(supabaseAdmin, userId, null);
     if (!autoOn) {
@@ -187,13 +206,17 @@ export async function backupBeforeStop(supabaseAdmin, machine, userId, reason) {
         baseUrl = await resolveCloreFlushBaseUrl(String(machine.instance_id));
       }
       if (baseUrl) {
-        console.info('[machine-backup] L2 HTTP flush', { baseUrl, machineId: machine.id });
+        console.info('[machine-backup] L2 HTTP flush', {
+          baseUrl,
+          machineId: machine.id,
+          timeoutMs: flushTimeoutMs,
+          mode,
+          allowSshFallback,
+        });
         const flush = await requestContainerBackupFlush({
           baseUrl,
           flushSecret,
-          // Keep stop-path backup bounded so destroy/cancel can finish before the
-          // client/API gives up (default 90s; override with GPUVIETNAM_BACKUP_FLUSH_TIMEOUT_MS).
-          timeoutMs: Number(process.env.GPUVIETNAM_BACKUP_FLUSH_TIMEOUT_MS ?? 90_000) || 90_000,
+          timeoutMs: flushTimeoutMs,
         });
         try {
           const reconciled = await reconcileUserBackupFromR2(supabaseAdmin, userId);
@@ -222,16 +245,53 @@ export async function backupBeforeStop(supabaseAdmin, machine, userId, reason) {
         });
 
         if (flush.ok) return true;
+        if (!allowSshFallback) {
+          console.warn(
+            '[machine-backup] HTTP flush failed — SSH fallback disabled for this stop mode',
+          );
+          return false;
+        }
         console.warn('[machine-backup] HTTP flush failed; falling back to SSH if available');
       } else {
         console.warn('[machine-backup] HTTP flush skipped: no Comfy base URL');
+        if (!allowSshFallback) {
+          await createBackupLog(supabaseAdmin, {
+            userId,
+            machineId: String(machine.id),
+            reason,
+            status: 'failed',
+            errorMessage: 'HTTP flush skipped (no Comfy base URL); SSH fallback disabled.',
+          });
+          return false;
+        }
       }
     } catch (httpErr) {
       console.warn(
         '[machine-backup] HTTP flush error; falling back to SSH:',
         httpErr instanceof Error ? httpErr.message : httpErr,
       );
+      if (!allowSshFallback) {
+        await createBackupLog(supabaseAdmin, {
+          userId,
+          machineId: String(machine.id),
+          reason,
+          status: 'failed',
+          errorMessage: `HTTP flush error (SSH disabled): ${
+            httpErr instanceof Error ? httpErr.message : String(httpErr)
+          }`,
+        });
+        return false;
+      }
     }
+  } else if (!allowSshFallback) {
+    await createBackupLog(supabaseAdmin, {
+      userId,
+      machineId: String(machine.id),
+      reason,
+      status: 'failed',
+      errorMessage: 'No flush secret; SSH fallback disabled for this stop mode.',
+    });
+    return false;
   }
 
   const hasClorePassword =

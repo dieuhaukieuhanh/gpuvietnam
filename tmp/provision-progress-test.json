@@ -1,0 +1,20 @@
+{
+  "updatedAt": "2026-07-17T13:29:11.142Z",
+  "entries": [
+    {
+      "subscriptionId": "sub-3",
+      "stage": "STARTING_COMFY",
+      "tick": "health_check",
+      "startedAt": 1784294951142,
+      "provisionStartedAt": 1784294951142,
+      "requestId": null,
+      "provider": null,
+      "gpuType": null,
+      "hostId": null,
+      "machineId": null,
+      "gpuSessionId": null,
+      "message": "Đang khởi động ComfyUI",
+      "updatedAt": 1784294951142
+    }
+  ]
+}

@@ -19,6 +19,7 @@ type DashboardCurrentSessionCardProps = {
   outOfHours: boolean;
   lowCreditWarning: boolean;
   statusMessage?: string | null;
+  stopPostCheckActive?: boolean;
 };
 
 function timerClassName(mode: TimerDisplayMode): string {
@@ -28,12 +29,21 @@ function timerClassName(mode: TimerDisplayMode): string {
   return 'dashboard-session-timer dashboard-session-timer--hidden';
 }
 
-function timerLabel(mode: TimerDisplayMode, phase: SessionPhase, billingStarted: boolean): string | null {
+function timerLabel(
+  mode: TimerDisplayMode,
+  phase: SessionPhase,
+  billingStarted: boolean,
+  stopPostCheckActive: boolean,
+): string | null {
   if (phase === 'opening') return 'Chưa bắt đầu tính giờ';
   if (phase === 'running' && !billingStarted) return 'Chờ xác nhận billing từ server';
   if (mode === 'live') return null;
   if (mode === 'paused' && phase === 'disconnected') return 'Thời gian phiên (tạm dừng hiển thị)';
-  if (mode === 'paused' && phase === 'stopping') return 'Đang lưu dữ liệu · timer dừng';
+  if (mode === 'paused' && phase === 'stopping') {
+    return stopPostCheckActive
+      ? 'Đang xác nhận tắt máy · timer dừng'
+      : 'Đang lưu dữ liệu · timer dừng';
+  }
   if (mode === 'muted') return 'Timer chưa chạy';
   return null;
 }
@@ -51,6 +61,7 @@ export default function DashboardCurrentSessionCard({
   outOfHours,
   lowCreditWarning,
   statusMessage,
+  stopPostCheckActive = false,
 }: DashboardCurrentSessionCardProps) {
   const showStats =
     phase === 'running' ||
@@ -58,7 +69,7 @@ export default function DashboardCurrentSessionCard({
 
   const showTimer = timerMode !== 'hidden';
   const timerSeconds = timerMode === 'muted' && phase !== 'stopping' ? 0 : sessionDurationSec;
-  const timerCaption = timerLabel(timerMode, phase, billingStarted);
+  const timerCaption = timerLabel(timerMode, phase, billingStarted, stopPostCheckActive);
 
   const primaryAlert =
     phase === 'running' && outOfHours
@@ -97,7 +108,9 @@ export default function DashboardCurrentSessionCard({
 
         {phase === 'stopping' && (
           <p className="dashboard-session-callout">
-            💾 Đang lưu dữ liệu trước khi tắt máy — timer tạm dừng
+            {stopPostCheckActive
+              ? '🔎 Đang xác nhận máy đã tắt — timer tạm dừng'
+              : '💾 Đang lưu dữ liệu trước khi tắt máy — timer tạm dừng'}
           </p>
         )}
 

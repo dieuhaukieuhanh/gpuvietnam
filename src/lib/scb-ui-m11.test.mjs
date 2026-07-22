@@ -275,6 +275,17 @@ describe('M11 frontend legacy removal (grep)', () => {
     assert.ok(source.includes('showLiveTimer'));
   });
 
+  it('DashboardOverview stop flow runs client post-check until idle', () => {
+    const source = readComponent('dashboard/DashboardOverview.tsx');
+    assert.ok(source.includes('evaluateStopPostCheckSnapshot'));
+    assert.ok(source.includes('STOP_POST_CHECK'));
+    assert.ok(source.includes('stopPostCheckActive'));
+    assert.ok(source.includes('formatStopPostCheckSuccessToast'));
+    assert.ok(source.includes('BACKUP_CHOICE_REQUIRED'));
+    assert.ok(source.includes('forceStop'));
+    assert.ok(source.includes('waitForBackup'));
+  });
+
   it('openBillableSession does not rewrite billing_started_at on already-started path', () => {
     const source = readFileSync(
       path.join(__dirname, 'gpu/session-start.js'),

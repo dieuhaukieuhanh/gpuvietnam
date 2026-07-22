@@ -39,7 +39,11 @@ export { runDestroyPipeline } from './destroy-pipeline-run.js';
  *   reason?: string;
  *   skipBackup?: boolean;
  *   skipMetrics?: boolean;
- *   notifyBackupStart?: boolean; // default false — card shows “đang lưu”, not the bell
+ *   notifyBackupStart?: boolean;
+ *   requireBackupSuccess?: boolean;
+ *   backupMode?: string | null;
+ *   backupTimeoutMs?: number | null;
+ *   allowSshBackupFallback?: boolean;
  * }} [options]
  */
 export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, options = {}) {
@@ -65,6 +69,10 @@ export async function runUnifiedDestroy(supabaseAdmin, gpuService, userId, optio
       skipBilling: options.skipBilling,
       skipMetrics: options.skipMetrics,
       notifyBackupStart: options.notifyBackupStart === true,
+      requireBackupSuccess: options.requireBackupSuccess === true,
+      backupMode: options.backupMode ?? null,
+      backupTimeoutMs: options.backupTimeoutMs ?? null,
+      allowSshBackupFallback: options.allowSshBackupFallback === true,
     },
   );
 }

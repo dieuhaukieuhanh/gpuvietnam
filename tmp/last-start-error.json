@@ -1,0 +1,16 @@
+{
+  "at": "2026-07-22T00:11:21.557Z",
+  "source": "user-start-provision",
+  "requestId": "f772297e-9f9d-4b49-ab9f-f199997ea2a3",
+  "message": "Provision lease lost - another worker reclaimed this claim",
+  "code": null,
+  "details": null,
+  "hint": null,
+  "rentedInstanceId": "1971131",
+  "insertedMachineId": null,
+  "subscriptionId": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+  "planKey": "pro",
+  "gpuLine": "rtx4090_1x",
+  "label": "gv-70feafcf-5ffc2f94-f772297e",
+  "provider": "vast"
+}

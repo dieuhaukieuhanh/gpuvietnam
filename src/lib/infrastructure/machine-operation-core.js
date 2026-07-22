@@ -104,12 +104,28 @@ export function projectionVerifyIdempotencyKey(userId, machineId) {
 }
 
 /**
- * One durable provision job per start accept (correlationId from API).
- * @param {string} subscriptionId
- * @param {string} correlationId
+ * Single open provision slot per user (prevents multi-start / multi-rent).
+ * Correlation stays in payload only. Dual-run GPUs use CP dual-run path, not this key.
+ * @param {string} userId
  */
-export function userStartProvisionIdempotencyKey(subscriptionId, correlationId) {
-  return `user_start_provision:${subscriptionId}:${correlationId}`;
+export function userStartProvisionIdempotencyKey(userId) {
+  return `user_start_provision:open:${userId}`;
+}
+
+/**
+ * Free the open slot after terminal state so a later start can enqueue again.
+ * @param {string} userId
+ * @param {string} operationId
+ */
+export function userStartProvisionReleasedIdempotencyKey(userId, operationId) {
+  return `user_start_provision:done:${userId}:${operationId}`;
+}
+
+/**
+ * @param {Record<string, unknown>|null|undefined} row
+ */
+export function isUserStartProvisionOperation(row) {
+  return String(row?.operation ?? '') === MACHINE_OPERATION.USER_START_PROVISION;
 }
 
 /**

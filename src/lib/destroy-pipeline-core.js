@@ -32,6 +32,8 @@ export const DESTROY_PIPELINE_OUTCOME = Object.freeze({
   PROVIDER_DESTROY_FAILED: 'provider_destroy_failed',
   SETTLEMENT_FAILED: 'settlement_failed',
   ALREADY_DESTROYED: 'already_destroyed',
+  /** Interactive stop: backup did not complete — do not destroy yet; UI offers force/wait. */
+  BACKUP_FAILED: 'backup_failed',
 });
 
 /**

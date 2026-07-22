@@ -1,0 +1,48 @@
+{
+  "activeBefore": {
+    "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "plan": "Starter",
+    "billing": "hourly",
+    "hours_total": 10,
+    "hours_used": 0,
+    "expires_at": "2026-09-05T16:00:22.604+00:00",
+    "env_name": "ComfyUI — Commerce & Product"
+  },
+  "charged": {
+    "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "plan": "Starter",
+    "billing": "hourly",
+    "hours_total": 10,
+    "hours_used": 1.91,
+    "expires_at": "2026-09-05T16:00:22.604+00:00",
+    "env_name": "ComfyUI — Commerce & Product"
+  },
+  "chargeErr": null,
+  "reverse": null,
+  "sessionUpd": {
+    "id": "0f016550-4bff-461b-b0cb-06de8db75ffd",
+    "subscription_id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "settlement_status": "skipped",
+    "settlement_breakdown": {
+      "skip_reason": "manual_recovery_charge_active_session_package",
+      "charged_from": {
+        "id": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+        "note": "session.subscription_id — gói đang chạy",
+        "plan": "Starter",
+        "table": "subscriptions",
+        "billing": "hourly",
+        "env_name": "ComfyUI — Commerce & Product"
+      },
+      "reversed_from": {
+        "id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+        "note": "already_zero_no_reverse_needed",
+        "table": "subscriptions",
+        "billing": "combo2"
+      },
+      "billable_seconds": 6869,
+      "charged_hours_manual": 1.91
+    }
+  },
+  "sessionErr": null,
+  "remainAfter": 8.09
+}

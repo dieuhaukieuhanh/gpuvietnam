@@ -46,7 +46,7 @@ export function buildSessionRestoreViewModel(input = {}) {
     if (runtime?.rebinding) {
       return 'Project/Workflow đã khôi phục. Đang gắn lại địa chỉ làm việc (work.*) tới Runtime mới.';
     }
-    return 'Project và Workflow vẫn còn trên Control Plane. Bạn có thể tiếp tục soạn bài — không cần bắt đầu lại từ đầu.';
+    return 'Project và Workflow vẫn còn trên Control Plane. Mở lại Comfy trên máy mới sẽ khôi phục graph đã đồng bộ — không cần bắt đầu lại từ đầu.';
   })();
 
   return {

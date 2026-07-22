@@ -1,0 +1,255 @@
+{
+  "wallet": 12380000,
+  "machine": null,
+  "planKey": null,
+  "plansErr": null,
+  "plans": [
+    {
+      "id": 14,
+      "plan_name": "pro",
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 22000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-09-05T16:00:22.604+00:00"
+    },
+    {
+      "id": 4,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 22000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-11-04T15:18:43.16+00:00"
+    },
+    {
+      "id": 15,
+      "plan_name": "starter",
+      "plan_type": "gift",
+      "billing": null,
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 0,
+      "status": "active",
+      "is_active": true,
+      "valid_until": "2026-08-15T00:00:00+00:00"
+    },
+    {
+      "id": 12,
+      "plan_name": "studio",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 40000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-11-04T15:45:43.231+00:00"
+    },
+    {
+      "id": 5,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 22000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-11-04T15:25:57.714+00:00"
+    },
+    {
+      "id": 6,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 22000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2027-01-03T15:26:11.35+00:00"
+    },
+    {
+      "id": 7,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 22000,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2027-01-03T15:26:11.35+00:00"
+    },
+    {
+      "id": 8,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 9900,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2027-01-03T15:26:33.998+00:00"
+    },
+    {
+      "id": 9,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "billing": "combo2",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 9900,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2027-01-03T15:26:33.998+00:00"
+    },
+    {
+      "id": 11,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 9900,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-11-04T15:26:56.99+00:00"
+    },
+    {
+      "id": 10,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "billing": "combo1",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 9900,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-11-04T15:26:56.99+00:00"
+    },
+    {
+      "id": 13,
+      "plan_name": "starter",
+      "plan_type": "hourly",
+      "billing": "hourly",
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 9900,
+      "status": "active",
+      "is_active": false,
+      "valid_until": "2026-09-05T16:00:22.604+00:00"
+    }
+  ],
+  "scoped": [
+    {
+      "id": 14,
+      "plan_name": "pro",
+      "plan_type": "hourly",
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 22000
+    },
+    {
+      "id": 4,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 22000
+    },
+    {
+      "id": 15,
+      "plan_name": "starter",
+      "plan_type": "gift",
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 0
+    },
+    {
+      "id": 12,
+      "plan_name": "studio",
+      "plan_type": "combo",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 40000
+    },
+    {
+      "id": 5,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 22000
+    },
+    {
+      "id": 6,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 22000
+    },
+    {
+      "id": 7,
+      "plan_name": "pro",
+      "plan_type": "combo",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 22000
+    },
+    {
+      "id": 8,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 9900
+    },
+    {
+      "id": 9,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "hours_total": 230,
+      "hours_remaining": 230,
+      "price_per_hour": 9900
+    },
+    {
+      "id": 11,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 9900
+    },
+    {
+      "id": 10,
+      "plan_name": "starter",
+      "plan_type": "combo",
+      "hours_total": 110,
+      "hours_remaining": 110,
+      "price_per_hour": 9900
+    },
+    {
+      "id": 13,
+      "plan_name": "starter",
+      "plan_type": "hourly",
+      "hours_total": 10,
+      "hours_remaining": 10,
+      "price_per_hour": 9900
+    }
+  ],
+  "giftCombo": 1480,
+  "walletHours": 1250.5050505050506,
+  "totalEntitlement": 2730.5050505050503,
+  "sumAllRemaining": 1480,
+  "sumScopedTotal": 1480
+}

@@ -44,6 +44,7 @@ RUN sed -i 's/\r$//' /app/install-official-nodes.sh \
 # GPUVietnam branding + backup flush node
 COPY comfyui-extensions/gpuvietnam_branding/ /app/ComfyUI/custom_nodes/gpuvietnam_branding/
 COPY comfyui-extensions/gpuvietnam_backup/ /app/ComfyUI/custom_nodes/gpuvietnam_backup/
+COPY comfyui-extensions/gpuvietnam_cp_sync/ /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync/
 
 RUN mkdir -p /app/ComfyUI/models/checkpoints \
     && mkdir -p /app/ComfyUI/models/loras \
@@ -52,7 +53,7 @@ RUN mkdir -p /app/ComfyUI/models/checkpoints \
     && mkdir -p /app/ComfyUI/user/default/workflows \
     && mkdir -p /app/ComfyUI/output
 
-RUN find /app/ComfyUI/custom_nodes/gpuvietnam_branding /app/ComfyUI/custom_nodes/gpuvietnam_backup -type f \( -name '*.py' -o -name '*.js' \) -exec sed -i 's/\r$//' {} \;
+RUN find /app/ComfyUI/custom_nodes/gpuvietnam_branding /app/ComfyUI/custom_nodes/gpuvietnam_backup /app/ComfyUI/custom_nodes/gpuvietnam_cp_sync -type f \( -name '*.py' -o -name '*.js' \) -exec sed -i 's/\r$//' {} \;
 
 COPY workflows/ /app/ComfyUI/workflows-stock/
 

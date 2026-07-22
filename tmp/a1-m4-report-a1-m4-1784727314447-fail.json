@@ -1,0 +1,79 @@
+{
+  "milestone": "A1-M4",
+  "target": "local",
+  "work": "http://127.0.0.1:5191",
+  "marker": "a1-m4-1784727314447",
+  "checks": {
+    "health": {
+      "ok": true,
+      "detail": "{\"ok\":true,\"milestone\":\"A1-M4\",\"fe\":\"D:\\\\GPU + AI\\\\Web\\\\gpuvietnam\\\\workers\\\\com"
+    },
+    "offline_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "editor"
+      }
+    },
+    "offline_shell": {
+      "ok": true,
+      "detail": {
+        "bytes": 24540
+      }
+    },
+    "offline_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOffCount": 1269,
+        "note": "Supported Manifest snapshot"
+      }
+    },
+    "offline_generate_blocked": {
+      "ok": true,
+      "detail": {
+        "code": "A1_RUNTIME_OFFLINE"
+      }
+    },
+    "cp_seed_offline": {
+      "ok": true,
+      "detail": {
+        "workflowId": "f287ec3d-f268-4ddb-a0cd-460deec8e5bf",
+        "revision": 73,
+        "note": "Graph on CP before Runtime — not Generate Resume"
+      }
+    },
+    "runtime_bind": {
+      "ok": true,
+      "detail": {
+        "via": "A1_M4_UPSTREAM",
+        "upstream": "http://127.0.0.1:18188",
+        "machineId": "8a59d1e3-beb8-4a97-8a48-fb32248d2bd1"
+      }
+    },
+    "proxy_resolve_upstream": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime",
+        "upstreamHost": "127.0.0.1:18188"
+      }
+    },
+    "online_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime"
+      }
+    },
+    "live_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOnCount": 1496,
+        "ckptCount": 0
+      }
+    },
+    "ckpt_discover": {
+      "ok": false,
+      "detail": {
+        "ckptList": []
+      }
+    }
+  }
+}

@@ -80,22 +80,44 @@ export function readVastGpuPricePerHour(raw, fallbackTotal = 0) {
  * @param {string} gpuLine
  * @returns {{ ok: true } | { ok: false; reason: string }}
  */
+/**
+ * Expected discrete GPU count for a line (1x / 2x).
+ * @param {string} gpuLine
+ */
+export function expectedVastNumGpusForLine(gpuLine) {
+  return gpuLine === 'rtx4090_2x' ? 2 : 1;
+}
+
 export function evaluateVastOfferSanity(offer, gpuLine) {
-  if (!vastGpuNameMatchesLine(gpuLine, offer.gpuType)) {
+  const gpuType = String(offer.gpuType ?? '').trim();
+  if (!gpuType) {
+    return { ok: false, reason: 'no_gpu' };
+  }
+  if (!vastGpuNameMatchesLine(gpuLine, gpuType)) {
     return { ok: false, reason: 'gpu_name_mismatch' };
+  }
+
+  const expectedGpus = expectedVastNumGpusForLine(gpuLine);
+  const numGpus = Number(offer.numGpus);
+  if (!(numGpus > 0) || numGpus !== expectedGpus) {
+    return { ok: false, reason: 'no_gpu' };
   }
 
   const vramRule = resolveVastMinVramForLine(gpuLine);
   const vramGb = Number(offer.vramGb);
-  if (Number.isFinite(vramGb) && vramGb > 0) {
-    const ok = vramRule.exclusive ? vramGb > vramRule.minVramGb : vramGb >= vramRule.minVramGb;
-    if (!ok) return { ok: false, reason: 'vram_too_low' };
-  } else if (gpuLine === 'rtx5090_1x') {
-    // Fail-closed for Studio when host omits VRAM.
-    return { ok: false, reason: 'vram_too_low' };
+  // Fail-closed for every line: missing/zero VRAM = storage-only or broken listing.
+  if (!(Number.isFinite(vramGb) && vramGb > 0)) {
+    return { ok: false, reason: 'no_gpu' };
   }
+  const vramOk = vramRule.exclusive ? vramGb > vramRule.minVramGb : vramGb >= vramRule.minVramGb;
+  if (!vramOk) return { ok: false, reason: 'vram_too_low' };
 
   const raw = offer.raw && typeof offer.raw === 'object' ? offer.raw : {};
+  const gpuFrac = Number(raw.gpu_frac ?? raw.gpu_fraction);
+  if (Number.isFinite(gpuFrac) && gpuFrac > 0 && gpuFrac < 0.99) {
+    return { ok: false, reason: 'no_gpu' };
+  }
+
   const dlperf = readVastDlperf(/** @type {Record<string, unknown>} */ (raw));
   if (VAST_OFFER_SANITY.requirePositiveDlperf && !(dlperf > 0)) {
     return { ok: false, reason: 'dlperf_nonpositive' };
@@ -118,6 +140,7 @@ export function evaluateVastOfferSanity(offer, gpuLine) {
  */
 export function filterVastOffersBySanity(offers, gpuLine, context = {}) {
   let droppedGpuName = 0;
+  let droppedNoGpu = 0;
   let droppedNoDlperf = 0;
   let droppedMinDph = 0;
   let droppedVram = 0;
@@ -132,6 +155,7 @@ export function filterVastOffersBySanity(offers, gpuLine, context = {}) {
       continue;
     }
     if (result.reason === 'gpu_name_mismatch') droppedGpuName += 1;
+    else if (result.reason === 'no_gpu') droppedNoGpu += 1;
     else if (result.reason === 'dlperf_nonpositive') droppedNoDlperf += 1;
     else if (result.reason === 'below_min_dph') droppedMinDph += 1;
     else if (result.reason === 'vram_too_low') droppedVram += 1;
@@ -173,6 +197,7 @@ export function filterVastOffersBySanity(offers, gpuLine, context = {}) {
     cohortMedian,
     medianFloor: floor,
     droppedGpuName,
+    droppedNoGpu,
     droppedNoDlperf,
     droppedMinDph,
     droppedVram,
@@ -184,6 +209,7 @@ export function filterVastOffersBySanity(offers, gpuLine, context = {}) {
     offers: afterExclusion,
     stats: {
       droppedGpuName,
+      droppedNoGpu,
       droppedNoDlperf,
       droppedMinDph,
       droppedVram,
@@ -224,6 +250,17 @@ export function isVastBadHostStatus(record) {
   const statusMsg = String(record.status_msg ?? record.status_message ?? '').toLowerCase();
   const actual = String(record.actual_status ?? record.cur_state ?? record.status ?? '').toLowerCase();
   const intended = String(record.intended_status ?? '').toLowerCase();
+
+  const numGpus = Number(record.num_gpus ?? record.gpu_count);
+  const gpuRam = Number(record.gpu_ram ?? record.vram);
+  // Live instance reporting zero GPUs / zero VRAM = storage-only billing shell.
+  if (Number.isFinite(numGpus) && numGpus <= 0) return true;
+  if (Number.isFinite(gpuRam) && gpuRam <= 0 && /stopped|exited|offline/.test(actual)) {
+    return true;
+  }
+  if (/storage.?only|disk.?only|no gpu allocated|gpu unavailable/.test(statusMsg)) {
+    return true;
+  }
 
   if (
     /no such container|cannot find container|nvidia-smi|no nvidia|gpu not (found|available)|no gpu|cuda (error|init)|failed to (create|start) container|container.*not found/i.test(

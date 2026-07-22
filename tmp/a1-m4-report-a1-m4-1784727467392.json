@@ -1,0 +1,138 @@
+{
+  "milestone": "A1-M4",
+  "target": "production",
+  "work": "https://work.gpuvietnam.com",
+  "marker": "a1-m4-1784727467392",
+  "checks": {
+    "health": {
+      "ok": true,
+      "detail": "ok"
+    },
+    "offline_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "editor"
+      }
+    },
+    "offline_shell": {
+      "ok": true,
+      "detail": {
+        "bytes": 24540
+      }
+    },
+    "offline_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOffCount": 1269,
+        "note": "Supported Manifest snapshot"
+      }
+    },
+    "offline_generate_blocked": {
+      "ok": true,
+      "detail": {
+        "code": "A1_RUNTIME_OFFLINE"
+      }
+    },
+    "cp_seed_offline": {
+      "ok": true,
+      "detail": {
+        "workflowId": "f287ec3d-f268-4ddb-a0cd-460deec8e5bf",
+        "revision": 80,
+        "note": "Graph on CP before Runtime — not Generate Resume"
+      }
+    },
+    "runtime_bind": {
+      "ok": true,
+      "detail": {
+        "via": "A1_M4_UPSTREAM",
+        "upstream": "https://recognised-bunch-unlike-admit.trycloudflare.com",
+        "machineId": "78ceb0c7-dac6-455d-a166-66150b80b642"
+      }
+    },
+    "proxy_resolve_upstream": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime",
+        "upstreamHost": "recognised-bunch-unlike-admit.trycloudflare.com"
+      }
+    },
+    "online_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime"
+      }
+    },
+    "live_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOnCount": 1496,
+        "ckptCount": 0
+      }
+    },
+    "ckpt_discover": {
+      "ok": true,
+      "detail": {
+        "ckpt": null,
+        "note": "no checkpoints on Runtime — LoadImage→SaveImage passthrough (still full Proxy path)"
+      }
+    },
+    "upload_image": {
+      "ok": true,
+      "detail": {
+        "name": "a1_m4_a1-m4-1784727467392.png"
+      }
+    },
+    "cp_graph_ready": {
+      "ok": true,
+      "detail": {
+        "revision": 81,
+        "note": "Generate uses Runtime; graph identity stays CP"
+      }
+    },
+    "ws_progress": {
+      "ok": false,
+      "detail": {
+        "ok": false,
+        "reason": "error",
+        "seen": []
+      },
+      "soft": true
+    },
+    "prompt_queue": {
+      "ok": true,
+      "detail": {
+        "promptId": "6e5c75db-5e4e-454c-9ece-41b2f82d9285",
+        "note": "POST → Proxy → Runtime (not CP→Comfy)"
+      }
+    },
+    "history": {
+      "ok": true,
+      "detail": {
+        "images": 1,
+        "status": "success"
+      }
+    },
+    "view_preview": {
+      "ok": true,
+      "detail": {
+        "bytes": 374,
+        "outPath": "D:\\GPU + AI\\Web\\gpuvietnam\\tmp\\a1-m4-a1-m4-1784727467392.png"
+      }
+    },
+    "after_stop_generate_blocked": {
+      "ok": true,
+      "detail": {
+        "code": "A1_RUNTIME_OFFLINE"
+      }
+    },
+    "cp_graph_survives": {
+      "ok": true,
+      "detail": {
+        "revision": 81,
+        "gate": "a1-m4-1784727467392",
+        "note": "Stop Runtime ≠ wipe graph; Generate Resume ≠ Session/Graph Restore"
+      }
+    }
+  },
+  "ok": true
+}

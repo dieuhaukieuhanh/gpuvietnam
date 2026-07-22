@@ -47,6 +47,7 @@ export default async function handler(req, res) {
       userId: resolved.userId,
       machineId: resolved.machineId,
       expiresAt: resolved.expiresAt,
+      mode: resolved.mode,
     });
   } catch (error) {
     console.error('[internal/comfy-proxy-resolve]', error);

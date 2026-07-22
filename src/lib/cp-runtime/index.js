@@ -86,6 +86,18 @@ export {
   upsertCpWorkflowDocument,
 } from './workflow-sot.js';
 
+export { ensureActiveCpWorkflow } from './ensure-active-workflow.js';
+
+export {
+  decodeComfyCpBootstrapHash,
+  encodeComfyCpBootstrapHash,
+  isComfyPromptDocument,
+  isLiteGraphDocument,
+  normalizeCpWorkflowDocument,
+  shouldInjectDocumentIntoComfy,
+  toComfySyncPayload,
+} from './comfy-graph-document.js';
+
 export {
   listProjectSnapshots,
   restoreProjectSnapshot,
@@ -104,9 +116,11 @@ export {
 
 export {
   DUAL_RUN_BILLING,
+  DUAL_RUN_MAX_GPUS,
   DUAL_RUN_UX_COPY_VI,
   applyDualRunPriceMultiplier,
   assertDistinctHosts,
+  assertDualRunGpuCap,
   buildDualRunCostWarning,
   buildDualRunUxState,
   estimateDualRunCustomerCharge,

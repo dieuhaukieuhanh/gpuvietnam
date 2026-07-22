@@ -1,0 +1,85 @@
+{
+  "at": "2026-07-11T13:06:25.394Z",
+  "serverId": 100890,
+  "results": [
+    {
+      "label": "A_minimal",
+      "status": 200,
+      "code": 0,
+      "orderId": 1942185,
+      "cancelCode": 0,
+      "bodyKeys": [
+        "currency",
+        "image",
+        "renting_server",
+        "type",
+        "ports",
+        "ssh_password"
+      ]
+    },
+    {
+      "label": "B_env_port_only",
+      "status": 200,
+      "code": 0,
+      "orderId": 1942188,
+      "cancelCode": 0,
+      "bodyKeys": [
+        "currency",
+        "image",
+        "renting_server",
+        "type",
+        "ports",
+        "ssh_password",
+        "env"
+      ]
+    },
+    {
+      "label": "C_env_package",
+      "status": 200,
+      "code": 0,
+      "orderId": 1942189,
+      "cancelCode": 0,
+      "bodyKeys": [
+        "currency",
+        "image",
+        "renting_server",
+        "type",
+        "ports",
+        "ssh_password",
+        "env"
+      ]
+    },
+    {
+      "label": "D_env_workstation",
+      "status": 200,
+      "code": 0,
+      "orderId": 1942191,
+      "cancelCode": 0,
+      "bodyKeys": [
+        "currency",
+        "image",
+        "renting_server",
+        "type",
+        "ports",
+        "ssh_password",
+        "env"
+      ]
+    },
+    {
+      "label": "E_env_ampersand",
+      "status": 500,
+      "code": 1,
+      "orderId": null,
+      "cancelCode": null,
+      "bodyKeys": [
+        "currency",
+        "image",
+        "renting_server",
+        "type",
+        "ports",
+        "ssh_password",
+        "env"
+      ]
+    }
+  ]
+}

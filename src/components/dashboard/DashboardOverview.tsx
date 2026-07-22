@@ -8,9 +8,7 @@ import DashboardRealtimePerfCard from '@/components/dashboard/DashboardRealtimeP
 import DashboardStorageSummaryCard from '@/components/dashboard/DashboardStorageSummaryCard';
 import DashboardRecentWorkflowsCard from '@/components/dashboard/DashboardRecentWorkflowsCard';
 import DashboardRecentSessionsCard from '@/components/dashboard/DashboardRecentSessionsCard';
-import DashboardJobsCard from '@/components/dashboard/DashboardJobsCard';
 import DualRunSafetyCard from '@/components/dashboard/DualRunSafetyCard';
-import CpWorkspaceDuringBootCard from '@/components/dashboard/CpWorkspaceDuringBootCard';
 import DashboardRecentImagesMobile from '@/components/dashboard/DashboardRecentImagesMobile';
 import {
   DashboardSupportActiveBanner,
@@ -39,6 +37,13 @@ import {
   formatRuntimeClock,
   resolveTimerDisplayMode,
 } from '@/lib/dashboard-session-display';
+import {
+  STOP_POST_CHECK,
+  STOP_POST_CHECK_COPY,
+  evaluateStopPostCheckSnapshot,
+  formatStopPostCheckSuccessToast,
+  waitStopPostCheckInterval,
+} from '@/lib/dashboard-stop-post-check';
 import { clampPlanCardRemainingHours } from '@/lib/plan-card-display';
 import {
   autostopToastMessage,
@@ -122,9 +127,9 @@ function openingBootStatusMessage(
   }
 
   if (!eta || stage === 'FAILED') {
-    return `${action} · bạn có thể soạn bài trên Control Plane bên dưới`;
+    return action;
   }
-  return `${action} · ${eta} · soạn bài trên CP không cần chờ GPU`;
+  return `${action} · ${eta}`;
 }
 
 const WORKSPACE_PREFIX_LABELS: Record<string, string> = {
@@ -262,7 +267,10 @@ export default function DashboardOverview({
   const [activePlans, setActivePlans] = useState<ActivePlan[]>([]);
   const [showStartConfirm, setShowStartConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showBackupChoice, setShowBackupChoice] = useState(false);
+  const [backupChoiceMessage, setBackupChoiceMessage] = useState('');
   const [isStoppingSession, setIsStoppingSession] = useState(false);
+  const [stopPostCheckActive, setStopPostCheckActive] = useState(false);
   const [changingEnv, setChangingEnv] = useState(false);
   const [selectedEnvName, setSelectedEnvName] = useState('');
   const [sessionWorkspace, setSessionWorkspace] = useState<{ name: string; icon: string } | null>(
@@ -612,7 +620,12 @@ export default function DashboardOverview({
 
   const viewPhase = machineSessionView?.phase;
   const billingStarted = Boolean(billingView?.billingStarted);
-  const showLiveTimer = viewPhase === 'running' && billingStarted;
+  // Keep ticking through optimistic "stopping" so a failed destroy does not zero the clock.
+  const showLiveTimer =
+    billingStarted &&
+    (viewPhase === 'running' ||
+      viewPhase === 'stopping' ||
+      viewPhase === 'disconnected');
 
   const sessionActive =
     (viewPhase === 'running' ||
@@ -1104,14 +1117,68 @@ export default function DashboardOverview({
     onBillingSessionView,
   ]);
 
-  const stopMachine = useCallback(async () => {
+  const stopMachine = useCallback(async (options?: { forceStop?: boolean; waitForBackup?: boolean }) => {
     const token = session?.access_token;
     const canStop =
       machineSessionView?.actions.canStop !== false || Boolean(billingView?.billingStarted);
     if (!token || !canStop) return;
 
-    setStartMessage('');
+    const forceStop = Boolean(options?.forceStop);
+    const waitForBackup = Boolean(options?.waitForBackup);
+
+    const rollbackToRunning = (message: string) => {
+      setStopPostCheckActive(false);
+      setStartMessage(message);
+      setToast(message);
+      onMachineSessionView?.({
+        phase: 'running',
+        lifecycleStatus: 'running',
+        serverStatus: 'online',
+        workspace: {
+          name: machineSessionView?.workspace?.name ?? effectiveEnvName ?? null,
+          locked: true,
+        },
+        machine: machineSessionView?.machine ?? null,
+        actions: {
+          canStart: false,
+          canCancel: false,
+          canStop: true,
+          canOpenComfy: Boolean(machineSessionView?.actions?.canOpenComfy),
+        },
+        message,
+        domainEvent: null,
+        clientOptimistic: false,
+      });
+    };
+
+    const pollDashboardForStopCheck = async () => {
+      const res = await fetch('/api/dashboard/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) return null;
+      if (data.machineSessionView) {
+        onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+      }
+      if (data.billingView) {
+        onBillingSessionView?.(data.billingView as BillingSessionView);
+      }
+      return data as {
+        machineSessionView?: MachineSessionView | null;
+        billingView?: BillingSessionView | null;
+      };
+    };
+
+    setShowBackupChoice(false);
+    setStartMessage(
+      waitForBackup
+        ? STOP_POST_CHECK_COPY.backupWaitingLonger
+        : forceStop
+          ? 'Đang tắt máy (không chờ backup)…'
+          : STOP_POST_CHECK_COPY.backupSaving,
+    );
     setIsStoppingSession(true);
+    setStopPostCheckActive(false);
     try {
       const clientRemainingHours = cardHoursRemainingLiveRef.current;
       const clientSessionDurationSeconds =
@@ -1128,83 +1195,131 @@ export default function DashboardOverview({
               ? Math.max(0, Number(clientRemainingHours))
               : null,
           clientSessionDurationSeconds,
+          forceStop: forceStop || undefined,
+          waitForBackup: waitForBackup || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errMsg = data.error ?? 'Không tắt được máy.';
-        setStartMessage(errMsg);
-        // Rollback optimistic stopping — otherwise poll keeps "đang lưu dữ liệu" forever.
-        onMachineSessionView?.({
-          phase: 'running',
-          lifecycleStatus: 'running',
-          serverStatus: 'online',
-          workspace: {
-            name: machineSessionView?.workspace?.name ?? effectiveEnvName ?? null,
-            locked: true,
-          },
-          machine: machineSessionView?.machine ?? null,
-          actions: {
-            canStart: false,
-            canCancel: false,
-            canStop: true,
-            canOpenComfy: Boolean(machineSessionView?.actions?.canOpenComfy),
-          },
-          message: errMsg,
-          domainEvent: null,
-          clientOptimistic: false,
-        });
+        if (data?.code === 'BACKUP_CHOICE_REQUIRED') {
+          setShowBackupChoice(true);
+          setBackupChoiceMessage(
+            typeof data.error === 'string' && data.error.trim()
+              ? data.error
+              : STOP_POST_CHECK_COPY.backupChoiceBody,
+          );
+          setStartMessage(STOP_POST_CHECK_COPY.backupChoiceBody);
+          setToast(STOP_POST_CHECK_COPY.backupChoiceTitle);
+          if (data.machineSessionView) {
+            onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+          } else {
+            rollbackToRunning(STOP_POST_CHECK_COPY.backupChoiceBody);
+          }
+          if (data.billingView) {
+            onBillingSessionView?.(data.billingView as BillingSessionView);
+          }
+          await onRefresh({ silent: true });
+          void refreshMetrics();
+          return;
+        }
+        rollbackToRunning(
+          typeof data.error === 'string' && data.error.trim()
+            ? data.error
+            : STOP_POST_CHECK_COPY.apiFailed,
+        );
         await onRefresh({ silent: true });
         void refreshMetrics();
         return;
       }
+
+      // Destroy API returned success (server already verify-destroyed). Now
+      // hậu kiểm: poll dashboard until UI/DB read path shows idle + no billing.
+      setStopPostCheckActive(true);
+      onMachineSessionView?.(
+        buildOptimisticStoppingMachineSessionView(
+          machineSessionView?.workspace?.name ?? effectiveEnvName,
+          STOP_POST_CHECK_COPY.verifying,
+        ),
+      );
+      setStartMessage(STOP_POST_CHECK_COPY.verifying);
+
+      let confirmed = false;
+      for (let attempt = 0; attempt < STOP_POST_CHECK.maxAttempts; attempt += 1) {
+        if (attempt > 0) {
+          await waitStopPostCheckInterval(STOP_POST_CHECK.intervalMs);
+        }
+        const snapshot = await pollDashboardForStopCheck();
+        const verdict = evaluateStopPostCheckSnapshot({
+          phase: snapshot?.machineSessionView?.phase ?? null,
+          billingStarted: snapshot?.billingView?.billingStarted ?? null,
+        });
+        if (verdict === 'confirmed') {
+          confirmed = true;
+          break;
+        }
+        if (verdict === 'still_active' && attempt >= 2) {
+          // Provider claimed destroyed but authoritative read still shows live session.
+          break;
+        }
+      }
+
+      if (!confirmed) {
+        const last = await pollDashboardForStopCheck();
+        const lastVerdict = evaluateStopPostCheckSnapshot({
+          phase: last?.machineSessionView?.phase ?? null,
+          billingStarted: last?.billingView?.billingStarted ?? null,
+        });
+        if (lastVerdict === 'confirmed') {
+          confirmed = true;
+        } else if (
+          lastVerdict !== 'still_active' &&
+          Boolean((data as { verifiedDestroyedAt?: string | null }).verifiedDestroyedAt)
+        ) {
+          // Server already verify-destroyed; dashboard read path lagging — trust provider verify.
+          if (data.machineSessionView) {
+            onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+          } else {
+            onMachineSessionView?.(
+              buildIdleMachineSessionViewForUi(
+                machineSessionView?.workspace?.name ?? effectiveEnvName,
+              ),
+            );
+          }
+          if (data.billingView) {
+            onBillingSessionView?.(data.billingView as BillingSessionView);
+          }
+          confirmed = true;
+        } else {
+          rollbackToRunning(STOP_POST_CHECK_COPY.postCheckFailed);
+          void refreshMetrics();
+          return;
+        }
+      }
+
       const settlementStatus =
         typeof data.settlementStatus === 'string' ? data.settlementStatus : null;
-      if (data.machineSessionView) {
-        onMachineSessionView?.(data.machineSessionView as MachineSessionView);
-      }
-      if (data.billingView) {
-        onBillingSessionView?.(data.billingView as BillingSessionView);
-      }
+      const alreadyStopped = Boolean((data as { alreadyStopped?: boolean }).alreadyStopped);
       setSessionWorkspace(null);
       setStartMessage('');
-      const alreadyStopped = Boolean((data as { alreadyStopped?: boolean }).alreadyStopped);
+      setStopPostCheckActive(false);
+      setShowBackupChoice(false);
       await onRefresh({ silent: true });
       await reloadPlans({ silent: true });
       notifyUserPlansChanged();
       void refreshMetrics();
       setToast(
-        alreadyStopped
-          ? 'Đã đóng phiên làm việc'
-          : settlementStatus
-            ? `Đã đóng phiên · settlement: ${settlementStatus}`
-            : 'Đã đóng phiên làm việc',
+        formatStopPostCheckSuccessToast({
+          alreadyStopped,
+          settlementStatus,
+        }),
       );
     } catch {
-      setStartMessage('Lỗi mạng khi tắt máy.');
-      onMachineSessionView?.({
-        phase: 'running',
-        lifecycleStatus: 'running',
-        serverStatus: 'online',
-        workspace: {
-          name: machineSessionView?.workspace?.name ?? effectiveEnvName ?? null,
-          locked: true,
-        },
-        machine: machineSessionView?.machine ?? null,
-        actions: {
-          canStart: false,
-          canCancel: false,
-          canStop: true,
-          canOpenComfy: Boolean(machineSessionView?.actions?.canOpenComfy),
-        },
-        message: 'Lỗi mạng khi tắt máy.',
-        domainEvent: null,
-        clientOptimistic: false,
-      });
+      rollbackToRunning(STOP_POST_CHECK_COPY.networkFailed);
       await onRefresh({ silent: true });
       void refreshMetrics();
     } finally {
       setIsStoppingSession(false);
+      setStopPostCheckActive(false);
       setShowStopConfirm(false);
     }
   }, [
@@ -1215,7 +1330,6 @@ export default function DashboardOverview({
     machineSessionView?.machine,
     effectiveEnvName,
     billingView?.billingStarted,
-    billingView?.sessionDurationSeconds,
     sessionDurationSec,
     onRefresh,
     reloadPlans,
@@ -1226,12 +1340,46 @@ export default function DashboardOverview({
 
   const confirmStopMachine = useCallback(async () => {
     setShowStopConfirm(false);
+    setShowBackupChoice(false);
     onMachineSessionView?.(
       buildOptimisticStoppingMachineSessionView(
         machineSessionView?.workspace?.name ?? effectiveEnvName,
+        STOP_POST_CHECK_COPY.backupSaving,
       ),
     );
     await stopMachine();
+  }, [
+    machineSessionView?.workspace?.name,
+    effectiveEnvName,
+    onMachineSessionView,
+    stopMachine,
+  ]);
+
+  const forceStopWithoutBackup = useCallback(async () => {
+    setShowBackupChoice(false);
+    onMachineSessionView?.(
+      buildOptimisticStoppingMachineSessionView(
+        machineSessionView?.workspace?.name ?? effectiveEnvName,
+        'Đang tắt máy ngay (không chờ backup)…',
+      ),
+    );
+    await stopMachine({ forceStop: true });
+  }, [
+    machineSessionView?.workspace?.name,
+    effectiveEnvName,
+    onMachineSessionView,
+    stopMachine,
+  ]);
+
+  const waitLongerForBackupThenStop = useCallback(async () => {
+    setShowBackupChoice(false);
+    onMachineSessionView?.(
+      buildOptimisticStoppingMachineSessionView(
+        machineSessionView?.workspace?.name ?? effectiveEnvName,
+        STOP_POST_CHECK_COPY.backupWaitingLonger,
+      ),
+    );
+    await stopMachine({ waitForBackup: true });
   }, [
     machineSessionView?.workspace?.name,
     effectiveEnvName,
@@ -1691,7 +1839,8 @@ export default function DashboardOverview({
             )}
           </div>
           <p className="machine-confirm-note">
-            Workspace sẽ tắt — Bạn có chắc muốn tiếp tục?
+            Hệ thống sẽ lưu dữ liệu lên bộ nhớ trước, rồi mới tắt máy. Workspace sẽ tắt — bạn có chắc
+            muốn tiếp tục?
           </p>
           <div className="machine-confirm-actions">
             <button
@@ -1709,6 +1858,54 @@ export default function DashboardOverview({
               onClick={() => void confirmStopMachine()}
             >
               {isStoppingSession ? 'Đang lưu dữ liệu...' : 'Đóng phiên làm việc'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className={`modal-overlay${showBackupChoice ? ' active' : ''}`}>
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="backup-choice-title"
+        >
+          <h3 id="backup-choice-title">{STOP_POST_CHECK_COPY.backupChoiceTitle}</h3>
+          <p className="machine-confirm-note">
+            {backupChoiceMessage || STOP_POST_CHECK_COPY.backupChoiceBody}
+          </p>
+          <p className="machine-confirm-note" style={{ opacity: 0.85 }}>
+            Máy vẫn đang chạy và tính giờ cho đến khi bạn chọn tắt.
+          </p>
+          <div className="machine-confirm-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={isStoppingSession}
+              onClick={() => {
+                setShowBackupChoice(false);
+                setStartMessage('');
+              }}
+            >
+              Để sau
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={isStoppingSession}
+              onClick={() => void waitLongerForBackupThenStop()}
+            >
+              {isStoppingSession
+                ? STOP_POST_CHECK_COPY.backupWaitingLonger
+                : STOP_POST_CHECK_COPY.backupWait}
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              disabled={isStoppingSession}
+              onClick={() => void forceStopWithoutBackup()}
+            >
+              {STOP_POST_CHECK_COPY.backupForceStop}
             </button>
           </div>
         </div>
@@ -1941,9 +2138,13 @@ export default function DashboardOverview({
                     )}
                   {serverCardPhase === 'stopping' && (
                     <p className="dashboard-workspace-status">
-                      💾 Đang lưu dữ liệu của bạn trước khi tắt máy…
+                      {stopPostCheckActive
+                        ? `🔎 ${STOP_POST_CHECK_COPY.verifying}`
+                        : '💾 Đang lưu dữ liệu của bạn trước khi tắt máy…'}
                       <span className="dashboard-workspace-status-hint">
-                        Có thể mất vài phút — vui lòng đợi.
+                        {stopPostCheckActive
+                          ? STOP_POST_CHECK_COPY.verifyingHint
+                          : 'Có thể mất vài phút — vui lòng đợi.'}
                       </span>
                     </p>
                   )}
@@ -2007,44 +2208,22 @@ export default function DashboardOverview({
                 >
                   Hủy khởi tạo
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-lg"
-                  onClick={() => {
-                    document.getElementById('cp-workspace-panel')?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'start',
-                    });
-                  }}
-                >
-                  Soạn trên Control Plane
-                </button>
               </>
             )}
 
             {serverCardPhase === 'opening' && !canCancelBoot && (
-              <>
-                <button type="button" className="btn btn-success btn-lg" disabled>
-                  GPU đang khởi động...
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-lg"
-                  onClick={() => {
-                    document.getElementById('cp-workspace-panel')?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'start',
-                    });
-                  }}
-                >
-                  Soạn trên Control Plane
-                </button>
-              </>
+              <button type="button" className="btn btn-success btn-lg" disabled>
+                GPU đang khởi động...
+              </button>
             )}
 
             {serverCardPhase === 'stopping' && (
               <button type="button" className="btn btn-danger btn-lg" disabled>
-                Đang lưu dữ liệu...
+                {stopPostCheckActive
+                  ? STOP_POST_CHECK_COPY.verifyingButton
+                  : isStoppingSession
+                    ? 'Đang tắt máy...'
+                    : 'Đang lưu dữ liệu...'}
               </button>
             )}
 
@@ -2138,6 +2317,7 @@ export default function DashboardOverview({
               outOfHours={Boolean(billingView?.outOfHours)}
               lowCreditWarning={Boolean(billingView?.lowCreditWarning)}
               statusMessage={machineSessionView?.message ?? null}
+              stopPostCheckActive={stopPostCheckActive}
             />
             <DashboardRealtimePerfCard
               active={perfCardActive}
@@ -2165,16 +2345,8 @@ export default function DashboardOverview({
           </div>
         </div>
 
-        {(serverCardPhase === 'opening' ||
-          (serverCardPhase === 'running' && !machineSessionView?.actions.canOpenComfy)) && (
-          <CpWorkspaceDuringBootCard
-            accessToken={session?.access_token}
-            mode={serverCardPhase === 'opening' ? 'opening' : 'waiting_comfy'}
-          />
-        )}
-
         <div className="dashboard-two-col">
-          <DashboardJobsCard accessToken={session?.access_token} />
+          {/* JOB / ATTEMPT (CP) ẩn với KH — bật lại khi Generate qua Control Plane go-live */}
           <DashboardRecentSessionsCard accessToken={session?.access_token} />
         </div>
 

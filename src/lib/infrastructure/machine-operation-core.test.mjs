@@ -16,6 +16,8 @@ import {
   repairKindToOperation,
   resolveRetryAfterFailure,
   userStartProvisionIdempotencyKey,
+  userStartProvisionReleasedIdempotencyKey,
+  isUserStartProvisionOperation,
 } from './machine-operation-core.js';
 import { buildOperationMetrics } from './machine-operation-metrics.js';
 import { resolveAdminStateFilter } from './machine-operation-admin.js';
@@ -65,11 +67,27 @@ describe('machine-operation-core (SCB 2.1 Phase 2)', () => {
     );
   });
 
-  it('userStartProvisionIdempotencyKey is stable per subscription+correlation', () => {
+  it('userStartProvisionIdempotencyKey is one open slot per user', () => {
     assert.equal(
-      userStartProvisionIdempotencyKey('sub-1', 'corr-1'),
-      'user_start_provision:sub-1:corr-1',
+      userStartProvisionIdempotencyKey('user-1'),
+      'user_start_provision:open:user-1',
     );
+    assert.equal(
+      userStartProvisionIdempotencyKey('user-1', 'ignored-correlation'),
+      'user_start_provision:open:user-1',
+    );
+  });
+
+  it('released idempotency key frees the open slot after terminal', () => {
+    assert.equal(
+      userStartProvisionReleasedIdempotencyKey('user-1', 'op-9'),
+      'user_start_provision:done:user-1:op-9',
+    );
+    assert.equal(
+      isUserStartProvisionOperation({ operation: 'user_start_provision' }),
+      true,
+    );
+    assert.equal(isUserStartProvisionOperation({ operation: 'projection_verify' }), false);
   });
 
   it('user_start_provision has higher priority than projection_verify', () => {

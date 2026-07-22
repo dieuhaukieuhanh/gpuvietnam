@@ -1,0 +1,44 @@
+{
+  "at": "2026-07-11T15:57:16.830Z",
+  "phase": "provisioning",
+  "ok": true,
+  "healthy": false,
+  "issues": [
+    "clore_multi_gpu=2"
+  ],
+  "machine": {
+    "id": "c9fa2462-a501-4162-971f-3acaa6f0f038",
+    "status": "destroyed",
+    "instance_id": "1942209",
+    "billing_started_at": null,
+    "gpu_session_id": null,
+    "ip": "bl6tzijjdx00t.us.clorecloud.net",
+    "port": 443,
+    "projection": "Clore order not found: 1942209",
+    "created_at": "2026-07-11T13:12:26.364892+00:00"
+  },
+  "session": null,
+  "subs": [
+    {
+      "id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+      "server_status": "provisioning",
+      "env_name": "ComfyUI — Video AI",
+      "plan": "Starter"
+    }
+  ],
+  "cloreOnlineCount": 2,
+  "cloreOnline": [
+    {
+      "id": "1942790",
+      "si": 100890,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+      "hasHttp": true
+    },
+    {
+      "id": "1942783",
+      "si": 106537,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+      "hasHttp": true
+    }
+  ]
+}

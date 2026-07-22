@@ -16,9 +16,18 @@ import {
   normalizeDestroyReason,
   notifyAfterMachineDestroy,
 } from '@/lib/machine-destroy';
-import { getActiveMachineForUser, resetProvisioningSubscription } from '@/lib/machines';
+import {
+  getActiveMachineForUser,
+  resetProvisioningSubscription,
+  updateSubscriptionServerStatus,
+} from '@/lib/machines';
 import { syncUserPlanInventory } from '@/lib/user-plan-inventory';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+
+/** Allow backup wait (up to ~90s) + Clore cancel retries in one invocation. */
+export const config = {
+  maxDuration: 120,
+};
 
 function buildIdleMachineSessionView(subscription, userId) {
   return resolveMachineSessionView(
@@ -29,6 +38,31 @@ function buildIdleMachineSessionView(subscription, userId) {
     ),
     { envName: subscription?.env_name ?? null },
   );
+}
+
+/**
+ * After persistStopRequested, failed provider destroy must not leave
+ * subscriptions.server_status='stopping' — F5 would stuck the dashboard.
+ */
+async function rollbackStopRequested(supabaseAdmin, subscription, activeMachine, targetUserId) {
+  if (subscription?.id) {
+    try {
+      await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'online');
+    } catch (error) {
+      console.warn('[machines/destroy] rollback server_status→online failed:', error?.message ?? error);
+    }
+  }
+  const rolled = subscription ? { ...subscription, server_status: 'online' } : null;
+  const record = snapshotToMachineRecord(rolled, activeMachine, targetUserId);
+  return {
+    machineSessionView: resolveMachineSessionView(record, {
+      envName: rolled?.env_name ?? null,
+    }),
+    billingView: await resolveBillingSessionView(supabaseAdmin, targetUserId, {
+      machine: activeMachine,
+      machineSessionPhase: 'running',
+    }).catch(() => null),
+  };
 }
 
 const CLIENT_DRIFT_TOLERANCE_HOURS = 0.05;
@@ -105,11 +139,36 @@ async function overrideEntitlementHoursUsed(supabaseAdmin, target, hoursUsed) {
 }
 
 async function completeUserDestroy(supabaseAdmin, gpuService, params) {
-  const { targetUserId, subscription, lifecycleRecord, lifecycleCtx, interrupted, reason } = params;
-  const result = await destroyMachineWithBackup(supabaseAdmin, gpuService, targetUserId, {
+  const {
+    targetUserId,
+    subscription,
+    lifecycleRecord,
+    lifecycleCtx,
     interrupted,
     reason,
-  });
+    forceStop = false,
+    waitForBackup = false,
+  } = params;
+
+  const interactive = reason === 'user_stop' || reason === 'admin_stop';
+  /** @type {Record<string, unknown>} */
+  const destroyOpts = {
+    interrupted,
+    reason,
+  };
+
+  if (forceStop) {
+    destroyOpts.skipBackup = true;
+    destroyOpts.requireBackupSuccess = false;
+  } else if (interactive) {
+    // Backup must succeed before provider cancel; UI offers force/wait on failure.
+    destroyOpts.requireBackupSuccess = true;
+    destroyOpts.backupMode = waitForBackup ? 'wait' : 'required';
+    destroyOpts.backupTimeoutMs = waitForBackup ? 90_000 : 45_000;
+    destroyOpts.allowSshBackupFallback = Boolean(waitForBackup);
+  }
+
+  const result = await destroyMachineWithBackup(supabaseAdmin, gpuService, targetUserId, destroyOpts);
 
   // Only advance lifecycle to destroyed when the provider destroy actually succeeded.
   // Marking DESTROY_COMPLETED on a failed cancel leaves the UI/DB believing the GPU is off
@@ -198,6 +257,8 @@ export default async function handler(req, res) {
     };
 
     const interrupted = Boolean(req.body?.interrupted);
+    const forceStop = Boolean(req.body?.forceStop);
+    const waitForBackup = Boolean(req.body?.waitForBackup);
     const hasActiveMachine = Boolean(activeMachine);
     const lifecycleRunning = lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.RUNNING;
     const billableActive =
@@ -273,6 +334,8 @@ export default async function handler(req, res) {
           lifecycleCtx,
           interrupted,
           reason,
+          forceStop,
+          waitForBackup,
         });
       } catch (error) {
         destroyError = error;
@@ -284,16 +347,41 @@ export default async function handler(req, res) {
           '[machines/destroy] destroy threw — not settling hours or marking idle',
           { message: destroyError?.message },
         );
+        const rolledBack = await rollbackStopRequested(
+          supabaseAdmin,
+          subscription,
+          activeMachine,
+          targetUserId,
+        );
         return res.status(500).json({
           error: 'Không tắt được máy (lỗi hệ thống). Vui lòng thử lại sau vài giây.',
           retryable: true,
-          machineSessionView: resolveMachineSessionView(lifecycleRecord, {
-            envName: subscription?.env_name ?? null,
-          }),
-          billingView: await resolveBillingSessionView(supabaseAdmin, targetUserId, {
-            machine: activeMachine,
-            machineSessionPhase: 'stopping',
-          }).catch(() => null),
+          ...rolledBack,
+        });
+      }
+
+      if (destroyResult?.outcome === DESTROY_PIPELINE_OUTCOME.BACKUP_FAILED) {
+        console.warn('[machines/destroy] backup incomplete — awaiting customer choice', {
+          backupStatus: destroyResult?.backupStatus ?? null,
+          waitForBackup,
+          forceStop,
+        });
+        const rolledBack = await rollbackStopRequested(
+          supabaseAdmin,
+          subscription,
+          activeMachine,
+          targetUserId,
+        );
+        return res.status(409).json({
+          code: 'BACKUP_CHOICE_REQUIRED',
+          error:
+            'Chưa lưu xong dữ liệu lên bộ nhớ trước khi tắt máy. Bạn có thể tắt ngay (có rủi ro mất dữ liệu chưa sync) hoặc tiếp tục chờ lưu.',
+          backupStatus: destroyResult?.backupStatus ?? 'failed',
+          choices: ['force_stop', 'wait_backup'],
+          retryable: true,
+          reason,
+          ...rolledBack,
+          ...mapDestroyApiResponse(destroyResult),
         });
       }
 
@@ -303,18 +391,18 @@ export default async function handler(req, res) {
           lastStep: destroyResult?.lastStep,
           retryable: destroyResult?.retryable,
         });
+        const rolledBack = await rollbackStopRequested(
+          supabaseAdmin,
+          subscription,
+          activeMachine,
+          targetUserId,
+        );
         return res.status(409).json({
           error:
-            'Chưa tắt được máy phía provider (có thể đang bị giới hạn tốc độ API). Vui lòng thử lại sau vài giây.',
+            'Chưa xác nhận được máy đã tắt. GPU có thể vẫn đang chạy — vui lòng thử lại sau vài giây.',
           retryable: true,
           reason,
-          machineSessionView: resolveMachineSessionView(lifecycleRecord, {
-            envName: subscription?.env_name ?? null,
-          }),
-          billingView: await resolveBillingSessionView(supabaseAdmin, targetUserId, {
-            machine: activeMachine,
-            machineSessionPhase: 'stopping',
-          }).catch(() => null),
+          ...rolledBack,
           ...mapDestroyApiResponse(destroyResult),
         });
       }

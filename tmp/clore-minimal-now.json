@@ -1,0 +1,29 @@
+{
+  "at": "2026-07-11T13:05:47.362Z",
+  "serverId": 100890,
+  "reliability": 1,
+  "body": {
+    "currency": "USD-Blockchain",
+    "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+    "renting_server": 100890,
+    "type": "on-demand",
+    "ports": {
+      "22": "tcp",
+      "8080": "http"
+    },
+    "ssh_password": "GvTestPass123A1"
+  },
+  "create": {
+    "status": 200,
+    "json": {
+      "code": 0
+    }
+  },
+  "recovered": 1942182,
+  "cancel": {
+    "status": 200,
+    "json": {
+      "code": 0
+    }
+  }
+}

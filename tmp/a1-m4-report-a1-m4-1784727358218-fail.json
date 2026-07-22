@@ -1,0 +1,166 @@
+{
+  "milestone": "A1-M4",
+  "target": "local",
+  "work": "http://127.0.0.1:5191",
+  "marker": "a1-m4-1784727358218",
+  "checks": {
+    "health": {
+      "ok": true,
+      "detail": "{\"ok\":true,\"milestone\":\"A1-M4\",\"fe\":\"D:\\\\GPU + AI\\\\Web\\\\gpuvietnam\\\\workers\\\\com"
+    },
+    "offline_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "editor"
+      }
+    },
+    "offline_shell": {
+      "ok": true,
+      "detail": {
+        "bytes": 24540
+      }
+    },
+    "offline_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOffCount": 1269,
+        "note": "Supported Manifest snapshot"
+      }
+    },
+    "offline_generate_blocked": {
+      "ok": true,
+      "detail": {
+        "code": "A1_RUNTIME_OFFLINE"
+      }
+    },
+    "cp_seed_offline": {
+      "ok": true,
+      "detail": {
+        "workflowId": "f287ec3d-f268-4ddb-a0cd-460deec8e5bf",
+        "revision": 74,
+        "note": "Graph on CP before Runtime — not Generate Resume"
+      }
+    },
+    "runtime_bind": {
+      "ok": true,
+      "detail": {
+        "via": "A1_M4_UPSTREAM",
+        "upstream": "http://127.0.0.1:18188",
+        "machineId": "168d6560-b878-483e-85f0-ad2b8969c103"
+      }
+    },
+    "proxy_resolve_upstream": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime",
+        "upstreamHost": "127.0.0.1:18188"
+      }
+    },
+    "online_enter": {
+      "ok": true,
+      "detail": {
+        "mode": "runtime"
+      }
+    },
+    "live_object_info": {
+      "ok": true,
+      "detail": {
+        "oiOnCount": 1496,
+        "ckptCount": 0
+      }
+    },
+    "ckpt_discover": {
+      "ok": true,
+      "detail": {
+        "ckpt": null,
+        "note": "no checkpoints on Runtime — LoadImage→SaveImage passthrough (still full Proxy path)"
+      }
+    },
+    "upload_image": {
+      "ok": true,
+      "detail": {
+        "name": "a1_m4_a1-m4-1784727358218.png"
+      }
+    },
+    "cp_graph_ready": {
+      "ok": true,
+      "detail": {
+        "revision": 75,
+        "note": "Generate uses Runtime; graph identity stays CP"
+      }
+    },
+    "ws_progress": {
+      "ok": true,
+      "detail": {
+        "ok": true,
+        "seen": [
+          "status"
+        ]
+      }
+    },
+    "prompt_queue": {
+      "ok": true,
+      "detail": {
+        "promptId": "3611fcbb-8e73-497f-8cd2-e6090eef92e0",
+        "note": "POST → Proxy → Runtime (not CP→Comfy)"
+      }
+    },
+    "history_exec": {
+      "ok": false,
+      "detail": {
+        "status_str": "error",
+        "completed": false,
+        "messages": [
+          [
+            "execution_start",
+            {
+              "prompt_id": "3611fcbb-8e73-497f-8cd2-e6090eef92e0",
+              "timestamp": 1784727363283
+            }
+          ],
+          [
+            "execution_cached",
+            {
+              "nodes": [],
+              "prompt_id": "3611fcbb-8e73-497f-8cd2-e6090eef92e0",
+              "timestamp": 1784727363285
+            }
+          ],
+          [
+            "execution_error",
+            {
+              "prompt_id": "3611fcbb-8e73-497f-8cd2-e6090eef92e0",
+              "node_id": "1",
+              "node_type": "LoadImage",
+              "executed": [],
+              "exception_message": "broken PNG file (chunk b'B`\\x82')\n",
+              "exception_type": "SyntaxError",
+              "traceback": [
+                "  File \"/app/ComfyUI/execution.py\", line 543, in execute\n    output_data, output_ui, has_subgraph, has_pending_tasks = await get_output_data(prompt_id, unique_id, obj, input_data_all, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n",
+                "  File \"/app/ComfyUI/execution.py\", line 342, in get_output_data\n    return_values = await _async_map_node_over_list(prompt_id, unique_id, obj, input_data_all, obj.FUNCTION, allow_interrupt=True, execution_block_cb=execution_block_cb, pre_execute_cb=pre_execute_cb, v3_data=v3_data)\n",
+                "  File \"/app/ComfyUI/execution.py\", line 316, in _async_map_node_over_list\n    await process_inputs(input_dict, i)\n",
+                "  File \"/app/ComfyUI/execution.py\", line 304, in process_inputs\n    result = f(**inputs)\n",
+                "  File \"/app/ComfyUI/nodes.py\", line 1756, in load_image\n    i = node_helpers.pillow(ImageOps.exif_transpose, i)\n",
+                "  File \"/app/ComfyUI/node_helpers.py\", line 58, in pillow\n    x = fn(arg)\n",
+                "  File \"/usr/local/lib/python3.10/dist-packages/PIL/ImageOps.py\", line 699, in exif_transpose\n    image.load()\n",
+                "  File \"/usr/local/lib/python3.10/dist-packages/PIL/ImageFile.py\", line 392, in load\n    s = read(read_bytes)\n",
+                "  File \"/usr/local/lib/python3.10/dist-packages/PIL/PngImagePlugin.py\", line 999, in load_read\n    cid, pos, length = self.png.read()\n",
+                "  File \"/usr/local/lib/python3.10/dist-packages/PIL/PngImagePlugin.py\", line 184, in read\n    raise SyntaxError(msg)\n"
+              ],
+              "current_inputs": {
+                "image": [
+                  "a1_m4_a1-m4-1784727358218.png"
+                ]
+              },
+              "current_outputs": [
+                "1",
+                "2"
+              ],
+              "timestamp": 1784727363321
+            }
+          ]
+        ]
+      }
+    }
+  }
+}

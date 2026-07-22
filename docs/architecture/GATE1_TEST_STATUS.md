@@ -36,7 +36,19 @@ node --test src/lib/cp-runtime/*.test.mjs src/lib/gpu/exclude-host-keys.test.mjs
 
 ---
 
-## Việc BẠN cần làm (Gate 1 — GPU thật)
+## Slice Continuity trước A0.5 (bắt buộc)
+
+Trước Frontend Separation lab, chạy **6 bài G1–G6** (SoT + browser kill + stop + kill Provider + restore + generate):
+
+→ **[GATE1_CONTINUITY_CHECKLIST.md](./GATE1_CONTINUITY_CHECKLIST.md)**  
+→ Execution: [GATE1_CONTINUITY_EXECUTION.md](./GATE1_CONTINUITY_EXECUTION.md)  
+→ Báo cáo chạy: [GATE1_TEST_REPORT.md](./GATE1_TEST_REPORT.md) — **2026-07-21: PASS** (image `:v3.1`, G1–G6 Continuity)
+
+Cả 6 PASS ⇒ đủ điều kiện mở quyết định A0.5. Slice này chứng minh “mất GPU không mất Project” trên GPU thật; không thay T8–T10 dual-run.
+
+---
+
+## Việc BẠN cần làm (Gate 1 — GPU thật, merge P0 đầy đủ)
 
 ### Chuẩn bị (một lần)
 

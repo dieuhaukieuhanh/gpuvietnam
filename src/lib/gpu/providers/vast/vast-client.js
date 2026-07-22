@@ -112,6 +112,8 @@ function buildOfferSearchBody(gpuLine) {
     verified: { eq: true },
     rentable: { eq: true },
     rented: { eq: false },
+    // Full GPU only — reject shared / storage-fraction asks at search time.
+    gpu_frac: { eq: 1 },
     type: 'on-demand',
     limit: 128,
   };

@@ -1,0 +1,40 @@
+{
+  "at": "2026-07-11T16:03:09.306Z",
+  "phase": "provisioning",
+  "healthy": false,
+  "inProgress": true,
+  "issues": [],
+  "machine": {
+    "id": "640b51a9-1a8f-4772-b61a-137fb9505378",
+    "status": "starting",
+    "instance_id": "1942802",
+    "billing_started_at": null,
+    "gpu_session_id": null,
+    "ip": "rd59mojka99bf.us.clorecloud.net",
+    "port": 443,
+    "projection": "Đang khởi động ComfyUI...",
+    "created_at": "2026-07-11T15:59:33.427207+00:00"
+  },
+  "session": null,
+  "subs": [
+    {
+      "id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+      "server_status": "provisioning",
+      "plan": "Starter",
+      "billing": "combo2",
+      "env_name": "ComfyUI — Video AI",
+      "provisioning_started_at": "2026-07-11T15:59:20.528+00:00",
+      "provisioning_lease_id": "6af47340-64b5-4688-b8c7-f7f69aab6970"
+    }
+  ],
+  "cloreOnlineCount": 1,
+  "cloreOnline": [
+    {
+      "id": "1942802",
+      "si": 97866,
+      "hasHttp": true,
+      "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1"
+    }
+  ],
+  "latestDestroyed": null
+}

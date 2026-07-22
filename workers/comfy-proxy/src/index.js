@@ -1,25 +1,38 @@
 /**
- * GPUVietnam ComfyUI reverse proxy (Cloudflare Worker).
+ * GPUVietnam ComfyUI Workspace proxy (Cloudflare Worker) — A1 M1 path-split.
  *
  * Cookie-based routing so ComfyUI absolute paths (/ws, /api/...) keep working:
- *   GET /enter/:token  → Set-Cookie + redirect /
- *   /*                 → proxy to upstream using cookie (or KV/origin resolve)
+ *   GET /enter/:token  → Set-Cookie + redirect /#gvn_cp=…
+ *   /gpuvietnam/cp/*   → origin /api/cp/comfy-sync (cookie auth → Bearer gvc)
+ *   Workspace static   → ASSETS (FE package) or FE_STATIC_ORIGIN
+ *   Offline (no upstream) → boot stubs + Supported Node Manifest catalog (M2); execution → 503
+ *   Online             → proxy non-static to upstream Runtime (live object_info = M4)
  *
  * Bindings (wrangler.toml):
  *   COMFY_ACCESS (KV, optional)
- *   ORIGIN_RESOLVE_URL  e.g. https://gpuvietnam.com/api/internal/comfy-proxy-resolve
+ *   ASSETS (optional Workers Assets)
+ *   ORIGIN_RESOLVE_URL
  *   COMFY_PROXY_SECRET
+ *   FE_STATIC_ORIGIN (optional fallback for static when ASSETS missing)
  *   COOKIE_NAME         default gvn_comfy
  */
 
+import {
+  isWorkspaceStaticPath,
+  offlineBootStub,
+  jsonResponse,
+} from './workspace-shell.js';
+
 const COOKIE_DEFAULT = 'gvn_comfy';
+const CP_SYNC_PREFIX = '/gpuvietnam/cp/';
 
 export default {
   async fetch(request, env) {
     try {
       return await handle(request, env);
     } catch (err) {
-      return new Response('Proxy error', { status: 502 });
+      const msg = err instanceof Error ? err.message : String(err);
+      return new Response(`Proxy error: ${msg.slice(0, 200)}`, { status: 502 });
     }
   },
 };
@@ -49,7 +62,12 @@ async function handle(request, env) {
       'Set-Cookie',
       `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`,
     );
-    headers.set('Location', '/');
+    const apiBase = resolveOriginApiBase(env);
+    const bootstrap = encodeBootstrapFragment({
+      t: token,
+      ...(apiBase ? { a: apiBase } : {}),
+    });
+    headers.set('Location', `/#${bootstrap}`);
     return new Response(null, { status: 302, headers });
   }
 
@@ -74,7 +92,95 @@ async function handle(request, env) {
     });
   }
 
+  if (url.pathname === '/gpuvietnam/cp/sync' || url.pathname.startsWith(CP_SYNC_PREFIX)) {
+    return forwardCpSync(request, env, token, url);
+  }
+
+  const online = Boolean(resolved.upstream);
+
+  // Always prefer Workspace FE for brand shell (A1 same-origin).
+  if (isWorkspaceStaticPath(url.pathname)) {
+    const staticRes = await serveWorkspaceStatic(request, env, url.pathname);
+    if (staticRes) return staticRes;
+    // Online fallback: proxy missing static from Runtime (rare).
+    if (online) return proxyToUpstream(request, resolved.upstream);
+    return new Response('Workspace FE assets not configured', { status: 503 });
+  }
+
+  if (!online) {
+    if (url.pathname === '/ws' || url.pathname.startsWith('/ws')) {
+      return offlineWsUpgradeHint();
+    }
+    const stub = offlineBootStub(url.pathname, request.method);
+    if (stub) {
+      const packed = jsonResponse(stub.status, stub.body, stub.contentType);
+      return new Response(packed.body, { status: packed.status, headers: packed.headers });
+    }
+    return new Response(JSON.stringify({ error: 'a1 offline', path: url.pathname }), {
+      status: 404,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+
+  // M4 online: prompt / object_info / extensions / history / view / upload / ws → Runtime
   return proxyToUpstream(request, resolved.upstream);
+}
+
+function offlineWsUpgradeHint() {
+  // Browsers upgrade via 101; without WS handler here, return 426.
+  // Local smoke / future M1+: attach soft WS. Avoid white-screen: FE tolerates WS fail.
+  return new Response('Runtime offline — WebSocket unavailable', {
+    status: 426,
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+  });
+}
+
+/**
+ * @param {Request} request
+ * @param {any} env
+ * @param {string} pathname
+ */
+async function serveWorkspaceStatic(request, env, pathname) {
+  if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
+    try {
+      const res = await env.ASSETS.fetch(request);
+      if (res && res.status !== 404) return res;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const feOrigin = String(env.FE_STATIC_ORIGIN || '').trim().replace(/\/$/, '');
+  if (!feOrigin) return null;
+
+  const targetPath = pathname === '/' ? '/index.html' : pathname;
+  const target = new URL(feOrigin + targetPath);
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: 'GET',
+      headers: { Accept: request.headers.get('Accept') || '*/*' },
+      redirect: 'manual',
+    });
+    if (!upstream.ok && upstream.status !== 304) return null;
+    const headers = new Headers(upstream.headers);
+    headers.delete('set-cookie');
+    return new Response(upstream.body, { status: upstream.status, headers });
+  } catch {
+    return null;
+  }
+}
+
+function encodeBootstrapFragment(payload) {
+  const json = JSON.stringify({ v: 1, ...payload });
+  const b64 = base64UrlEncode(json);
+  return `gvn_cp=${b64}`;
+}
+
+function base64UrlEncode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 function readCookie(request, name) {
@@ -90,6 +196,9 @@ function readCookie(request, name) {
   return null;
 }
 
+/**
+ * @returns {Promise<{ upstream: string | null; exp: number; mode: string } | null>}
+ */
 async function resolveToken(token, env) {
   const hashHex = await sha256Hex(token);
   const kvKey = `comfy:${hashHex}`;
@@ -97,8 +206,15 @@ async function resolveToken(token, env) {
   if (env.COMFY_ACCESS) {
     try {
       const cached = await env.COMFY_ACCESS.get(kvKey, 'json');
-      if (cached && cached.upstream && cached.exp > Math.floor(Date.now() / 1000)) {
-        return { upstream: String(cached.upstream).replace(/\/$/, ''), exp: Number(cached.exp) };
+      if (cached && cached.exp > Math.floor(Date.now() / 1000)) {
+        const upstream = cached.upstream
+          ? String(cached.upstream).replace(/\/$/, '')
+          : null;
+        return {
+          upstream,
+          exp: Number(cached.exp),
+          mode: upstream ? 'runtime' : String(cached.mode || 'editor'),
+        };
       }
     } catch {
       /* fall through */
@@ -120,7 +236,12 @@ async function resolveToken(token, env) {
   });
   if (!res.ok) return null;
   const body = await res.json();
-  if (!body || !body.upstreamUrl) return null;
+  if (!body || !body.userId) return null;
+
+  const upstream = body.upstreamUrl
+    ? String(body.upstreamUrl).replace(/\/$/, '')
+    : null;
+  const mode = body.mode || (upstream ? 'runtime' : 'editor');
   const exp = body.expiresAt
     ? Math.floor(new Date(body.expiresAt).getTime() / 1000)
     : Math.floor(Date.now() / 1000) + 3600;
@@ -131,10 +252,11 @@ async function resolveToken(token, env) {
       await env.COMFY_ACCESS.put(
         kvKey,
         JSON.stringify({
-          upstream: body.upstreamUrl,
+          upstream,
           userId: body.userId,
-          machineId: body.machineId,
+          machineId: body.machineId ?? null,
           exp,
+          mode,
         }),
         { expirationTtl: ttl },
       );
@@ -143,7 +265,60 @@ async function resolveToken(token, env) {
     }
   }
 
-  return { upstream: String(body.upstreamUrl).replace(/\/$/, ''), exp };
+  return { upstream, exp, mode };
+}
+
+async function forwardCpSync(request, env, token, inboundUrl) {
+  const apiBase = resolveOriginApiBase(env);
+  if (!apiBase) {
+    return new Response(JSON.stringify({ ok: false, error: 'CP origin not configured' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+
+  const target = new URL('/api/cp/comfy-sync', apiBase);
+  for (const [k, v] of inboundUrl.searchParams.entries()) {
+    target.searchParams.set(k, v);
+  }
+
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Accept', 'application/json');
+  const contentType = request.headers.get('content-type');
+  if (contentType) headers.set('Content-Type', contentType);
+
+  const init = {
+    method: request.method,
+    headers,
+    redirect: 'manual',
+  };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+    // @ts-expect-error duplex for streaming
+    init.duplex = 'half';
+  }
+
+  const upstreamRes = await fetch(target.toString(), init);
+  const outHeaders = new Headers(upstreamRes.headers);
+  outHeaders.delete('set-cookie');
+  return new Response(upstreamRes.body, {
+    status: upstreamRes.status,
+    statusText: upstreamRes.statusText,
+    headers: outHeaders,
+  });
+}
+
+function resolveOriginApiBase(env) {
+  const explicit = String(env.ORIGIN_API_BASE || '').trim().replace(/\/$/, '');
+  if (explicit) return explicit;
+  const resolve = String(env.ORIGIN_RESOLVE_URL || '').trim();
+  if (!resolve) return '';
+  try {
+    return new URL(resolve).origin;
+  } catch {
+    return '';
+  }
 }
 
 async function sha256Hex(value) {
@@ -154,13 +329,18 @@ async function sha256Hex(value) {
 
 async function proxyToUpstream(request, upstreamBase) {
   const inbound = new URL(request.url);
-  const target = new URL(upstreamBase + inbound.pathname + inbound.search);
+  const target = new URL(upstreamBase.replace(/\/$/, '') + inbound.pathname + inbound.search);
+
+  // M4: WebSocket progress/preview — must pass the original Request so Workers
+  // preserve the client↔Worker WebSocket pair while fetching the upstream.
+  if (String(request.headers.get('Upgrade') || '').toLowerCase() === 'websocket') {
+    return fetch(target.toString(), request);
+  }
 
   const headers = new Headers(request.headers);
   headers.delete('cookie');
   headers.delete('host');
   headers.set('Host', target.host);
-  // Avoid compressing twice / odd CF behavior
   headers.delete('cf-connecting-ip');
   headers.delete('cf-ray');
   headers.delete('cf-visitor');
@@ -193,7 +373,6 @@ async function proxyToUpstream(request, upstreamBase) {
     }
   }
 
-  // Strip upstream cookies (session is ours)
   outHeaders.delete('set-cookie');
 
   return new Response(upstreamRes.body, {

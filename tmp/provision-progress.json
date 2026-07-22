@@ -1,0 +1,35 @@
+{
+  "updatedAt": "2026-07-22T14:19:56.492Z",
+  "entries": [
+    {
+      "subscriptionId": "test-sub",
+      "stage": "CREATING_ORDER",
+      "tick": null,
+      "startedAt": 1784220959439,
+      "provisionStartedAt": 1784220959425,
+      "requestId": null,
+      "provider": null,
+      "gpuType": null,
+      "hostId": null,
+      "machineId": null,
+      "gpuSessionId": null,
+      "message": "Đang tìm cấu hình",
+      "updatedAt": 1784220959439
+    },
+    {
+      "subscriptionId": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+      "stage": "RUNNING",
+      "tick": "provision_gate",
+      "startedAt": 1784698881101,
+      "provisionStartedAt": 1784221260998,
+      "requestId": "2d751dd9-610c-44f3-8429-98b7a3cb9b32",
+      "provider": "clore",
+      "gpuType": "rtx4090_1x",
+      "hostId": null,
+      "machineId": "1972806",
+      "gpuSessionId": null,
+      "message": "Sẵn sàng",
+      "updatedAt": 1784729996492
+    }
+  ]
+}

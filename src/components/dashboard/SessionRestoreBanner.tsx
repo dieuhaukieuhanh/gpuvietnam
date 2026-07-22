@@ -117,7 +117,8 @@ export default function SessionRestoreBanner({ accessToken }: SessionRestoreBann
               ? ` · Attempt #${restore.job.attemptNumber}`
               : null}
             <div style={{ marginTop: 4 }}>
-              Không resume CUDA / queue máy cũ — chỉ khôi phục bài làm trên web.
+              Không resume CUDA / queue máy cũ — mở lại Comfy trên máy mới sẽ nạp graph từ
+              Control Plane (nếu đã đồng bộ).
             </div>
           </div>
         )}

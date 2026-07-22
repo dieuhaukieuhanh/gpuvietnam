@@ -78,9 +78,10 @@ export function buildOptimisticOpeningMachineSessionView(
   };
 }
 
-/** Instant UI feedback while destroy API is in flight. */
+/** Instant UI feedback while destroy API is in flight / post-check. */
 export function buildOptimisticStoppingMachineSessionView(
   envName: string | null | undefined,
+  message?: string | null,
 ): MachineSessionView {
   return {
     phase: 'stopping',
@@ -94,7 +95,7 @@ export function buildOptimisticStoppingMachineSessionView(
       canStop: false,
       canOpenComfy: false,
     },
-    message: 'Đang lưu dữ liệu trước khi tắt máy...',
+    message: message?.trim() || 'Đang lưu dữ liệu trước khi tắt máy...',
     domainEvent: 'MACHINE_STOPPING',
     clientOptimistic: true,
   };

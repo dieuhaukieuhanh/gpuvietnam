@@ -1,0 +1,139 @@
+{
+  "at": "2026-07-11T12:18:00.324Z",
+  "rentMode": true,
+  "currency": "USD-Blockchain",
+  "keyLen": 32,
+  "wallets": {
+    "status": 200,
+    "code": 0,
+    "balances": [
+      {
+        "currency": "bitcoin",
+        "balance": 0
+      },
+      {
+        "currency": "CLORE-Blockchain",
+        "balance": 0
+      },
+      {
+        "currency": "USD-Blockchain",
+        "balance": 37.35
+      }
+    ]
+  },
+  "my_orders": {
+    "status": 429,
+    "code": 5,
+    "count": 0,
+    "sample": []
+  },
+  "marketplace": {
+    "status": 200,
+    "total": 2126,
+    "usd3090": 61,
+    "cheapest": [
+      {
+        "id": 105730,
+        "daily": 2.15,
+        "allowed": [
+          "CLORE-Blockchain",
+          "USD-Blockchain"
+        ],
+        "reliability": 0.8157,
+        "gpu": " RTX 3090"
+      },
+      {
+        "id": 105728,
+        "daily": 2.2,
+        "allowed": [
+          "CLORE-Blockchain",
+          "USD-Blockchain"
+        ],
+        "reliability": 0.8159,
+        "gpu": " RTX 3090"
+      },
+      {
+        "id": 109068,
+        "daily": 2.4,
+        "allowed": [
+          "bitcoin",
+          "CLORE-Blockchain",
+          "USD-Blockchain"
+        ],
+        "reliability": 0.9969,
+        "gpu": " RTX 3090"
+      },
+      {
+        "id": 111696,
+        "daily": 2.5,
+        "allowed": [
+          "bitcoin",
+          "CLORE-Blockchain",
+          "USD-Blockchain"
+        ],
+        "reliability": 0.4958,
+        "gpu": " RTX 3090"
+      },
+      {
+        "id": 111029,
+        "daily": 2.5,
+        "allowed": [
+          "bitcoin",
+          "CLORE-Blockchain",
+          "USD-Blockchain"
+        ],
+        "reliability": 0.6935,
+        "gpu": " RTX 3090"
+      }
+    ]
+  },
+  "target": {
+    "id": 105730,
+    "daily": 2.15,
+    "allowed": [
+      "CLORE-Blockchain",
+      "USD-Blockchain"
+    ],
+    "reliability": 0.8157,
+    "gpu": " RTX 3090"
+  },
+  "attempts": [
+    {
+      "name": "app_with_required_price",
+      "status": 200,
+      "ms": 2266,
+      "code": 0,
+      "error": null,
+      "orderId": null,
+      "keys": [
+        "code"
+      ]
+    },
+    {
+      "name": "app_no_required_price",
+      "status": 200,
+      "ms": 425,
+      "code": 6,
+      "error": "server-already-rented",
+      "orderId": null,
+      "keys": [
+        "status",
+        "error",
+        "code"
+      ]
+    },
+    {
+      "name": "safe_cuda_with_required_price",
+      "status": 200,
+      "ms": 1652,
+      "code": 6,
+      "error": "server-already-rented",
+      "orderId": null,
+      "keys": [
+        "status",
+        "error",
+        "code"
+      ]
+    }
+  ]
+}

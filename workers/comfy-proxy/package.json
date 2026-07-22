@@ -1,11 +1,17 @@
 {
   "name": "gpuvietnam-comfy-proxy",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node --test src/workspace-shell.test.mjs",
+    "vendor-fe": "node ../../scripts/vendor-comfy-frontend.mjs",
+    "vendor-cp-sync": "node ../../scripts/vendor-cp-sync-extension.mjs",
+    "build-catalog": "node ../../scripts/build-supported-node-manifest.mjs",
+    "build-catalog:placeholder": "node ../../scripts/build-supported-node-manifest.mjs --placeholder"
   },
   "devDependencies": {
     "wrangler": "^3.99.0"

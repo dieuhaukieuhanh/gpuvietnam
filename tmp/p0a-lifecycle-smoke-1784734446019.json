@@ -1,0 +1,71 @@
+{
+  "at": "2026-07-22T15:34:06.019Z",
+  "operationId": null,
+  "gates": [
+    {
+      "gate": "Schema",
+      "status": "PASS",
+      "detail": "migration 0049 ok — probe op d4f6c45c-8998-44ec-b56f-dec5311a07fc"
+    },
+    {
+      "gate": "Enqueue",
+      "status": "SKIP",
+      "detail": "pass --start or --watch <operationId>"
+    },
+    {
+      "gate": "Durable",
+      "status": "SKIP",
+      "detail": "needs live operation"
+    },
+    {
+      "gate": "Worker",
+      "status": "SKIP",
+      "detail": "needs live operation"
+    },
+    {
+      "gate": "Lease",
+      "status": "SKIP",
+      "detail": "needs live operation"
+    },
+    {
+      "gate": "Provision",
+      "status": "SKIP",
+      "detail": "needs live operation"
+    },
+    {
+      "gate": "Completion",
+      "status": "SKIP",
+      "detail": "needs live operation"
+    },
+    {
+      "gate": "Recovery",
+      "status": "MANUAL",
+      "detail": "Kill worker mid-op → wait lease expire → new worker reclaim"
+    },
+    {
+      "gate": "Restart",
+      "status": "MANUAL",
+      "detail": "systemctl restart gpuvietnam-lifecycle-worker — op not lost"
+    },
+    {
+      "gate": "Orphan",
+      "status": "MANUAL",
+      "detail": "Force Clore/machine drift → worker reconcile"
+    },
+    {
+      "gate": "Service",
+      "status": "MANUAL",
+      "detail": "kill -9 worker PID → systemd Restart=always brings it back"
+    },
+    {
+      "gate": "Comfy Runtime",
+      "status": "MANUAL",
+      "detail": "object_info / Generate ready after provision"
+    }
+  ],
+  "pass": 1,
+  "fail": 0,
+  "skip": 6,
+  "manual": 5,
+  "closed": false
+}

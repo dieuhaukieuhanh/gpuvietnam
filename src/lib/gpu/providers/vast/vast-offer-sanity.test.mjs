@@ -10,6 +10,7 @@ import {
   vastGpuNameMatchesLine,
   unwrapVastInstanceRecord,
 } from './vast-offer-sanity.js';
+import { buildOfferSearchBody } from './vast-client.js';
 
 function vastRaw(overrides = {}) {
   return {
@@ -81,6 +82,28 @@ describe('vast-offer-sanity prefilter', () => {
     assert.equal(evaluateVastOfferSanity(wrong, 'rtx3090').reason, 'gpu_name_mismatch');
   });
 
+  it('rejects storage-only / no-GPU listings', () => {
+    assert.equal(normalizeVastOffer(vastRaw({ num_gpus: 0, dlperf: 40 })), null);
+    assert.equal(normalizeVastOffer(vastRaw({ gpu_ram: 0, dlperf: 40 })), null);
+    assert.equal(normalizeVastOffer(vastRaw({ gpu_name: '', dlperf: 40 })), null);
+    assert.equal(normalizeVastOffer(vastRaw({ gpu_frac: 0.25, dlperf: 40 })), null);
+
+    const ok = normalizeVastOffer(vastRaw({ num_gpus: 1, gpu_frac: 1, dlperf: 40 }));
+    assert.ok(ok);
+    assert.equal(evaluateVastOfferSanity(ok, 'rtx3090').ok, true);
+
+    const wrongCount = normalizeVastOffer(vastRaw({ num_gpus: 2, dlperf: 40 }));
+    assert.ok(wrongCount);
+    assert.equal(evaluateVastOfferSanity(wrongCount, 'rtx3090').reason, 'no_gpu');
+  });
+
+  it('search body requires full gpu_frac=1', () => {
+    const body = buildOfferSearchBody('rtx4090_1x');
+    assert.deepEqual(body.gpu_frac, { eq: 1 });
+    assert.deepEqual(body.num_gpus, { eq: 1 });
+    assert.equal(body.type, 'on-demand');
+  });
+
   it('drops median price anomalies (storage-priced outliers)', () => {
     const offers = [
       normalizeVastOffer(vastRaw({ id: 1, dph_total: 0.12, dlperf: 30 })),
@@ -113,6 +136,17 @@ describe('vast-offer-sanity bad host', () => {
 
   it('detects exited status as bad host', () => {
     assert.equal(isVastBadHostStatus({ actual_status: 'exited' }), true);
+  });
+
+  it('detects zero num_gpus on live instance as bad host', () => {
+    assert.equal(
+      isVastBadHostStatus({
+        actual_status: 'running',
+        num_gpus: 0,
+        status_msg: 'ok',
+      }),
+      true,
+    );
   });
 
   it('detects stopped (disk-only billing) as bad host', () => {

@@ -8,10 +8,11 @@ import {
   requestCancelMachine,
 } from '@/lib/gpu';
 import { destroyMachineWithBackup } from '@/lib/machine-destroy';
-import { getActiveMachineForUser } from '@/lib/machines';
+import { getActiveMachineForUser, listActiveMachinesForUser } from '@/lib/machines';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { deriveSessionPhase } from '@/lib/gpu/machine-lifecycle';
 import { resolveBillingViewForCommand } from '@/lib/gpu/billing-session-view';
+import { cancelActiveUserStartProvisions } from '@/lib/infrastructure/enqueue-user-start-provision';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -41,10 +42,19 @@ export default async function handler(req, res) {
     const activeMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
     let machineRecord = snapshotToMachineRecord(subscription, activeMachine, user.id);
     const phase = deriveSessionPhase(machineRecord);
+    const provisioning =
+      String(subscription.server_status ?? '') === 'provisioning' || phase === 'opening';
 
-    if (phase !== 'opening') {
+    if (!provisioning) {
       return res.status(400).json({ error: 'Máy không ở trạng thái đang khởi động.' });
     }
+
+    // Free durable queue slot first so a later Start cannot race a dying op.
+    const cancelledOps = await cancelActiveUserStartProvisions(
+      supabaseAdmin,
+      user.id,
+      'user_cancel_start',
+    );
 
     const lifecycleCtx = {
       subscriptionActive: subscription.status === 'active',
@@ -58,10 +68,17 @@ export default async function handler(req, res) {
 
     const gpuService = getGpuServiceForMachine(activeMachine);
     const interruptResult = await interruptPendingSessionForUser(supabaseAdmin, user.id);
-    await destroyMachineWithBackup(supabaseAdmin, gpuService, user.id, {
-      interrupted: true,
-      reason: 'user_stop',
-    });
+    // Drain leftover multi-rent rows (one destroyUserMachine pass = one active machine).
+    for (let i = 0; i < 5; i += 1) {
+      const remaining = await listActiveMachinesForUser(supabaseAdmin, user.id);
+      if (remaining.length === 0) break;
+      await destroyMachineWithBackup(supabaseAdmin, gpuService, user.id, {
+        interrupted: true,
+        reason: 'user_stop',
+        skipBackup: true,
+      });
+    }
+    void cancelledOps;
 
     if (machineRecord) {
       await persistDestroyCompleted(supabaseAdmin, subscription.id, machineRecord, lifecycleCtx);
@@ -83,6 +100,7 @@ export default async function handler(req, res) {
       message: 'Đã hủy khởi động.',
       sessionStatus: interruptResult.sessionStatus ?? null,
       settlementStatus: interruptResult.settlementStatus ?? null,
+      cancelledOperations: cancelledOps.cancelledIds,
       machineSessionView,
       billingView,
     });

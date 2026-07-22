@@ -1,0 +1,174 @@
+{
+  "at": "2026-07-10T16:40:29.036Z",
+  "step": "0+1",
+  "rentMode": true,
+  "env": {
+    "CLORE_API_KEY": "MISSING",
+    "CLORE_AI_KEY": "SET(len=32)",
+    "cloreKeyResolved": "SET(len=32)",
+    "VAST_AI_KEY": "SET(len=64)",
+    "VAST_API_KEY": "MISSING",
+    "vastKeyResolved": "SET(len=64)",
+    "CLORE_CURRENCY": "DEFAULT(USD-Blockchain)",
+    "DEFAULT_GPU_IMAGE": "DEFAULT(dieuhaukieuhanh/gpuvietnam-comfyui:v1)",
+    "GPU_PROVIDER": "(unset)"
+  },
+  "lastStartError": {
+    "at": "2026-07-10T16:16:49.080Z",
+    "source": "user-start-provision",
+    "message": "Clore.ai 500: Internal Server Error",
+    "code": "GPU_PROVIDER_ERROR",
+    "details": null,
+    "hint": null,
+    "rentedInstanceId": null,
+    "insertedMachineId": null,
+    "subscriptionId": "489016b0-e590-4ef1-8fde-9bb4b51c86b1",
+    "planKey": "pro",
+    "gpuLine": "rtx4090_1x",
+    "label": "gv-70feafcf-489016b0-1fb2905c",
+    "provider": "clore"
+  },
+  "checks": {
+    "my_orders": {
+      "status": 200,
+      "ms": 869,
+      "code": 0,
+      "orderCount": 0,
+      "error": null
+    },
+    "wallets": {
+      "status": 200,
+      "ms": 1462,
+      "code": 0,
+      "error": null,
+      "balances": [
+        {
+          "currency": "bitcoin",
+          "balancePositive": false,
+          "balance": 0
+        },
+        {
+          "currency": "CLORE-Blockchain",
+          "balancePositive": false,
+          "balance": 0
+        },
+        {
+          "currency": "USD-Blockchain",
+          "balancePositive": true,
+          "balance": 37.51
+        }
+      ]
+    },
+    "marketplace": {
+      "status": 200,
+      "ms": 373,
+      "totalServers": 2100,
+      "availableRtx4090_1x": 73,
+      "cheapest3": [
+        {
+          "id": 31148,
+          "dailyUsd": 1.61,
+          "gpu": "1x NVIDIA GeForce RTX 4090",
+          "reliability": 0.8778,
+          "region": "RU",
+          "partial": false
+        },
+        {
+          "id": 69333,
+          "dailyUsd": 2.5,
+          "gpu": "1x NVIDIA GeForce RTX 4090",
+          "reliability": 1,
+          "region": "RU",
+          "partial": false
+        },
+        {
+          "id": 110597,
+          "dailyUsd": 2.5,
+          "gpu": "1x NVIDIA GeForce RTX 4090",
+          "reliability": 0.6313,
+          "region": "US",
+          "partial": false
+        }
+      ],
+      "error": null
+    },
+    "create_order": {
+      "targetServerId": 31148,
+      "attempts": [
+        {
+          "name": "app_image_with_required_price",
+          "serverId": 31148,
+          "dailyUsd": 1.61,
+          "currency": "USD-Blockchain",
+          "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+          "hasRequiredPrice": true,
+          "status": 429,
+          "ms": 621,
+          "code": 5,
+          "orderId": null,
+          "error": {
+            "httpStatus": 429,
+            "code": 5,
+            "error": null,
+            "keys": [
+              "code"
+            ]
+          },
+          "responseKeys": [
+            "code"
+          ]
+        },
+        {
+          "name": "app_image_no_required_price",
+          "serverId": 31148,
+          "dailyUsd": 1.61,
+          "currency": "USD-Blockchain",
+          "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+          "hasRequiredPrice": false,
+          "status": 500,
+          "ms": 1069,
+          "code": 6,
+          "orderId": null,
+          "error": {
+            "httpStatus": 500,
+            "code": 6,
+            "error": "currency-not-allowed",
+            "keys": [
+              "error",
+              "code"
+            ]
+          },
+          "responseKeys": [
+            "error",
+            "code"
+          ]
+        },
+        {
+          "name": "safe_cuda_image_no_required_price",
+          "serverId": 31148,
+          "dailyUsd": 1.61,
+          "currency": "USD-Blockchain",
+          "image": "nvidia/cuda:12.8.0-base-ubuntu22.04",
+          "hasRequiredPrice": false,
+          "status": 500,
+          "ms": 425,
+          "code": 6,
+          "orderId": null,
+          "error": {
+            "httpStatus": 500,
+            "code": 6,
+            "error": "currency-not-allowed",
+            "keys": [
+              "error",
+              "code"
+            ]
+          },
+          "responseKeys": [
+            "error",
+            "code"
+          ]
+        }
+      ]
+    }
+  }
+}

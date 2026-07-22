@@ -1,0 +1,18 @@
+{
+  "at": "2026-07-11T13:04:54.093Z",
+  "mode": "clean",
+  "env": {
+    "GPUVIETNAM_WORKSTATION": "commerce-product",
+    "GPUVIETNAM_ENV_NAME": "ComfyUI - Commerce & Product"
+  },
+  "dirtyEnv": {
+    "GPUVIETNAM_WORKSTATION": "commerce-product",
+    "GPUVIETNAM_ENV_NAME": "ComfyUI — Commerce & Product",
+    "GPUVIETNAM_ENV_ICON": "🛒"
+  },
+  "cleanEnv": {
+    "GPUVIETNAM_WORKSTATION": "commerce-product",
+    "GPUVIETNAM_ENV_NAME": "ComfyUI - Commerce & Product"
+  },
+  "error": "Clore.ai 500 (code 1): Internal Server Error"
+}

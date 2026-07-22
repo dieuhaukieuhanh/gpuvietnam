@@ -4,6 +4,9 @@
  * Product: docs/GPUVietnam_TinhNang_RenderAnToan.md
  */
 
+/** Hard cap: Render an toàn = đúng 2 GPU (Attempt A + Attempt B). Never more. */
+export const DUAL_RUN_MAX_GPUS = 2;
+
 /** Default customer-facing multipliers (overridden by Admin gpu_pricing_config.dualRun). */
 export const DUAL_RUN_BILLING = Object.freeze({
   /** Charge vs equivalent single-run (Admin editable). */
@@ -17,6 +20,7 @@ export const DUAL_RUN_BILLING = Object.freeze({
   billLoserUntilCancel: true,
   /** Always require Attempt A/B on different hosts. */
   requireDistinctHosts: true,
+  maxGpus: DUAL_RUN_MAX_GPUS,
 });
 
 export const DUAL_RUN_UX_COPY_VI = Object.freeze({
@@ -29,9 +33,28 @@ export const DUAL_RUN_UX_COPY_VI = Object.freeze({
     'Chưa đủ 2 host khả dụng (khác máy) để bật Render an toàn. Hệ thống sẽ chạy chế độ 1 GPU.',
   sameHostForbidden:
     'Hai Attempt không được thuê cùng một host — mất ý nghĩa dự phòng độc lập.',
+  maxGpusExceeded: `Render an toàn chỉ được thuê tối đa ${DUAL_RUN_MAX_GPUS} GPU.`,
   enabledToast: 'Đã bật Render an toàn cho Job này.',
   disabledToast: 'Đã tắt Render an toàn — Job chạy 1 Attempt.',
 });
+
+/**
+ * Dual-run may rent at most DUAL_RUN_MAX_GPUS instances for one Job.
+ * @param {number} gpuCount
+ * @returns {{ ok: true } | { ok: false; code: 'DUAL_RUN_MAX_GPUS'; message: string; maxGpus: number }}
+ */
+export function assertDualRunGpuCap(gpuCount) {
+  const n = Number(gpuCount);
+  if (!Number.isFinite(n) || n <= DUAL_RUN_MAX_GPUS) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    code: 'DUAL_RUN_MAX_GPUS',
+    message: DUAL_RUN_UX_COPY_VI.maxGpusExceeded,
+    maxGpus: DUAL_RUN_MAX_GPUS,
+  };
+}
 
 /**
  * @param {unknown} value
@@ -331,6 +354,7 @@ export function buildDualRunUxState(input = {}) {
     canEnable,
     eligibility,
     requireDistinctHosts: true,
+    maxGpus: DUAL_RUN_MAX_GPUS,
     gpuLine: input.gpuLine ?? null,
     capacityMessage: input.capacityMessage ?? null,
     billing: {
@@ -338,6 +362,7 @@ export function buildDualRunUxState(input = {}) {
       multiplierMin: billing.multiplierMin,
       multiplierMax: billing.multiplierMax,
       hardCapMultiplier: billing.hardCapMultiplier,
+      maxGpus: DUAL_RUN_MAX_GPUS,
     },
   };
 }

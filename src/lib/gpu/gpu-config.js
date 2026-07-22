@@ -227,6 +227,8 @@ export const OFFER_SELECTION = {
 /**
  * Vast-only offer sanity (storage-priced / dead-GPU listings).
  * Floors are USD/hour on dph_total — tune from marketplace logs.
+ * Storage-only asks are also rejected in normalizeVastOffer (num_gpus/vram/gpu_frac)
+ * and search uses gpu_frac=1.
  */
 export const VAST_OFFER_SANITY = {
   /** Reject offers cheaper than this floor per GPU line. */
@@ -319,6 +321,10 @@ export const VAST_PROVISION_GATE = {
  */
 export const CLORE_PROVISION_GATE = {
   ...VAST_PROVISION_GATE,
+  // First pull of a large image tag often exceeds the Vast default ~5 min HTTP budget.
+  comfyColdStartExtraMs: Number(process.env.CLORE_COMFY_COLD_START_EXTRA_MS) > 0
+    ? Number(process.env.CLORE_COMFY_COLD_START_EXTRA_MS)
+    : VAST_PROVISION_GATE.comfyColdStartExtraMs,
   sshReadyTimeoutMs: Number(process.env.CLORE_SSH_READY_TIMEOUT_MS) > 0
     ? Number(process.env.CLORE_SSH_READY_TIMEOUT_MS)
     : 120_000,

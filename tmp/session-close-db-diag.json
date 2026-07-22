@@ -1,0 +1,39 @@
+{
+  "at": "2026-07-11T15:15:31.942Z",
+  "machine": {
+    "id": "c9fa2462-a501-4162-971f-3acaa6f0f038",
+    "status": "running",
+    "instance_id": "1942209",
+    "billing_started_at": "2026-07-11T13:16:45.71+00:00",
+    "gpu_session_id": "0f016550-4bff-461b-b0cb-06de8db75ffd"
+  },
+  "mErr": null,
+  "session": {
+    "id": "0f016550-4bff-461b-b0cb-06de8db75ffd",
+    "status": "closed",
+    "settlement_status": "pending",
+    "started_at": "2026-07-11T13:16:45.71+00:00",
+    "ended_at": "2026-07-11T15:11:15.096+00:00",
+    "verified_destroyed_at": "2026-07-11T15:11:15.096+00:00",
+    "destroy_reason": "user_stop"
+  },
+  "sErr": null,
+  "sub": {
+    "id": "5ffc2f94-cb97-4c31-b41a-ad690394621e",
+    "server_status": "offline",
+    "status": "active",
+    "env_name": "ComfyUI — Character & Art",
+    "hours_total": 230,
+    "hours_used": 0
+  },
+  "subErr": null,
+  "rpcProbe": {
+    "data": null,
+    "error": "Could not find the function public.settle_session_transaction(payload) in the schema cache",
+    "code": "PGRST202"
+  },
+  "notifProbe": {
+    "error": "Could not find the table 'public.notifications' in the schema cache",
+    "code": "PGRST205"
+  }
+}

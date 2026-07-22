@@ -1,0 +1,14 @@
+{
+  "at": "2026-07-22T14:16:22.116Z",
+  "phase": "rented",
+  "requestId": "c89845de-57d6-4028-b7ea-2fcaf8596134",
+  "provider": "clore",
+  "instanceId": "1972806",
+  "label": "gv-70feafcf-5ffc2f94-c89845de",
+  "port": 443,
+  "ip": "1ny6tgr3nifw6.us.clorecloud.net",
+  "planKey": "pro",
+  "gpuLine": "rtx4090_1x",
+  "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v3.2",
+  "failover": null
+}

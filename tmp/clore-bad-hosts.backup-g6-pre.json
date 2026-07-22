@@ -1,0 +1,37 @@
+{
+  "updatedAt": "2026-07-22T00:08:03.474Z",
+  "entries": [
+    {
+      "hostKey": "clore-host:104082",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>cloreai.ru | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<meta h",
+      "excludedAt": 1784678100370,
+      "expiresAt": 1787270100370,
+      "offerId": "104082",
+      "instanceId": "1971101"
+    },
+    {
+      "hostKey": "clore-host:104078",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>cloreai.ru | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<meta h",
+      "excludedAt": 1784678415143,
+      "expiresAt": 1787270415143,
+      "offerId": "104078",
+      "instanceId": "1971105"
+    },
+    {
+      "hostKey": "clore-host:92600",
+      "reason": "http_endpoint: http_endpoint: status 502 <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>cloreai.ru | 502: Bad gateway</title>\n<meta charset=\"UTF-8\" />\n<meta h",
+      "excludedAt": 1784678732539,
+      "expiresAt": 1787270732539,
+      "offerId": "92600",
+      "instanceId": "1971111"
+    },
+    {
+      "hostKey": "clore-host:11882",
+      "reason": "http_endpoint: http_endpoint: Proxy Not Found for 90s (Clore edge has no backend on https://5ww0lci5vm9ze.cloreai.ru)",
+      "excludedAt": 1784678883473,
+      "expiresAt": 1787270883473,
+      "offerId": "11882",
+      "instanceId": "1971120"
+    }
+  ]
+}

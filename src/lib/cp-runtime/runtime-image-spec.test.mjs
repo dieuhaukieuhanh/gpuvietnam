@@ -30,6 +30,7 @@ describe('cp-runtime runtime-image-spec', () => {
     assert.ok(v4.custom_nodes.some((n) => n.dir === 'ComfyUI-AnimateDiff-Evolved'));
     assert.deepEqual(v4.satisfies_spec_ids, [SPEC_ID_V3, SPEC_ID_V4]);
     assert.ok(v3.extensions.includes('gpuvietnam_backup'));
+    assert.ok(v3.extensions.includes('gpuvietnam_cp_sync'));
   });
 
   it('resolves spec ref from GPU line and docker image', () => {

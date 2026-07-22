@@ -1,0 +1,58 @@
+{
+  "count": 2,
+  "sample": {
+    "id": 1939941,
+    "creation_fee": 0.1,
+    "price": 2,
+    "mrl": 604800,
+    "image": "dieuhaukieuhanh/gpuvietnam-comfyui:v1",
+    "currency": "USD-Blockchain",
+    "spend": 0.001388888888888889,
+    "ct": 1783703890,
+    "specs": {
+      "mb": "2129",
+      "cpu": "Intel(R) Xeon(R) CPU E5-2699C v4 @ 2.20GHz",
+      "cpus": "44/88",
+      "ram": 128.8107,
+      "gpu": "1x NVIDIA GeForce RTX 3090",
+      "gpuram": 24,
+      "disk": "2320 102.4688GB",
+      "disk_speed": 31.54,
+      "net": {
+        "up": 29.35,
+        "down": 106.23,
+        "cc": "US",
+        "test_history": [
+          "S|1760764742|52.74|26.21",
+          "S|1760790482|60.91|42.1",
+          "S|1761801007|106.23|29.35"
+        ]
+      },
+      "backend_version": 21,
+      "pcie_rev": 3,
+      "pcie_width": 16,
+      "xfs": 1
+    },
+    "si": 88028,
+    "mon_container": 0,
+    "online": true,
+    "pub_cluster": [
+      "n1.us.clorecloud.net"
+    ],
+    "tcp_ports": [
+      "22:1972"
+    ],
+    "http_port": "8080",
+    "http_pub": "2q8138x0hvvzh.us.clorecloud.net",
+    "rating": {
+      "avg": 4.64,
+      "cnt": 44
+    },
+    "reliability": 1,
+    "owner": 2288,
+    "cuda_version": "13.0",
+    "gpu_array": [
+      " RTX 3090"
+    ]
+  }
+}

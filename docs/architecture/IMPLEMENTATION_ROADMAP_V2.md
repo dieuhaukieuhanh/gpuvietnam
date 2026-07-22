@@ -83,6 +83,18 @@ Hủy Runtime giữa chừng → máy mới → Attempt 2 chạy lại → outpu
 
 Đổi GPU: Session/Project/Workflow (và snapshot) còn trên web; Job đang chạy vẫn chỉ qua Attempt mới nếu fail.
 
+### Frontend Separation — gated (sau Gate 1)
+
+Chi tiết: [A0_FRONTEND_SEPARATION_REPORT.md](./A0_FRONTEND_SEPARATION_REPORT.md).  
+**Không** mở A0.5/A1 trước khi Gate 1 (GPU thật) PASS.
+
+| Phase | Mục tiêu | Chắc chắn |
+|-------|----------|-----------|
+| Architecture v2 / B1–B3 | CP · Job/Attempt · Session · Dual-run | Đã chốt / implement |
+| **Gate 1 Continuity (G1–G6)** | SoT + browser restart + stop + kill Provider + restore + generate | **Việc tiếp theo** — [GATE1_CONTINUITY_CHECKLIST.md](./GATE1_CONTINUITY_CHECKLIST.md) |
+| A0.5 | Editor chạy không cần Runtime | Sau G1–G6 PASS |
+| A1 → B' → C → D | FE Separation → sync FE → rebind no-reload → soạn không GPU | Chỉ nếu A0.5 PASS |
+
 ---
 
 ## Giai đoạn 3 — B3: Render an toàn (dual-run)

@@ -95,7 +95,7 @@ async function loadMachineForSettlement(supabaseAdmin, session) {
     const { data, error } = await supabaseAdmin
       .from('machines')
       .select(
-        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id, plan, plan_name, gpu_label',
+        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id',
       )
       .eq('id', machineId)
       .maybeSingle();
@@ -107,7 +107,7 @@ async function loadMachineForSettlement(supabaseAdmin, session) {
     const { data, error } = await supabaseAdmin
       .from('machines')
       .select(
-        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id, plan, plan_name, gpu_label',
+        'id, gpu_line, gpu_type, billing_inventory_id, subscription_id',
       )
       .eq('gpu_session_id', String(session.id))
       .maybeSingle();

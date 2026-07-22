@@ -81,6 +81,7 @@ Hoàn thiện sản phẩm / vận hành ngày một.
 | **T14** | Clore: tương đương Vast (nếu Clore trong routing) |
 | **T20** | Smoke video (Wan / Hunyuan / … nếu image hỗ trợ) |
 | **T5** | Snapshot Save → sửa → Restore đúng, assets còn |
+| **G7** | Nhiều lần chuyển Runtime: graph = revision mới nhất (xem [GATE1_CONTINUITY_CHECKLIST.md](./GATE1_CONTINUITY_CHECKLIST.md)) |
 | Dashboard | Job/Attempt, Dual-run card, restore banner hiển thị đúng |
 | Log / alert | Runtime lỗi có log đủ; alert tối thiểu khi Runtime fail lặp |
 | Retry thực tế | Failover / bad-host walk ổn trên marketplace thật |

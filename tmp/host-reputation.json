@@ -1,0 +1,41 @@
+{
+  "updatedAt": "2026-07-22T14:16:25.723Z",
+  "entries": [
+    {
+      "provider": "clore",
+      "hostId": "1971891",
+      "hostKey": "clore-host:1971891|rtx4090_1x",
+      "serverId": "1971891",
+      "region": "US Central",
+      "gpuType": "rtx4090_1x",
+      "gpuLine": "rtx4090_1x",
+      "lastSeen": 1784698881418,
+      "reputationScore": 61,
+      "failureCount": 0,
+      "successCount": 1,
+      "lastFailureReason": null,
+      "lastFailureCategory": null,
+      "blacklistUntil": null,
+      "consecutiveFailures": 0,
+      "lastReadyLatencyMs": 204953
+    },
+    {
+      "provider": "clore",
+      "hostId": "1972806",
+      "hostKey": "clore-host:1972806|rtx4090_1x",
+      "serverId": "1972806",
+      "region": "US Central",
+      "gpuType": "rtx4090_1x",
+      "gpuLine": "rtx4090_1x",
+      "lastSeen": 1784729785723,
+      "reputationScore": 61,
+      "failureCount": 0,
+      "successCount": 1,
+      "lastFailureReason": null,
+      "lastFailureCategory": null,
+      "blacklistUntil": null,
+      "consecutiveFailures": 0,
+      "lastReadyLatencyMs": 296094
+    }
+  ]
+}

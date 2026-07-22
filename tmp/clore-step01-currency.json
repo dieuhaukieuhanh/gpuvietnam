@@ -1,0 +1,173 @@
+{
+  "at": "2026-07-11T00:36:54.521Z",
+  "total4090_1x": 85,
+  "withUsdBlockchain": 85,
+  "currencyHistogram": {
+    "CLORE-Blockchain,USD-Blockchain,bitcoin": 85
+  },
+  "sampleNoUsd": [
+    {
+      "id": 111444,
+      "dailyUsd": 10,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "on_demand": {
+        "bitcoin": 0.00015609,
+        "CLORE-Blockchain": 8002.07,
+        "USD-Blockchain": 10
+      },
+      "usd": {
+        "on_demand_btc": 10.008412265972295,
+        "on_demand_clore": 10.00007644942219,
+        "on_demand_usd": 10,
+        "spot": 0
+      }
+    },
+    {
+      "id": 111414,
+      "dailyUsd": 5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "on_demand": {
+        "bitcoin": 0.00007805,
+        "CLORE-Blockchain": 4001.04,
+        "USD-Blockchain": 5
+      },
+      "usd": {
+        "on_demand_btc": 5.004526730470482,
+        "on_demand_clore": 5.000044473142094,
+        "on_demand_usd": 5,
+        "spot": 0
+      }
+    },
+    {
+      "id": 111002,
+      "dailyUsd": 5.41,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "on_demand": {
+        "bitcoin": 0.00008445,
+        "CLORE-Blockchain": 4329.12,
+        "USD-Blockchain": 5.41
+      },
+      "usd": {
+        "on_demand_btc": 5.414891510419375,
+        "on_demand_clore": 5.410041521596611,
+        "on_demand_usd": 5.41,
+        "spot": 0
+      }
+    },
+    {
+      "id": 110776,
+      "dailyUsd": 1.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "on_demand": {
+        "bitcoin": 0.00002341,
+        "CLORE-Blockchain": 1200.31,
+        "USD-Blockchain": 1.5
+      },
+      "usd": {
+        "on_demand_btc": 1.5010374216568096,
+        "on_demand_clore": 1.5000108425702285,
+        "on_demand_usd": 1.5,
+        "spot": 0
+      }
+    },
+    {
+      "id": 110603,
+      "dailyUsd": 2.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "on_demand": {
+        "bitcoin": 0.00003902,
+        "CLORE-Blockchain": 2000.52,
+        "USD-Blockchain": 2.5
+      },
+      "usd": {
+        "on_demand_btc": 2.501942767750906,
+        "on_demand_clore": 2.500022236571047,
+        "on_demand_usd": 2.5,
+        "spot": 0
+      }
+    }
+  ],
+  "cheapestUsdAllowed": [
+    {
+      "id": 110776,
+      "dailyUsd": 1.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "region": "TW"
+    },
+    {
+      "id": 31148,
+      "dailyUsd": 1.61,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "region": "RU"
+    },
+    {
+      "id": 110603,
+      "dailyUsd": 2.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "region": "US"
+    },
+    {
+      "id": 110602,
+      "dailyUsd": 2.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "region": "US"
+    },
+    {
+      "id": 110601,
+      "dailyUsd": 2.5,
+      "currencies": [
+        "bitcoin",
+        "CLORE-Blockchain",
+        "USD-Blockchain"
+      ],
+      "region": "US"
+    }
+  ],
+  "rentUsdAllowed": {
+    "serverId": 110776,
+    "dailyUsd": 1.5,
+    "status": 200,
+    "code": 0,
+    "error": null,
+    "orderId": null,
+    "keys": [
+      "code"
+    ]
+  }
+}

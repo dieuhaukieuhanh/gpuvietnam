@@ -100,6 +100,25 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
         throw new Error('user_start_provision payload missing subscriptionId');
       }
 
+      const { listActiveMachinesForUser } = await import('../machines.js');
+      const activeMachines = await listActiveMachinesForUser(
+        supabaseAdmin,
+        String(payload.userId ?? userId),
+      );
+      if (activeMachines.length > 0) {
+        logMachineOperation(
+          'machine-op-worker',
+          {
+            ...ctx,
+            machineId: activeMachines[0]?.id != null ? String(activeMachines[0].id) : null,
+          },
+          'user_start_provision skipped — user already has active machine',
+        );
+        const executionMs = Date.now() - startedMs;
+        await complete(supabaseAdmin, operationId, { executionMs });
+        return { outcome: 'completed', skippedRent: true };
+      }
+
       const { data: subscription, error: subErr } = await supabaseAdmin
         .from('subscriptions')
         .select('*')

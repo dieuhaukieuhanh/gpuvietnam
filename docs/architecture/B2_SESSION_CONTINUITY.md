@@ -23,7 +23,7 @@
 | **2.2** | Session Restore Demo | `session-restore.js` + `GET /api/cp/session-restore` + `SessionRestoreBanner` |
 | **2.2.5** | Project Snapshot Save/Restore | `project_snapshots` + `project-snapshot.js` + `/api/cp/snapshots` |
 | **2.3** | Proxy / Runtime URL rebind | `runtime-rebind.js` + `POST /api/cp/runtime-rebind` · see below |
-| **2.4** | History = Job/Attempt CP | `CpJobHistoryCard` trên `/dashboard/lich-su` (+ Jobs card B1.8) |
+| **2.5** | Comfy ↔ CP editor sync | `gpuvietnam_cp_sync` + `/api/cp/comfy-sync` + Worker `/gpuvietnam/cp/sync` | Soạn Comfy → document trên CP → đổi máy → graph hiện lại |
 
 ---
 
@@ -61,14 +61,39 @@ Invariant: CP không gọi Comfy API; chỉ mint/rebind proxy token.
 - [x] Save snapshot → restore document  
 - [x] Rebind plan + API  
 - [x] Lịch sử Job CP trên trang Lịch sử  
-- [x] **CP usable while GPU boots** — `CpWorkspaceDuringBootCard` trên dashboard lúc `opening` (soạn/lưu workflow + snapshot; Comfy vẫn gated bởi `canOpenComfy`)
+- [x] **Comfy ↔ CP sync** — extension auto-save + inject on open; Worker `/gpuvietnam/cp/sync`
+- [x] F5 / browser kill → graph từ CP (Gate 1 G2)  
+- [x] Đổi GPU (stop + kill Provider) → graph còn (Gate 1 G3–G4)  
+- [x] PATCH conflict 2 tab → `REVISION_CONFLICT` (unit + optimistic concurrency)  
+- [x] Empty canvas không đè SoT (extension + API guard)  
+- [x] Regression: proxy enter + branding path; stop/destroy ≠ backup R2 SoT  
 
 Apply migration khi sẵn sàng: `node scripts/run-migrations.mjs` (0046).
+
+### Gate 1 Continuity (GPU thật) — trước A0.5
+
+Checklist 6 bài (G1 sync → G2 tắt browser → G3 stop → G4 kill Provider → G5 banner → G6 generate):  
+[GATE1_CONTINUITY_CHECKLIST.md](./GATE1_CONTINUITY_CHECKLIST.md).
 
 ---
 
 ## Out of scope
 
-- Full Comfy editor sync UI (clients call `/api/cp/workflows` PATCH)  
-- Dual-run (B3)  
+- Dual-run (B3)
 - Warm pool (B4)
+- CUDA / Job mid-run resume (Session Restore ≠ Job Resume)
+
+## Comfy ↔ CP editor sync (shipped)
+
+Extension `gpuvietnam_cp_sync` + `GET/PATCH /api/cp/comfy-sync` (+ Worker `/gpuvietnam/cp/sync`):
+
+1. Open Comfy via `workUrl` → Worker sets cookie + `#gvn_cp=` bootstrap  
+2. Extension loads `document` from CP and `app.loadGraphData` once  
+3. Debounced auto-save of `app.graph.serialize()` → CP `cp_workflows.document`  
+4. Đổi GPU → rebind mint lại token/bootstrap → máy mới inject lại graph  
+5. **Empty-canvas guard:** extension + API skip PATCH that would overwrite a non-empty SoT with `nodes: []`  
+6. Stop/tab close: best-effort flush via `fetch(..., { keepalive: true })` (SoT ≠ backup R2)
+
+Auth: Bearer `gvc.*` (Comfy access token) hoặc Supabase session. CP vẫn không gọi Comfy HTTP trực tiếp.
+
+Gate 1 Continuity (GPU thật): [GATE1_TEST_REPORT.md](./GATE1_TEST_REPORT.md) — **PASS**.

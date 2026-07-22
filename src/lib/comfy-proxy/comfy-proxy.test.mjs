@@ -57,6 +57,12 @@ describe('normalizeUpstreamComfyUrl', () => {
     assert.equal(normalizeUpstreamComfyUrl('ftp://x'), null);
     assert.equal(normalizeUpstreamComfyUrl(''), null);
   });
+
+  it('A1 editor mode: empty upstream normalizes to null', () => {
+    assert.equal(normalizeUpstreamComfyUrl(null), null);
+    assert.equal(normalizeUpstreamComfyUrl(undefined), null);
+    assert.equal(normalizeUpstreamComfyUrl('   '), null);
+  });
 });
 
 describe('hashComfyAccessToken', () => {

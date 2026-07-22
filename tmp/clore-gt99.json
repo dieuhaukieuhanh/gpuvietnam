@@ -1,0 +1,53 @@
+{
+  "at": "2026-07-11T12:47:59.413Z",
+  "gt99Count": 45,
+  "top": [
+    {
+      "id": 109068,
+      "daily": 2.4,
+      "rel": 0.9964
+    },
+    {
+      "id": 105330,
+      "daily": 2.5,
+      "rel": 1
+    },
+    {
+      "id": 84437,
+      "daily": 2.69,
+      "rel": 0.9957
+    },
+    {
+      "id": 88411,
+      "daily": 3,
+      "rel": 0.9967
+    },
+    {
+      "id": 97866,
+      "daily": 3,
+      "rel": 1
+    }
+  ],
+  "attempts": [
+    {
+      "target": {
+        "id": 109068,
+        "daily": 2.4,
+        "rel": 0.9964
+      },
+      "status": 200,
+      "code": 0,
+      "error": null,
+      "orderId": null,
+      "keys": [
+        "code"
+      ],
+      "recoveredId": 1942126,
+      "cancel": {
+        "id": 1942126,
+        "status": 200,
+        "code": 0
+      }
+    }
+  ]
+}

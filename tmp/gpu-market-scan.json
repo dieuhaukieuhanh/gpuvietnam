@@ -1,0 +1,1570 @@
+{
+  "at": "2026-07-13T20:04:31.804Z",
+  "vast": {
+    "provider": "vast",
+    "totalOffersScanned": 1234,
+    "byTarget": {
+      "L40_1x": {
+        "available": 1,
+        "priceUsdPerHr": {
+          "count": 1,
+          "min": 0.5778,
+          "p25": 0.5778,
+          "median": 0.5778,
+          "p75": 0.5778,
+          "max": 0.5778
+        },
+        "dlperf": {
+          "count": 1,
+          "min": 93.1484,
+          "p25": 93.1484,
+          "median": 93.1484,
+          "p75": 93.1484,
+          "max": 93.1484
+        },
+        "dlperfPerUsd": {
+          "count": 1,
+          "min": 161.2183,
+          "p25": 161.2183,
+          "median": 161.2183,
+          "p75": 161.2183,
+          "max": 161.2183
+        },
+        "vramGbPerCard": {
+          "count": 1,
+          "min": 44.9883,
+          "p25": 44.9883,
+          "median": 44.9883,
+          "p75": 44.9883,
+          "max": 44.9883
+        },
+        "sample": [
+          {
+            "id": 28021851,
+            "gpu": "L40",
+            "num_gpus": 1,
+            "dph": 0.5778,
+            "dlperf": 93.1,
+            "vramGb": 45,
+            "reliability": 0.9890631,
+            "geo": "Finland, FI"
+          }
+        ]
+      },
+      "L40S_1x": {
+        "available": 5,
+        "priceUsdPerHr": {
+          "count": 5,
+          "min": 0.5338,
+          "p25": 0.8015,
+          "median": 0.8022,
+          "p75": 0.8037,
+          "max": 1.2074
+        },
+        "dlperf": {
+          "count": 5,
+          "min": 93.5377,
+          "p25": 93.567,
+          "median": 93.5963,
+          "p75": 93.6256,
+          "max": 95.1193
+        },
+        "dlperfPerUsd": {
+          "count": 5,
+          "min": 77.4942,
+          "p25": 116.6713,
+          "median": 116.706,
+          "p75": 118.3512,
+          "max": 175.4018
+        },
+        "vramGbPerCard": {
+          "count": 5,
+          "min": 44.9883,
+          "p25": 44.9883,
+          "median": 44.9883,
+          "p75": 44.9883,
+          "max": 44.9883
+        },
+        "sample": [
+          {
+            "id": 43920184,
+            "gpu": "L40S",
+            "num_gpus": 1,
+            "dph": 0.5338,
+            "dlperf": 93.6,
+            "vramGb": 45,
+            "reliability": 0.983617,
+            "geo": "Sweden, SE"
+          },
+          {
+            "id": 38574933,
+            "gpu": "L40S",
+            "num_gpus": 1,
+            "dph": 0.8015,
+            "dlperf": 93.5,
+            "vramGb": 45,
+            "reliability": 0.9960986,
+            "geo": "Taiwan, TW"
+          },
+          {
+            "id": 25990403,
+            "gpu": "L40S",
+            "num_gpus": 1,
+            "dph": 0.8022,
+            "dlperf": 93.6,
+            "vramGb": 45,
+            "reliability": 0.9965405,
+            "geo": "Taiwan, TW"
+          }
+        ]
+      },
+      "A6000_1x": {
+        "available": 3,
+        "priceUsdPerHr": {
+          "count": 3,
+          "min": 0.4289,
+          "p25": 0.4293,
+          "median": 0.4296,
+          "p75": 0.5493,
+          "max": 0.6689
+        },
+        "dlperf": {
+          "count": 3,
+          "min": 54.4463,
+          "p25": 54.4593,
+          "median": 54.4722,
+          "p75": 54.4722,
+          "max": 54.4722
+        },
+        "dlperfPerUsd": {
+          "count": 3,
+          "min": 81.4369,
+          "p25": 104.1128,
+          "median": 126.7888,
+          "p75": 126.868,
+          "max": 126.9473
+        },
+        "vramGbPerCard": {
+          "count": 3,
+          "min": 47.9883,
+          "p25": 47.9883,
+          "median": 47.9883,
+          "p75": 47.9883,
+          "max": 47.9883
+        },
+        "sample": [
+          {
+            "id": 40280183,
+            "gpu": "RTX A6000",
+            "num_gpus": 1,
+            "dph": 0.4289,
+            "dlperf": 54.4,
+            "vramGb": 48,
+            "reliability": 0.9936356,
+            "geo": "Romania, RO"
+          },
+          {
+            "id": 36719933,
+            "gpu": "RTX A6000",
+            "num_gpus": 1,
+            "dph": 0.4296,
+            "dlperf": 54.5,
+            "vramGb": 48,
+            "reliability": 0.9987059,
+            "geo": "Quebec, CA"
+          },
+          {
+            "id": 37443777,
+            "gpu": "RTX A6000",
+            "num_gpus": 1,
+            "dph": 0.6689,
+            "dlperf": 54.5,
+            "vramGb": 48,
+            "reliability": 0.9977896,
+            "geo": "Spain, ES"
+          }
+        ]
+      },
+      "RTX6000_ADA_1x": {
+        "available": 6,
+        "priceUsdPerHr": {
+          "count": 6,
+          "min": 0.5407,
+          "p25": 0.6759,
+          "median": 0.717,
+          "p75": 0.7554,
+          "max": 0.9338
+        },
+        "dlperf": {
+          "count": 6,
+          "min": 113.0753,
+          "p25": 113.1134,
+          "median": 113.1324,
+          "p75": 115.7774,
+          "max": 116.9873
+        },
+        "dlperfPerUsd": {
+          "count": 6,
+          "min": 121.1352,
+          "p25": 150.9874,
+          "median": 160.2837,
+          "p75": 167.3817,
+          "max": 216.3465
+        },
+        "vramGbPerCard": {
+          "count": 6,
+          "min": 47.9883,
+          "p25": 47.9883,
+          "median": 47.9883,
+          "p75": 47.9883,
+          "max": 47.9883
+        },
+        "sample": [
+          {
+            "id": 35415075,
+            "gpu": "RTX 6000Ada",
+            "num_gpus": 1,
+            "dph": 0.5407,
+            "dlperf": 117,
+            "vramGb": 48,
+            "reliability": 0.9970453,
+            "geo": "Estonia, EE"
+          },
+          {
+            "id": 26030249,
+            "gpu": "RTX 6000Ada",
+            "num_gpus": 1,
+            "dph": 0.6681,
+            "dlperf": 113.1,
+            "vramGb": 48,
+            "reliability": 0.9992717,
+            "geo": "Türkiye, TR"
+          },
+          {
+            "id": 39214900,
+            "gpu": "RTX 6000Ada",
+            "num_gpus": 1,
+            "dph": 0.6993,
+            "dlperf": 113.2,
+            "vramGb": 48,
+            "reliability": 0.9957696,
+            "geo": "California, US"
+          }
+        ]
+      },
+      "RTX5090_1x": {
+        "available": 53,
+        "priceUsdPerHr": {
+          "count": 53,
+          "min": 0.3348,
+          "p25": 0.4704,
+          "median": 0.5311,
+          "p75": 0.6557,
+          "max": 1.8022
+        },
+        "dlperf": {
+          "count": 53,
+          "min": 98.5175,
+          "p25": 191.6501,
+          "median": 198.5848,
+          "p75": 199.1262,
+          "max": 203.1598
+        },
+        "dlperfPerUsd": {
+          "count": 53,
+          "min": 110.1229,
+          "p25": 297.061,
+          "median": 366.1051,
+          "p75": 423.4656,
+          "max": 557.4881
+        },
+        "vramGbPerCard": {
+          "count": 53,
+          "min": 31.8428,
+          "p25": 31.8428,
+          "median": 31.8428,
+          "p75": 31.8428,
+          "max": 31.8428
+        },
+        "sample": [
+          {
+            "id": 40656654,
+            "gpu": "RTX 5090",
+            "num_gpus": 1,
+            "dph": 0.3348,
+            "dlperf": 180.6,
+            "vramGb": 31.8,
+            "reliability": 0.994651,
+            "geo": "Virginia, US"
+          },
+          {
+            "id": 44105146,
+            "gpu": "RTX 5090",
+            "num_gpus": 1,
+            "dph": 0.337,
+            "dlperf": 186.2,
+            "vramGb": 31.8,
+            "reliability": 0.9906131,
+            "geo": "California, US"
+          },
+          {
+            "id": 44200535,
+            "gpu": "RTX 5090",
+            "num_gpus": 1,
+            "dph": 0.3504,
+            "dlperf": 189.3,
+            "vramGb": 31.8,
+            "reliability": 0.984156,
+            "geo": ", CA"
+          }
+        ]
+      },
+      "RTX4090_1x": {
+        "available": 39,
+        "priceUsdPerHr": {
+          "count": 39,
+          "min": 0.2963,
+          "p25": 0.3619,
+          "median": 0.3889,
+          "p75": 0.5297,
+          "max": 0.9383
+        },
+        "dlperf": {
+          "count": 39,
+          "min": 5.945,
+          "p25": 97.0304,
+          "median": 97.1916,
+          "p75": 98.4684,
+          "max": 125.6775
+        },
+        "dlperfPerUsd": {
+          "count": 39,
+          "min": 12.639,
+          "p25": 209.9327,
+          "median": 250.5673,
+          "p75": 269.439,
+          "max": 332.5523
+        },
+        "vramGbPerCard": {
+          "count": 39,
+          "min": 23.9883,
+          "p25": 23.9883,
+          "median": 23.9883,
+          "p75": 23.9883,
+          "max": 47.9883
+        },
+        "sample": [
+          {
+            "id": 44203346,
+            "gpu": "RTX 4090",
+            "num_gpus": 1,
+            "dph": 0.2963,
+            "dlperf": 98.5,
+            "vramGb": 24,
+            "reliability": 0.9939424,
+            "geo": "Guangdong, CN"
+          },
+          {
+            "id": 25753560,
+            "gpu": "RTX 4090",
+            "num_gpus": 1,
+            "dph": 0.3222,
+            "dlperf": 92.2,
+            "vramGb": 24,
+            "reliability": 0.9895017,
+            "geo": "Türkiye, TR"
+          },
+          {
+            "id": 32240910,
+            "gpu": "RTX 4090",
+            "num_gpus": 1,
+            "dph": 0.3222,
+            "dlperf": 97.1,
+            "vramGb": 24,
+            "reliability": 0.9916892,
+            "geo": "Türkiye, TR"
+          }
+        ]
+      },
+      "RTX4090_2x": {
+        "available": 26,
+        "priceUsdPerHr": {
+          "count": 26,
+          "min": 0.6156,
+          "p25": 0.6873,
+          "median": 0.7758,
+          "p75": 1.0696,
+          "max": 1.7329
+        },
+        "dlperf": {
+          "count": 26,
+          "min": 121.8039,
+          "p25": 163.3818,
+          "median": 186.5524,
+          "p75": 192.7318,
+          "max": 246.9717
+        },
+        "dlperfPerUsd": {
+          "count": 26,
+          "min": 94.2095,
+          "p25": 182.6712,
+          "median": 235.305,
+          "p75": 250.1767,
+          "max": 309.4011
+        },
+        "vramGbPerCard": {
+          "count": 26,
+          "min": 23.9883,
+          "p25": 23.9883,
+          "median": 23.9883,
+          "p75": 23.9883,
+          "max": 47.9883
+        },
+        "sample": [
+          {
+            "id": 44199895,
+            "gpu": "RTX 4090",
+            "num_gpus": 2,
+            "dph": 0.6156,
+            "dlperf": 190.5,
+            "vramGb": 24,
+            "reliability": 0.981023,
+            "geo": "South Africa, ZA"
+          },
+          {
+            "id": 44694991,
+            "gpu": "RTX 4090",
+            "num_gpus": 2,
+            "dph": 0.6511,
+            "dlperf": 179.9,
+            "vramGb": 24,
+            "reliability": 0.9879106,
+            "geo": "Japan, JP"
+          },
+          {
+            "id": 36597019,
+            "gpu": "RTX 4090",
+            "num_gpus": 2,
+            "dph": 0.6679,
+            "dlperf": 162.1,
+            "vramGb": 24,
+            "reliability": 0.9971243,
+            "geo": "Taiwan, TW"
+          }
+        ]
+      },
+      "RTX3090_1x": {
+        "available": 36,
+        "priceUsdPerHr": {
+          "count": 36,
+          "min": 0.0782,
+          "p25": 0.1344,
+          "median": 0.16,
+          "p75": 0.2158,
+          "max": 0.2911
+        },
+        "dlperf": {
+          "count": 36,
+          "min": 36.2336,
+          "p25": 44.3222,
+          "median": 44.3647,
+          "p75": 44.6549,
+          "max": 46.1991
+        },
+        "dlperfPerUsd": {
+          "count": 36,
+          "min": 142.9937,
+          "p25": 204.5328,
+          "median": 277.2589,
+          "p75": 331.9722,
+          "max": 562.3286
+        },
+        "vramGbPerCard": {
+          "count": 36,
+          "min": 23.9883,
+          "p25": 24,
+          "median": 24,
+          "p75": 24,
+          "max": 24
+        },
+        "sample": [
+          {
+            "id": 30923929,
+            "gpu": "RTX 3090",
+            "num_gpus": 1,
+            "dph": 0.0782,
+            "dlperf": 44,
+            "vramGb": 24,
+            "reliability": 0.9900022,
+            "geo": ", CN"
+          },
+          {
+            "id": 43824380,
+            "gpu": "RTX 3090",
+            "num_gpus": 1,
+            "dph": 0.1163,
+            "dlperf": 44.4,
+            "vramGb": 24,
+            "reliability": 0.9888935,
+            "geo": ", US"
+          },
+          {
+            "id": 43751729,
+            "gpu": "RTX 3090",
+            "num_gpus": 1,
+            "dph": 0.1163,
+            "dlperf": 44.4,
+            "vramGb": 24,
+            "reliability": 0.9838162,
+            "geo": ", US"
+          }
+        ]
+      }
+    }
+  },
+  "clore": {
+    "provider": "clore",
+    "totalServers": 2040,
+    "availableServers": 1193,
+    "byTarget": {
+      "L40_1x": {
+        "available": 0,
+        "withUsdPrice": 0,
+        "priceUsdPerHr": null,
+        "reliability": null,
+        "sample": []
+      },
+      "L40S_1x": {
+        "available": 1,
+        "withUsdPrice": 1,
+        "priceUsdPerHr": {
+          "count": 1,
+          "min": 12,
+          "p25": 12,
+          "median": 12,
+          "p75": 12,
+          "max": 12
+        },
+        "reliability": {
+          "count": 1,
+          "min": 1,
+          "p25": 1,
+          "median": 1,
+          "p75": 1,
+          "max": 1
+        },
+        "sample": [
+          {
+            "id": 99920,
+            "gpu": [
+              " L40S"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00019273,
+                "CLORE-Blockchain": 10029.4,
+                "USD-Blockchain": 12
+              },
+              "spot": {
+                "bitcoin": 0.00012849,
+                "CLORE-Blockchain": 6686.27,
+                "USD-Blockchain": 8
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 12,
+                  "spot": 8
+                },
+                "bitcoin": {
+                  "on_demand": 12,
+                  "spot": 8
+                }
+              },
+              "usd": {
+                "on_demand_btc": 12.000121769711216,
+                "on_demand_clore": 11.999996406623854,
+                "on_demand_usd": 12,
+                "spot": 0
+              }
+            },
+            "reliability": 1,
+            "cc": "DE"
+          }
+        ]
+      },
+      "A6000_1x": {
+        "available": 2,
+        "withUsdPrice": 2,
+        "priceUsdPerHr": {
+          "count": 2,
+          "min": 6,
+          "p25": 6.575,
+          "median": 7.15,
+          "p75": 7.725,
+          "max": 8.3
+        },
+        "reliability": {
+          "count": 2,
+          "min": 0.8195,
+          "p25": 0.8363,
+          "median": 0.8531,
+          "p75": 0.8699,
+          "max": 0.8867
+        },
+        "sample": [
+          {
+            "id": 111327,
+            "gpu": [
+              " RTX A6000"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00009636,
+                "CLORE-Blockchain": 5014.7,
+                "USD-Blockchain": 6
+              },
+              "spot": {
+                "bitcoin": 0.00009636,
+                "CLORE-Blockchain": 5014.7,
+                "USD-Blockchain": 6
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 6,
+                  "spot": 6
+                },
+                "bitcoin": {
+                  "on_demand": 6,
+                  "spot": 6
+                }
+              },
+              "usd": {
+                "on_demand_btc": 5.999749565347235,
+                "on_demand_clore": 5.999998203311927,
+                "on_demand_usd": 6,
+                "spot": 0
+              }
+            },
+            "reliability": 0.8195,
+            "cc": "KR"
+          },
+          {
+            "id": 107547,
+            "gpu": [
+              " RTX A6000"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0001333,
+                "CLORE-Blockchain": 6937,
+                "USD-Blockchain": 8.3
+              },
+              "spot": {
+                "bitcoin": 0.0001333,
+                "CLORE-Blockchain": 6937,
+                "USD-Blockchain": 8.3
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 8.3,
+                  "spot": 8.3
+                },
+                "bitcoin": {
+                  "on_demand": 8.3,
+                  "spot": 8.3
+                }
+              },
+              "usd": {
+                "on_demand_btc": 8.299778093200356,
+                "on_demand_clore": 8.29999552044486,
+                "on_demand_usd": 8.3,
+                "spot": 0
+              }
+            },
+            "reliability": 0.8867,
+            "cc": "CN"
+          }
+        ]
+      },
+      "RTX6000_ADA_1x": {
+        "available": 1,
+        "withUsdPrice": 1,
+        "priceUsdPerHr": {
+          "count": 1,
+          "min": 7,
+          "p25": 7,
+          "median": 7,
+          "p75": 7,
+          "max": 7
+        },
+        "reliability": {
+          "count": 1,
+          "min": 0.1779,
+          "p25": 0.1779,
+          "median": 0.1779,
+          "p75": 0.1779,
+          "max": 0.1779
+        },
+        "sample": [
+          {
+            "id": 112416,
+            "gpu": [
+              " RTX 6000 Ada Generation"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00011242,
+                "CLORE-Blockchain": 5850.49,
+                "USD-Blockchain": 7
+              },
+              "spot": {
+                "bitcoin": 0.00011242,
+                "CLORE-Blockchain": 5850.49,
+                "USD-Blockchain": 7
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 7,
+                  "spot": 7
+                },
+                "bitcoin": {
+                  "on_demand": 7,
+                  "spot": 7
+                }
+              },
+              "usd": {
+                "on_demand_btc": 6.999707826238441,
+                "on_demand_clore": 7.000005880410472,
+                "on_demand_usd": 7,
+                "spot": 0
+              }
+            },
+            "reliability": 0.1779,
+            "cc": "KR"
+          }
+        ]
+      },
+      "RTX5090_1x": {
+        "available": 106,
+        "withUsdPrice": 101,
+        "priceUsdPerHr": {
+          "count": 101,
+          "min": 4.5,
+          "p25": 7,
+          "median": 8.7,
+          "p75": 11.75,
+          "max": 70
+        },
+        "reliability": {
+          "count": 106,
+          "min": 0.0354,
+          "p25": 0.9476,
+          "median": 0.999,
+          "p75": 1,
+          "max": 1
+        },
+        "sample": [
+          {
+            "id": 112567,
+            "gpu": [
+              " RTX 5090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00007516,
+                "CLORE-Blockchain": 3911.47,
+                "USD-Blockchain": 4.68
+              },
+              "spot": {
+                "bitcoin": 0.00007516,
+                "CLORE-Blockchain": 3911.47,
+                "USD-Blockchain": 4.68
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 4.68,
+                  "spot": 4.68
+                },
+                "bitcoin": {
+                  "on_demand": 4.68,
+                  "spot": 4.68
+                }
+              },
+              "usd": {
+                "on_demand_btc": 4.6797548498495045,
+                "on_demand_clore": 4.680003384511238,
+                "on_demand_usd": 4.68,
+                "spot": 0
+              }
+            },
+            "reliability": 0.0354,
+            "cc": "ET"
+          },
+          {
+            "id": 112524,
+            "gpu": [
+              " RTX 5090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 6753.13,
+                "USD-Blockchain": 10
+              },
+              "spot": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 6753.13,
+                "USD-Blockchain": 8.08
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 8.08,
+                  "spot": 8.08
+                }
+              },
+              "usd": {
+                "on_demand_btc": 20.754633891473762,
+                "on_demand_clore": 8.079998378114718,
+                "on_demand_usd": 10,
+                "spot": 0
+              }
+            },
+            "reliability": 0.0709,
+            "cc": "UA"
+          },
+          {
+            "id": 112368,
+            "gpu": [
+              " RTX 5090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 6686.27,
+                "USD-Blockchain": 8
+              },
+              "spot": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 6686.27,
+                "USD-Blockchain": 8
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 8,
+                  "spot": 8
+                }
+              },
+              "usd": {
+                "on_demand_btc": 20.754633891473762,
+                "on_demand_clore": 8.000001592689182,
+                "on_demand_usd": 8,
+                "spot": 0
+              }
+            },
+            "reliability": 0.2143,
+            "cc": "UA"
+          },
+          {
+            "id": 112268,
+            "gpu": [
+              " RTX 5090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00011242,
+                "CLORE-Blockchain": 5850.49,
+                "USD-Blockchain": 7
+              },
+              "spot": {
+                "bitcoin": 0.00010857,
+                "CLORE-Blockchain": 5649.9,
+                "USD-Blockchain": 6.76
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 7,
+                  "spot": 6.76
+                },
+                "bitcoin": {
+                  "on_demand": 7,
+                  "spot": 6.76
+                }
+              },
+              "usd": {
+                "on_demand_btc": 6.999707826238441,
+                "on_demand_clore": 7.000005880410472,
+                "on_demand_usd": 7,
+                "spot": 0
+              }
+            },
+            "reliability": 0.273,
+            "cc": "PK"
+          },
+          {
+            "id": 112223,
+            "gpu": [
+              " RTX 5090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 7104.16,
+                "USD-Blockchain": 8.5
+              },
+              "spot": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 6686.27,
+                "USD-Blockchain": 8
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 8.5,
+                  "spot": 8
+                }
+              },
+              "usd": {
+                "on_demand_btc": 20.754633891473762,
+                "on_demand_clore": 8.499999448828536,
+                "on_demand_usd": 8.5,
+                "spot": 0
+              }
+            },
+            "reliability": 0.3213,
+            "cc": "UA"
+          }
+        ]
+      },
+      "RTX4090_1x": {
+        "available": 84,
+        "withUsdPrice": 83,
+        "priceUsdPerHr": {
+          "count": 83,
+          "min": 1.36,
+          "p25": 5,
+          "median": 7.84,
+          "p75": 10,
+          "max": 56
+        },
+        "reliability": {
+          "count": 84,
+          "min": 0.5357,
+          "p25": 0.9814,
+          "median": 0.9926,
+          "p75": 0.9991,
+          "max": 1
+        },
+        "sample": [
+          {
+            "id": 111947,
+            "gpu": [
+              " RTX 4090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00007227,
+                "CLORE-Blockchain": 3343.13,
+                "USD-Blockchain": 4.5
+              },
+              "spot": {
+                "bitcoin": 0.00005942,
+                "CLORE-Blockchain": 2841.66,
+                "USD-Blockchain": 3.7
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 4,
+                  "spot": 3.4
+                },
+                "bitcoin": {
+                  "on_demand": 4.5,
+                  "spot": 3.7
+                }
+              },
+              "usd": {
+                "on_demand_btc": 4.499812174010426,
+                "on_demand_clore": 3.999994813934673,
+                "on_demand_usd": 4.5,
+                "spot": 0
+              }
+            },
+            "reliability": 0.5357,
+            "cc": "UA"
+          },
+          {
+            "id": 111444,
+            "gpu": [
+              " RTX 4090 D"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00016061,
+                "CLORE-Blockchain": 8357.84,
+                "USD-Blockchain": 10
+              },
+              "spot": {
+                "bitcoin": 0.00006906,
+                "CLORE-Blockchain": 3593.87,
+                "USD-Blockchain": 4.3
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 10,
+                  "spot": 4.3
+                },
+                "bitcoin": {
+                  "on_demand": 10,
+                  "spot": 4.3
+                }
+              },
+              "usd": {
+                "on_demand_btc": 10.000205247928802,
+                "on_demand_clore": 10.000004982066438,
+                "on_demand_usd": 10,
+                "spot": 0
+              }
+            },
+            "reliability": 0.7732,
+            "cc": "US"
+          },
+          {
+            "id": 111414,
+            "gpu": [
+              " RTX 4090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0000803,
+                "CLORE-Blockchain": 4178.92,
+                "USD-Blockchain": 5
+              },
+              "spot": {
+                "bitcoin": 0.0000795,
+                "CLORE-Blockchain": 4137.13,
+                "USD-Blockchain": 4.95
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 5,
+                  "spot": 4.95
+                },
+                "bitcoin": {
+                  "on_demand": 5,
+                  "spot": 4.95
+                }
+              },
+              "usd": {
+                "on_demand_btc": 4.999791304456029,
+                "on_demand_clore": 5.000002491033219,
+                "on_demand_usd": 5,
+                "spot": 0
+              }
+            },
+            "reliability": 0.7632,
+            "cc": "PT"
+          },
+          {
+            "id": 111002,
+            "gpu": [
+              " RTX 4090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00014776,
+                "CLORE-Blockchain": 7689.21,
+                "USD-Blockchain": 9.2
+              },
+              "spot": {
+                "bitcoin": 0.00013009,
+                "CLORE-Blockchain": 6769.85,
+                "USD-Blockchain": 8.1
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 9.2,
+                  "spot": 8.1
+                },
+                "bitcoin": {
+                  "on_demand": 9.2,
+                  "spot": 8.1
+                }
+              },
+              "usd": {
+                "on_demand_btc": 9.20011411141249,
+                "on_demand_clore": 9.200001233351568,
+                "on_demand_usd": 9.2,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9863,
+            "cc": "BG"
+          },
+          {
+            "id": 110602,
+            "gpu": [
+              " RTX 4090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00003052,
+                "CLORE-Blockchain": 1587.99,
+                "USD-Blockchain": 1.9
+              },
+              "spot": {
+                "bitcoin": 0.00003052,
+                "CLORE-Blockchain": 1587.99,
+                "USD-Blockchain": 1.9
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 1.9,
+                  "spot": 1.9
+                },
+                "bitcoin": {
+                  "on_demand": 1.9,
+                  "spot": 1.9
+                }
+              },
+              "usd": {
+                "on_demand_btc": 1.9002942791033377,
+                "on_demand_clore": 1.9000014251854165,
+                "on_demand_usd": 1.9,
+                "spot": 0
+              }
+            },
+            "reliability": 0.7681,
+            "cc": "US"
+          }
+        ]
+      },
+      "RTX4090_2x": {
+        "available": 15,
+        "withUsdPrice": 15,
+        "priceUsdPerHr": {
+          "count": 15,
+          "min": 3,
+          "p25": 10,
+          "median": 13,
+          "p75": 14.5,
+          "max": 20
+        },
+        "reliability": {
+          "count": 15,
+          "min": 0.3527,
+          "p25": 0.9776,
+          "median": 0.9991,
+          "p75": 1,
+          "max": 1
+        },
+        "sample": [
+          {
+            "id": 111238,
+            "gpu": [
+              " RTX 4090",
+              " RTX 4090"
+            ],
+            "num_gpus": 2,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00022485,
+                "CLORE-Blockchain": 11700.97,
+                "USD-Blockchain": 14
+              },
+              "spot": {
+                "bitcoin": 0.00022485,
+                "CLORE-Blockchain": 11700.97,
+                "USD-Blockchain": 14
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 14,
+                  "spot": 14
+                },
+                "bitcoin": {
+                  "on_demand": 14,
+                  "spot": 14
+                }
+              },
+              "usd": {
+                "on_demand_btc": 14.000038291493626,
+                "on_demand_clore": 13.99999979600111,
+                "on_demand_usd": 14,
+                "spot": 0
+              }
+            },
+            "reliability": 0.8916,
+            "cc": "UA"
+          },
+          {
+            "id": 108701,
+            "gpu": [
+              " RTX 4090",
+              " RTX 4090"
+            ],
+            "num_gpus": 2,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00024091,
+                "CLORE-Blockchain": 12536.75,
+                "USD-Blockchain": 15
+              },
+              "spot": {
+                "bitcoin": 0.00024091,
+                "CLORE-Blockchain": 12536.75,
+                "USD-Blockchain": 15
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 15,
+                  "spot": 15
+                },
+                "bitcoin": {
+                  "on_demand": 15,
+                  "spot": 15
+                }
+              },
+              "usd": {
+                "on_demand_btc": 14.999996552384832,
+                "on_demand_clore": 14.999995508279818,
+                "on_demand_usd": 15,
+                "spot": 0
+              }
+            },
+            "reliability": 1,
+            "cc": "BY"
+          },
+          {
+            "id": 107491,
+            "gpu": [
+              " RTX 4090",
+              " RTX 4090"
+            ],
+            "num_gpus": 2,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00014455,
+                "CLORE-Blockchain": 7522.05,
+                "USD-Blockchain": 9
+              },
+              "spot": {
+                "bitcoin": 0.00014455,
+                "CLORE-Blockchain": 7522.05,
+                "USD-Blockchain": 9
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 9,
+                  "spot": 9
+                },
+                "bitcoin": {
+                  "on_demand": 9,
+                  "spot": 9
+                }
+              },
+              "usd": {
+                "on_demand_btc": 9.000246987037595,
+                "on_demand_clore": 8.999997304967891,
+                "on_demand_usd": 9,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9999,
+            "cc": "UA"
+          },
+          {
+            "id": 106216,
+            "gpu": [
+              " RTX 4090",
+              " RTX 4090"
+            ],
+            "num_gpus": 2,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00024091,
+                "CLORE-Blockchain": 12536.75,
+                "USD-Blockchain": 15
+              },
+              "spot": {
+                "bitcoin": 0.00022485,
+                "CLORE-Blockchain": 11700.97,
+                "USD-Blockchain": 14
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 15,
+                  "spot": 14
+                },
+                "bitcoin": {
+                  "on_demand": 15,
+                  "spot": 14
+                }
+              },
+              "usd": {
+                "on_demand_btc": 14.999996552384832,
+                "on_demand_clore": 14.999995508279818,
+                "on_demand_usd": 15,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9999,
+            "cc": "NL"
+          },
+          {
+            "id": 105609,
+            "gpu": [
+              "RTX 4090",
+              "RTX 3080"
+            ],
+            "num_gpus": 2,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00014455,
+                "CLORE-Blockchain": 7522.05,
+                "USD-Blockchain": 3
+              },
+              "spot": {
+                "bitcoin": 0.00014455,
+                "CLORE-Blockchain": 7522.05,
+                "USD-Blockchain": 2
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 9,
+                  "spot": 9
+                },
+                "bitcoin": {
+                  "on_demand": 9,
+                  "spot": 9
+                }
+              },
+              "usd": {
+                "on_demand_btc": 9.000246987037595,
+                "on_demand_clore": 8.999997304967891,
+                "on_demand_usd": 3,
+                "spot": 0
+              }
+            },
+            "reliability": 0.3527,
+            "cc": "RU"
+          }
+        ]
+      },
+      "RTX3090_1x": {
+        "available": 61,
+        "withUsdPrice": 60,
+        "priceUsdPerHr": {
+          "count": 60,
+          "min": 2.15,
+          "p25": 3.5,
+          "median": 3.5,
+          "p75": 5,
+          "max": 55
+        },
+        "reliability": {
+          "count": 61,
+          "min": 0.0331,
+          "p25": 0.9919,
+          "median": 0.9981,
+          "p75": 0.9982,
+          "max": 1
+        },
+        "sample": [
+          {
+            "id": 112576,
+            "gpu": [
+              " RTX 3090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00006424,
+                "CLORE-Blockchain": 3343.13,
+                "USD-Blockchain": 4
+              },
+              "spot": {
+                "bitcoin": 0.00006424,
+                "CLORE-Blockchain": 3343.13,
+                "USD-Blockchain": 4
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 4,
+                  "spot": 4
+                },
+                "bitcoin": {
+                  "on_demand": 4,
+                  "spot": 4
+                }
+              },
+              "usd": {
+                "on_demand_btc": 3.999833043564823,
+                "on_demand_clore": 3.999994813934673,
+                "on_demand_usd": 4,
+                "spot": 0
+              }
+            },
+            "reliability": 0.0331,
+            "cc": "JP"
+          },
+          {
+            "id": 111982,
+            "gpu": [
+              " RTX 3090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00003565,
+                "CLORE-Blockchain": 1855.44,
+                "USD-Blockchain": 2.22
+              },
+              "spot": {
+                "bitcoin": 0.00003565,
+                "CLORE-Blockchain": 1855.44,
+                "USD-Blockchain": 2.22
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 2.22,
+                  "spot": 2.22
+                },
+                "bitcoin": {
+                  "on_demand": 2.22,
+                  "spot": 2.22
+                }
+              },
+              "usd": {
+                "on_demand_btc": 2.219708094693119,
+                "on_demand_clore": 2.220000531707397,
+                "on_demand_usd": 2.22,
+                "spot": 0
+              }
+            },
+            "reliability": 0.5,
+            "cc": "SK"
+          },
+          {
+            "id": 109454,
+            "gpu": [
+              " RTX 3090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00034273,
+                "CLORE-Blockchain": 8357.84,
+                "USD-Blockchain": 5
+              },
+              "spot": {
+                "bitcoin": 0.00034273,
+                "CLORE-Blockchain": 8357.84,
+                "USD-Blockchain": 5
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 10,
+                  "spot": 10
+                },
+                "bitcoin": {
+                  "on_demand": 21.34,
+                  "spot": 21.34
+                }
+              },
+              "usd": {
+                "on_demand_btc": 21.339707020874407,
+                "on_demand_clore": 10.000004982066438,
+                "on_demand_usd": 5,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9926,
+            "cc": "MD"
+          },
+          {
+            "id": 109451,
+            "gpu": [
+              " RTX 3090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 8357.84,
+                "USD-Blockchain": 5
+              },
+              "spot": {
+                "bitcoin": 0.0003333333333333333,
+                "CLORE-Blockchain": 8357.84,
+                "USD-Blockchain": 5
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 10,
+                  "spot": 10
+                }
+              },
+              "usd": {
+                "on_demand_btc": 20.754633891473762,
+                "on_demand_clore": 10.000004982066438,
+                "on_demand_usd": 5,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9925,
+            "cc": "MD"
+          },
+          {
+            "id": 109068,
+            "gpu": [
+              " RTX 3090"
+            ],
+            "num_gpus": 1,
+            "price": {
+              "on_demand": {
+                "bitcoin": 0.00003855,
+                "CLORE-Blockchain": 2005.88,
+                "USD-Blockchain": 2.4
+              },
+              "spot": {
+                "bitcoin": 0.00003855,
+                "CLORE-Blockchain": 2005.88,
+                "USD-Blockchain": 2.4
+              },
+              "original_usd": {
+                "CLORE-Blockchain": {
+                  "on_demand": 2.4,
+                  "spot": 2.4
+                },
+                "bitcoin": {
+                  "on_demand": 2.4,
+                  "spot": 2.4
+                }
+              },
+              "usd": {
+                "on_demand_btc": 2.400273409548941,
+                "on_demand_clore": 2.3999992813247712,
+                "on_demand_usd": 2.4,
+                "spot": 0
+              }
+            },
+            "reliability": 0.9994,
+            "cc": "RU"
+          }
+        ]
+      }
+    }
+  }
+}

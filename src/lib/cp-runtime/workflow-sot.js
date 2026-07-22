@@ -54,6 +54,7 @@ export async function createCpWorkflow(supabaseAdmin, input) {
  *   settings?: Record<string, unknown>;
  *   status?: 'draft' | 'ready' | 'archived';
  *   metadata?: Record<string, unknown>;
+ *   expectedRevision?: number | null;
  * }} input
  */
 export async function upsertCpWorkflowDocument(supabaseAdmin, input) {
@@ -70,6 +71,18 @@ export async function upsertCpWorkflowDocument(supabaseAdmin, input) {
 
   if (loadErr) throw new Error(loadErr.message || 'load workflow failed');
   if (!existing) throw new Error('Workflow not found');
+
+  if (input.expectedRevision != null && Number.isFinite(Number(input.expectedRevision))) {
+    const expected = Number(input.expectedRevision);
+    const current = Number(existing.revision ?? 1);
+    if (expected !== current) {
+      const err = new Error('Workflow revision conflict');
+      err.code = 'REVISION_CONFLICT';
+      err.currentRevision = current;
+      err.workflow = existing;
+      throw err;
+    }
+  }
 
   const nextDoc =
     input.document && typeof input.document === 'object' ? input.document : existing.document;

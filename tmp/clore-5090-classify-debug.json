@@ -1,0 +1,229 @@
+{
+  "hit5090": 229,
+  "ok": 152,
+  "samples": [
+    {
+      "id": 112658,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "2x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.0357,
+      "classified": null
+    },
+    {
+      "id": 112567,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.1064,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 112368,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.2857,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 112331,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "2x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.2121,
+      "classified": null
+    },
+    {
+      "id": 112268,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.3444,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 111888,
+      "rented": true,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "5x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.2565,
+      "classified": null
+    },
+    {
+      "id": 111768,
+      "rented": true,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.6358,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 111665,
+      "rented": true,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.7133,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 111485,
+      "rented": true,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.7271,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 111341,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.8929,
+      "classified": {
+        "numGpus": 1,
+        "gpuType": "RTX 5090",
+        "hostGpuCount": 1
+      }
+    },
+    {
+      "id": 111339,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "2x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.8929,
+      "classified": null
+    },
+    {
+      "id": 111316,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "10x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.8921,
+      "classified": null
+    },
+    {
+      "id": 111242,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "10x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.9126,
+      "classified": null
+    },
+    {
+      "id": 111232,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090 Laptop GPU"
+      ],
+      "gpu": "1x NVIDIA GeForce RTX 5090 Laptop GPU",
+      "gpuram": 23,
+      "reliability": 0.636,
+      "classified": null
+    },
+    {
+      "id": 111135,
+      "rented": false,
+      "gpu_array": [
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090",
+        " RTX 5090"
+      ],
+      "gpu": "6x NVIDIA GeForce RTX 5090",
+      "gpuram": 31,
+      "reliability": 0.9636,
+      "classified": null
+    }
+  ]
+}
