@@ -39,6 +39,12 @@ function loadEnv() {
 }
 
 loadEnv();
+// EnvironmentFile with Windows CRLF leaves trailing \r on values — break === 'true'.
+for (const [k, v] of Object.entries(process.env)) {
+  if (typeof v === 'string' && v.includes('\r')) {
+    process.env[k] = v.replace(/\r/g, '');
+  }
+}
 process.env.GPUVIETNAM_LIFECYCLE_WORKER = '1';
 process.env.GPUVIETNAM_LIFECYCLE_OWNER =
   process.env.GPUVIETNAM_LIFECYCLE_OWNER ||
@@ -59,6 +65,25 @@ async function main() {
   initLogging();
   logStartupDiagnostics();
   const log = logger('worker');
+  const cloreOnly =
+    String(process.env.GPU_CLORE_ONLY ?? '')
+      .replace(/\r/g, '')
+      .trim()
+      .toLowerCase() === 'true';
+  log.info(
+    {
+      GPU_CLORE_ONLY: process.env.GPU_CLORE_ONLY ?? null,
+      cloreOnlyActive: cloreOnly,
+      GPU_VAST_ONLY: process.env.GPU_VAST_ONLY ?? null,
+    },
+    'lifecycle worker provider flags',
+  );
+  if (!cloreOnly) {
+    log.warn(
+      { GPU_CLORE_ONLY: process.env.GPU_CLORE_ONLY ?? null },
+      'GPU_CLORE_ONLY not active — Start may rent Vast (disk-only risk)',
+    );
+  }
 
   const { getSupabaseAdmin } = await import('../src/lib/supabase-admin.js');
   const supabaseAdmin = getSupabaseAdmin();

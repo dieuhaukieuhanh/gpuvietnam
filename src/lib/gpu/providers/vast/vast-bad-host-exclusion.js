@@ -33,6 +33,9 @@ function ttlMsForReason(reasonCategory, reasonText) {
     return table[cat];
   }
   const text = String(reasonText || '').toLowerCase();
+  if (/disk_only|struck through|storage.?only/.test(text) && Number.isFinite(table.disk_only)) {
+    return table.disk_only;
+  }
   if (/ssh|exec/.test(text) && Number.isFinite(table.ssh_exec)) return table.ssh_exec;
   if (/http_endpoint/.test(text) && Number.isFinite(table.http_endpoint)) {
     return table.http_endpoint;

@@ -235,12 +235,18 @@ describe('provider-routing', () => {
       ['vast', 'clore'],
     );
     const prev = process.env.GPU_CLORE_ONLY;
-    process.env.GPU_CLORE_ONLY = 'true';
     try {
+      process.env.GPU_CLORE_ONLY = 'true';
       assert.deepEqual(
         resolveProviderAttemptOrder({ gpuLine: 'rtx5090_1x' }),
         ['vast'],
       );
+      assert.deepEqual(
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
+        ['clore'],
+      );
+      // Windows CRLF on EnvironmentFile must not disable Clore-only.
+      process.env.GPU_CLORE_ONLY = 'true\r';
       assert.deepEqual(
         resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
         ['clore'],

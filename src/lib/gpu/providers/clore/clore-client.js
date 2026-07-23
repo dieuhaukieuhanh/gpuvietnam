@@ -751,7 +751,11 @@ export class CloreClient {
       droppedBlockedRegion = 0,
     } = filterCloreOffersByBadHostExclusion(band.offers, gpuLine);
 
-    const cloreOnly = process.env.GPU_CLORE_ONLY === 'true';
+    const cloreOnly =
+      String(process.env.GPU_CLORE_ONLY ?? '')
+        .replace(/\r/g, '')
+        .trim()
+        .toLowerCase() === 'true';
     const maxCandidates =
       Number(options.maxCandidates) > 0
         ? Math.floor(Number(options.maxCandidates))
@@ -1043,7 +1047,11 @@ export class CloreClient {
 
     await tick('marketplace_fetch');
     // Clore-only: uptime ≥ 98% (same as shared OFFER_SELECTION), more try-list depth.
-    const cloreOnly = process.env.GPU_CLORE_ONLY === 'true';
+    const cloreOnly =
+      String(process.env.GPU_CLORE_ONLY ?? '')
+        .replace(/\r/g, '')
+        .trim()
+        .toLowerCase() === 'true';
     const cloreOnlyOpts = cloreOnly
       ? { minUptimePercent: OFFER_SELECTION.minUptimePercent, maxCandidates: 12 }
       : {};

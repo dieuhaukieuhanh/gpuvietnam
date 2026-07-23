@@ -6,6 +6,7 @@ import {
   filterVastOffersBySanity,
   formatVastBadHostError,
   isVastBadHostStatus,
+  isVastDiskOnlyBilling,
   isVastInstanceProvisionProgress,
   vastGpuNameMatchesLine,
   unwrapVastInstanceRecord,
@@ -154,6 +155,63 @@ describe('vast-offer-sanity bad host', () => {
     assert.equal(
       isVastBadHostStatus({ intended_status: 'running', actual_status: 'stopped' }),
       true,
+    );
+    assert.equal(isVastDiskOnlyBilling({ next_state: 'stopped', actual_status: 'running' }), true);
+    assert.equal(isVastBadHostStatus({ next_state: 'stopped', actual_status: 'running' }), true);
+  });
+
+  it('detects console-style GPU struck-through billing as bad host', () => {
+    const diskOnly = {
+      actual_status: 'running',
+      dph_base: 0.4,
+      storage_total_cost: 0.023,
+      instance: {
+        gpuCostPerHour: 0.4,
+        diskHour: 0.023,
+        totalHour: 0.423,
+        discountedTotalPerHour: 0.023,
+      },
+    };
+    assert.equal(isVastDiskOnlyBilling(diskOnly), true);
+    assert.equal(isVastBadHostStatus(diskOnly), true);
+
+    // Live case 2026-07-23: gpuCostPerHour=0, billed=disk only, dph_base still advertised.
+    const gpuCostZero = {
+      actual_status: 'loading',
+      dph_base: 0.333,
+      storage_total_cost: 0.022,
+      instance: {
+        gpuCostPerHour: 0,
+        diskHour: 0.022,
+        totalHour: 0.022,
+        discountedTotalPerHour: 0.022,
+      },
+    };
+    assert.equal(isVastDiskOnlyBilling(gpuCostZero), true);
+    assert.equal(isVastBadHostStatus(gpuCostZero), true);
+
+    const fullGpu = {
+      actual_status: 'running',
+      dph_base: 0.4,
+      storage_total_cost: 0.023,
+      instance: {
+        gpuCostPerHour: 0.4,
+        diskHour: 0.023,
+        totalHour: 0.423,
+        discountedTotalPerHour: 0.423,
+      },
+    };
+    assert.equal(isVastDiskOnlyBilling(fullGpu), false);
+    assert.equal(isVastBadHostStatus(fullGpu), false);
+  });
+
+  it('rejects offers with explicit dph_base=0 (disk-only ask)', () => {
+    assert.equal(
+      evaluateVastOfferSanity(
+        normalizeVastOffer(vastRaw({ dph_base: 0, dph_total: 0.25, dlperf: 40 })),
+        'rtx3090',
+      ).reason,
+      'no_gpu',
     );
   });
 

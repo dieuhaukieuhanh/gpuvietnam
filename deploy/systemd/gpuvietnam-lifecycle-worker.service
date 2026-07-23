@@ -14,7 +14,11 @@ EnvironmentFile=-/etc/gpuvietnam/lifecycle.env
 Environment=HOME=/opt/gpuvietnam/tmp
 Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
 Environment=TMPDIR=/tmp
-ExecStart=/usr/bin/node --import ./scripts/register-src-alias.mjs scripts/lifecycle-worker.mjs
+# P0-A / Clore-stable path: force Clore-only (overrides lifecycle.env if missing/CRLF-broken).
+# Remove this line only when intentionally enabling Vast again.
+Environment=GPU_CLORE_ONLY=true
+# --experimental-strip-types: worker graph may import .ts helpers (e.g. @/lib/routes)
+ExecStart=/usr/bin/node --experimental-strip-types --import ./scripts/register-src-alias.mjs scripts/lifecycle-worker.mjs
 Restart=always
 RestartSec=5
 KillSignal=SIGTERM

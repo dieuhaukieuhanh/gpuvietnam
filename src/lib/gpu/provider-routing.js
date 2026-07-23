@@ -18,6 +18,14 @@ import {
 /** @type {number} */
 let routingCursor = 0;
 
+/** True when env flag is set (tolerates CRLF / case / surrounding spaces). */
+export function isEnvFlagTrue(name) {
+  return String(process.env[name] ?? '')
+    .replace(/\r/g, '')
+    .trim()
+    .toLowerCase() === 'true';
+}
+
 /**
  * Next provider in the Vast x4 -> Clore x1 rotation.
  * @returns {'clore'|'vast'}
@@ -73,7 +81,7 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
     return filtered.length ? filtered : ['vast'];
   };
 
-  if (process.env.GPU_CLORE_ONLY === 'true') {
+  if (isEnvFlagTrue('GPU_CLORE_ONLY')) {
     if (!cloreAllowed) {
       logger('provider').warn(
         {
@@ -87,7 +95,7 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
     }
     return ['clore'];
   }
-  if (process.env.GPU_VAST_ONLY === 'true') {
+  if (isEnvFlagTrue('GPU_VAST_ONLY')) {
     return ['vast'];
   }
   if (forcedPrimary === 'clore' || forcedPrimary === 'vast') {
@@ -259,7 +267,7 @@ export async function provisionWithProviderFailover(options) {
   });
   // Clore-only: keep the real provider error (e.g. code 1 / 429) for diagnosis
   // instead of collapsing everything to the generic stock message.
-  if (process.env.GPU_CLORE_ONLY === 'true' && lastError) {
+  if (isEnvFlagTrue('GPU_CLORE_ONLY') && lastError) {
     throw lastError;
   }
   throw new GPUProviderError(NO_AVAILABLE_WORKSTATION_MESSAGE, {

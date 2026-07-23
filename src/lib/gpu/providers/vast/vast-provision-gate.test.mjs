@@ -32,5 +32,9 @@ describe('classifyVastGateFailReason', () => {
     assert.equal(classifyVastGateFailReason('nvidia_smi: GPU name mismatch'), 'nvidia_smi');
     assert.equal(classifyVastGateFailReason('cuda: smoke failed'), 'cuda');
     assert.equal(classifyVastGateFailReason('comfy_workflow timeout'), 'comfy_workflow');
+    assert.equal(
+      classifyVastGateFailReason('disk_only_billing (GPU struck through / stopped)'),
+      'disk_only',
+    );
   });
 });

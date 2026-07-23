@@ -44,6 +44,9 @@ export function normalizeComfyBaseUrl(url) {
  */
 export function classifyProvisionGateFailReason(reason) {
   const s = String(reason ?? '').toLowerCase();
+  if (s.includes('disk_only') || s.includes('struck through') || s.includes('storage_only')) {
+    return 'disk_only';
+  }
   if (s.includes('http_endpoint') || (s.includes('endpoint') && !s.includes('ssh'))) {
     return 'http_endpoint';
   }

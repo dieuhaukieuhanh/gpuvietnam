@@ -118,6 +118,12 @@ export function evaluateVastOfferSanity(offer, gpuLine) {
     return { ok: false, reason: 'no_gpu' };
   }
 
+  // Explicit GPU $/hr = 0 (disk-only ask) — do not fall back to dph_total.
+  const explicitGpuHour = Number(raw.dph_base ?? raw.gpu_cost ?? raw.dph_gpu ?? NaN);
+  if (Number.isFinite(explicitGpuHour) && explicitGpuHour <= 0) {
+    return { ok: false, reason: 'no_gpu' };
+  }
+
   const dlperf = readVastDlperf(/** @type {Record<string, unknown>} */ (raw));
   if (VAST_OFFER_SANITY.requirePositiveDlperf && !(dlperf > 0)) {
     return { ok: false, reason: 'dlperf_nonpositive' };
@@ -242,6 +248,96 @@ export function unwrapVastInstanceRecord(payload) {
 }
 
 /**
+ * Read nested Vast price object (`instance` or `search`) when present.
+ * @param {Record<string, unknown>} record
+ * @param {'instance' | 'search'} key
+ * @returns {Record<string, unknown> | null}
+ */
+function readVastPriceBlock(record, key) {
+  const block = record[key];
+  return block && typeof block === 'object' ? /** @type {Record<string, unknown>} */ (block) : null;
+}
+
+/**
+ * True when Vast is only charging disk (GPU line struck through in console).
+ * Offer search cannot see this ahead of time — hosts advertise a GPU, then detach it.
+ *
+ * Signals (any one is enough):
+ * - status/cur/next is stopped (Vast bills storage only while stopped)
+ * - nested `instance` billed total ≈ diskHour while gpuCostPerHour is clearly higher
+ *
+ * @param {Record<string, unknown> | null | undefined} record
+ */
+export function isVastDiskOnlyBilling(record) {
+  if (!record || typeof record !== 'object') return false;
+
+  const actual = String(record.actual_status ?? record.cur_state ?? record.status ?? '').toLowerCase();
+  const cur = String(record.cur_state ?? '').toLowerCase();
+  const next = String(record.next_state ?? '').toLowerCase();
+  if (
+    actual.includes('stopped') ||
+    cur.includes('stopped') ||
+    next.includes('stopped')
+  ) {
+    return true;
+  }
+
+  const price = readVastPriceBlock(record, 'instance') || readVastPriceBlock(record, 'search');
+  const diskHour = Number(
+    price?.diskHour ?? record.storage_total_cost ?? record.storage_cost_hourly ?? NaN,
+  );
+  const gpuHour = Number(
+    price?.gpuCostPerHour ?? record.dph_base ?? record.gpu_cost ?? record.dph_gpu ?? NaN,
+  );
+  // Prefer the nested "what am I paying now" field when Vast populates it > 0.
+  const billedNow = Number(price?.discountedTotalPerHour ?? NaN);
+  const totalHour = Number(price?.totalHour ?? record.dph_total ?? NaN);
+
+  // Explicit GPU $/hr = 0 while disk is charging = console "On-Demand GPU" struck through.
+  if (
+    Number.isFinite(gpuHour) &&
+    gpuHour <= 0 &&
+    Number.isFinite(diskHour) &&
+    diskHour > 0
+  ) {
+    return true;
+  }
+
+  if (
+    Number.isFinite(billedNow) &&
+    billedNow > 0 &&
+    Number.isFinite(diskHour) &&
+    diskHour > 0
+  ) {
+    const epsilon = Math.max(0.005, diskHour * 0.25);
+    // Console: Total Cost == Disk row.
+    if (Math.abs(billedNow - diskHour) <= epsilon) {
+      if (!Number.isFinite(gpuHour) || gpuHour <= 0 || billedNow < gpuHour * 0.5) {
+        return true;
+      }
+    }
+  }
+
+  // Fallback: total ≈ disk only while advertised base GPU price exists on the ask.
+  const askGpu = Number(record.dph_base ?? NaN);
+  if (
+    Number.isFinite(totalHour) &&
+    totalHour > 0 &&
+    Number.isFinite(diskHour) &&
+    diskHour > 0 &&
+    Number.isFinite(askGpu) &&
+    askGpu > diskHour * 2
+  ) {
+    const epsilon = Math.max(0.005, diskHour * 0.25);
+    if (Math.abs(totalHour - diskHour) <= epsilon) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * True when Vast instance status indicates a dead GPU/container host.
  * @param {Record<string, unknown> | null | undefined} record
  */
@@ -274,13 +370,12 @@ export function isVastBadHostStatus(record) {
     return true;
   }
 
-  // Disk-only billing state on Vast: container halted, storage still charged.
-  // We always rent with target_state=running, so stopped is a failed provision.
-  if (actual === 'stopped' || actual.includes('stopped')) {
+  // Disk-only billing (GPU struck through in Vast price breakdown) — fail closed.
+  if (isVastDiskOnlyBilling(record)) {
     return true;
   }
 
-  if (intended === 'running' && (actual === 'stopped' || actual === 'exited' || actual === 'offline')) {
+  if (intended === 'running' && (actual === 'exited' || actual === 'offline')) {
     return true;
   }
 

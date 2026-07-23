@@ -258,6 +258,8 @@ export const VAST_OFFER_SANITY = {
     ssh_exec: 3 * 24 * 60 * 60 * 1000,
     port: 3 * 24 * 60 * 60 * 1000,
     http_endpoint: 3 * 24 * 60 * 60 * 1000,
+    /** GPU struck through / stopped storage-only billing after rent. */
+    disk_only: 12 * 60 * 60 * 1000,
     gpu_stats: 12 * 60 * 60 * 1000,
     nvidia_smi: 12 * 60 * 60 * 1000,
     cuda: 12 * 60 * 60 * 1000,

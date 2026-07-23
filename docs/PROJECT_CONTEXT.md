@@ -41,10 +41,12 @@
 
 | Khía cạnh | Mô tả |
 |-----------|--------|
-| **Mô hình kinh doanh** | Resell GPU cloud (hiện: **Vast.ai**) + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
+| **Mô hình kinh doanh** | Resell GPU marketplace + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
 | **Đối tượng chính** | Freelancer AI Art (~60%), sinh viên/người mới (~25%), agency nhỏ (~15%) |
-| **Điểm khác biệt (mục tiêu)** | Vào là chạy, workflow mẫu, model Việt hóa, Zalo, thanh toán chuyển khoản/Ví VNĐ |
-| **Backend GPU thực tế** | Vast.ai — thuê instance **theo giờ khi KH bật máy**, không pool GPU idle |
+| **Điểm khác biệt (mục tiêu)** | Workspace/workflow không phụ thuộc một GPU; failover compute; thanh toán VN |
+| **Backend GPU thực tế** | **Clore + Vast** (adapter); Go-Live/P0-A **ưu tiên Clore** (`GPU_CLORE_ONLY=true` trên VPS worker). Thuê theo giờ khi KH bật máy |
+| **Control Plane** | `gpuvietnam.com` (Vercel Next) — session, billing, enqueue start |
+| **Lifecycle worker** | VPS Linux always-on (`gpuvietnam-lifecycle-worker`) — claim/execute `user_start_provision` |
 
 ---
 
@@ -52,24 +54,27 @@
 
 | Hạng mục | Trạng thái |
 |----------|------------|
-| Next.js app (marketing + auth + checkout + dashboard + admin) | ✅ Production-ready |
-| Supabase Auth + 32 file SQL schema | ✅ Chạy thủ công trên Supabase |
+| Next.js app (marketing + auth + checkout + dashboard + admin) | ✅ Production (`gpuvietnam.com`) |
+| Supabase Auth + migrations (kể cả P0-A 0049) | ✅ |
 | Ví Nạp Trước, mua gói, tái tục, trial 3h | ✅ |
-| GPUService + VastProvider + start/stop machine | ✅ |
-| Billing theo phiên (combo giờ + hourly ví) | ✅ |
+| GPUService + Vast + **Clore** adapters | ✅ |
+| **CP/Runtime Architecture v2.0** | ✅ Frozen (ADR-005); Continuity A→B chứng minh trên Clore |
+| **P0-A durable Start** (enqueue + VPS worker) | 🟡 Code/VPS lên; **chưa** acceptance smoke PASS |
+| **VPS lifecycle worker + `GPU_CLORE_ONLY`** | ✅ Chốt 2026-07-24 (systemd + environ verified) |
+| Billing theo phiên (combo giờ + hourly ví) | ✅ logic; P0-B T11 E2E **chưa** ký |
 | **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
 | **Dashboard UX — optimistic start/stop, boot progress, stop confirm** | ✅ |
-| **Wallet tab merge (balance + auto-renew + storage upgrade modal)** | ✅ |
-| Docker ComfyUI image | ✅ local; ⏳ push Docker Hub sau build `--no-cache` |
+| **Wallet tab merge** | ✅ |
+| ComfyUI image prod | ✅ `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (không overwrite `:v3` tùy tiện) |
 | Môi trường làm việc → workflow riêng | ✅ (boot + SSH runtime) |
-| Dashboard "Chạy workflow" trên GPU | ❌ stub |
+| Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
+| Dashboard "Chạy workflow" trên GPU | ❌ stub / CP Job path đang mở rộng |
 | Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
-| Trợ lý AI (Qwen/Ollama) | ❌ chưa triển khai |
 | VNPay/PayOS tự động | ❌ dùng chuyển khoản + admin duyệt |
-| RunPod / multi-provider | ❌ interface only |
 
-> **Build Docker hiện tại:** `docker compose build --no-cache` đang chạy — chưa hoàn thành.  
-> **Sau build:** `docker push dieuhaukieuhanh/gpuvietnam-comfyui:v1` → test E2E luồng môi trường trên Vast.
+> **Go-Live (owner order):** P0-A → P0-B billing → P0-C alerts → P0-D E2E khách.  
+> **Tạm dừng (2026-07-24):** sau khi chốt Clore-only trên VPS; tiếp theo = Start sạch P0-A acceptance.  
+> Chi tiết: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md), [`docs/PROGRESS.md`](PROGRESS.md).
 
 ---
 
@@ -81,8 +86,9 @@
 | **Auth & DB** | Supabase Auth + Postgres + Storage |
 | **SMS OTP** | Speedsms.vn (`src/lib/speedsms.js`); dev thiếu token → OTP hiện trên `/verify-otp` |
 | **Backup storage** | Cloudflare R2 qua `@aws-sdk/client-s3` |
-| **GPU backend** | Vast.ai REST API; SSH (`ssh2`) cho đổi workflow runtime |
-| **ComfyUI image** | Docker Hub `dieuhaukieuhanh/gpuvietnam-comfyui:v1` — CUDA **12.0**, PyTorch **cu118**, port **8080** |
+| **GPU backend** | Clore + Vast adapters (`src/lib/gpu/providers/…`); routing mặc định Vast→Clore; **P0-A VPS:** `GPU_CLORE_ONLY=true` |
+| **Lifecycle worker** | VPS systemd → `scripts/lifecycle-worker.mjs` (claim `machine_operations`) |
+| **ComfyUI image** | Docker Hub `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (prod Starter/Pro); port **8080** |
 | **Export Excel** | `xlsx` (admin customers) |
 
 **Quy ước UI:** CSS gốc từ HTML inject qua `<style dangerouslySetInnerHTML>`; script tương tác qua `src/lib/scripts/*.ts` + `new Function()` trong `useEffect`. Font: Inter + Space Grotesk. Màu: `#0A0A0F`, accent `#4F8EF7`.
@@ -119,13 +125,16 @@ gpuvietnam/
     └── PROGRESS.md         # Tiến độ milestone
 ```
 
-**Tầng GPU (bắt buộc tuân thủ):**
+**Tầng GPU / Start (bắt buộc tuân thủ):**
 
 ```
-API routes → getGpuService() → GPUService → GPUProvider → VastProvider → VastClient + ComfyClient
+POST /api/user/start-machine
+  → enqueue user_start_provision (machine_operations)
+  → VPS lifecycle-worker claim / execute
+  → provider routing (P0-A: Clore-only) → rent → gate → machines row
 ```
 
-Dashboard, billing, workflow UI **không** gọi Vast API trực tiếp.
+Dashboard / billing UI **không** gọi Clore/Vast API trực tiếp. Dual-run (nếu có) qua API CP riêng, không qua `start-machine`.
 
 ---
 
@@ -242,12 +251,8 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 
 | Thành phần | Giá trị |
 |------------|---------|
-| Registry | **Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v1` (legacy: GHCR) |
-| Base | `nvidia/cuda:12.0.0-runtime-ubuntu22.04` |
-| Python | 3.10 |
-| PyTorch | cu118 (`--default-timeout=300 --retries 5`) |
-| Frontend pin | `comfyui-frontend-package==1.45.20` |
-| ComfyUI | git clone + retry; ComfyUI-Manager |
+| Registry prod | **Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (Starter/Pro) |
+| Ghi chú | Không overwrite tag `:v3` trừ khi promote có chủ đích; Studio/5090 có dòng image riêng nếu cấu hình |
 | Port | 8080 |
 
 ### Boot container (`scripts/start.sh`)
@@ -275,13 +280,13 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 
 ### GPU lines (plan → hardware)
 
-| Gói app | GPULine Vast | GPU |
-|---------|--------------|-----|
-| Starter | `rtx3090` | RTX 3090 |
-| Pro | `rtx4090_1x` | RTX 4090 |
-| Studio | `rtx5090_1x` | 1× RTX 5090 |
+| Gói app | GPULine | GPU | Ghi chú provider |
+|---------|---------|-----|------------------|
+| Starter | `rtx3090` | RTX 3090 | Clore + Vast |
+| Pro | `rtx4090_1x` | RTX 4090 | Clore + Vast |
+| Studio | `rtx5090_1x` | 1× RTX 5090 | **Vast-oriented** (Clore line không hỗ trợ 5090) |
 
-Region mặc định: Taiwan → Japan → Singapore (`GPU_REGIONS` override).
+P0-A / smoke ổn định: **Clore-only** trên VPS worker. Routing mặc định code = Vast→Clore nếu không set `GPU_CLORE_ONLY`.
 
 ---
 
@@ -296,18 +301,20 @@ Checkout → POST /api/payment/confirm (chuyển khoản, pending_payment)
 → syncUserPlanInventory() → user_plan_inventory
 ```
 
-### Bật máy GPU
+### Bật máy GPU (P0-A)
 
 ```
 POST /api/user/start-machine
-→ repairUserBillingState()
-→ subscription.server_status = provisioning
-→ getGpuService().createInstance()  [Vast rent + container env]
-→ insert machines row
-→ Poll GET /api/machines/status
-→ ComfyUI healthy → server_status = online
-→ startBilling() + ensureWorkstationApplied()
+→ claim subscription / idempotency single-start
+→ enqueue machine_operations (user_start_provision) → 200 { operationId }
+→ VPS lifecycle-worker: lease + heartbeat + provision
+→ provider order: GPU_CLORE_ONLY=true → Clore only (prod P0-A)
+→ rent + L2 gate (HTTP/Comfy) → machines row
+→ UI poll /api/machines/status + provision-progress
+→ Comfy traffic-ready → op completed + billing anchor
 ```
+
+> Network DevTools: `start-machine` chỉ xuất hiện **một lần** lúc bấm; sau đó chủ yếu `status` / `provision-progress`.
 
 ### Billing phiên
 
@@ -544,32 +551,28 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 - Marketing pages, auth OTP, checkout, payment pending/approve
 - Dashboard đầy đủ tab (trừ GPU run trên workflow/model)
 - Ví, kho gói, tái tục, auto-renew, trial
-- GPUService + Vast rent/destroy + multi-offer retry
-- Billing phiên, auto-stop idle, orphan session repair
+- GPUService + **Vast + Clore** adapters, multi-offer / candidate walk, bad-host
+- **CP/Runtime v2.0** freeze + Continuity A→B (Clore) evidence
+- **P0-A code + VPS worker** (enqueue start, systemd, Clore-only chốt 2026-07-24)
+- Billing phiên, auto-stop idle, Clore orphan reconcile (in-process)
 - Đổi môi trường + workflow theo env (boot + SSH)
-- Storage R2, backup logs, upgrade plan
+- Storage R2, backup, upgrade plan
 - Admin: duyệt đơn, KH, tặng giờ, pricing, machine toggle, support request
-- Docker ComfyUI local; image config cho Vast
-- **SCB 4.0 (tag `scb-4.0`):** server-authoritative remaining hours (ADR-004 D1 — client-validated projection override, CAS-guarded); `/api/machines/status` infra-only (D2); suppress drift reset trong async provisioning (D3)
-- **Dashboard UX:** optimistic start/stop, boot progress bar, stop confirmation modal, remaining hours 2 decimal (`Xh/Yh`), gộp Wallet tab (balance + auto-renew + storage upgrade modal)
+- Image prod `:v3`
+- **SCB 4.0** + **Dashboard UX** optimistic start/stop
 
-### ⏳ Đang / chờ
+### ⏳ Đang / chờ (Go-Live)
 
-- Push Docker Hub sau build `--no-cache`
-- Test E2E môi trường trên Vast instance thật
-- `download-models.sh` trên instance production
+- **P0-A acceptance smoke** — Start→Comfy→op `completed` (+ restart worker / orphan) với Clore-only đã chốt
+- Deploy harden Vast disk-only / loader alias lên VPS (hiện patch tay + VPS còn `1f700cd`)
+- **P0-B** T11 billing proof · **P0-C** alerts · **P0-D** E2E khách
+- Nới / tinh chỉnh fail-fast 502 vs thời gian pull image (tránh đổi host Clore quá sớm)
 
-### ❌ Chưa / kế hoạch
+### ❌ Chưa / kế hoạch (sau MVP)
 
-- Dashboard nút “Chạy workflow” → `getGpuService().submitWorkflow()`
-- Model/LoRA “Dùng ngay” trên ComfyUI
-- LoRA Việt hóa trong image/script
-- Jupyter, Blender workstation
-- Trợ lý AI (Qwen/Ollama)
-- VNPay/PayOS webhook tự động
-- RunPod / multi-cloud provider
-- WebRTC remote support thật
-- Admin tabs overview/sessions/billing analytics
+- Dual Run product / warm pool / đổi GPU không reload
+- Dashboard “Chạy workflow” end-to-end trên CP Job path
+- Jupyter, Blender, VNPay/PayOS, WebRTC remote support thật
 
 ---
 
@@ -577,16 +580,14 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 
 | Hạng mục | Chi tiết |
 |----------|----------|
-| **SCB 4.0 đóng băng** | Tag `scb-4.0` (commit `bbed8da`); ADR-004 ghi nhận 3 ngoại lệ product-layer (D1 client-validated hours override, D2 machines/status infra-only, D3 suppress drift reset). Closed ADR set: ADR-001..004. Xem [`docs/scb/SCB_CHANGELOG.md`](scb/SCB_CHANGELOG.md) |
-| **Server-authoritative remaining hours** | `POST /api/machines/destroy` nhận `clientRemainingHours`; server validate drift ≤ 0.05h + non-gain + CAS guard; ghi projection (`subscriptions.hours_used` / `manual_hour_grants.hours_used`), không đụng `gpu_sessions` SoT |
-| **Dashboard UX** | Optimistic start/stop (UI chuyển `opening`/`stopping` ngay), boot progress bar, stop confirmation modal, hiển thị giờ còn lại 2 decimal (`20.09h/110h`) |
-| **`/api/machines/status` infra-only** | Bỏ `billingView`/`remainingFields`/`sessionFields` khỏi response; billing truth lấy từ `/api/dashboard/me`. Xem [`docs/ui/DASHBOARD_VIEW_CONTRACT.md`](ui/DASHBOARD_VIEW_CONTRACT.md) |
-| **Wallet tab merge** | Gộp card Ví + card Gia hạn tự động + modal nâng cấp bộ nhớ vào `/dashboard/wallet`; gỡ card Giao diện sáng/tối khỏi `/dashboard/cai-dat` |
-| **Docker registry** | GHCR → Docker Hub `dieuhaukieuhanh/gpuvietnam-comfyui:v1` |
-| **Dockerfile** | PyTorch timeout/retry; pin frontend 1.45.20; git clone retry; pip fallback |
-| **Workstation** | `setup-workstation.sh` + 3 env ComfyUI với workflow riêng |
-| **GPUService** | Wire `start-machine`, billing fix, multi-offer Vast retry |
-| **SSH** | `VAST_SSH_PRIVATE_KEY_PATH` cấu hình local (cần pub key trên Vast.ai) |
+| **P0-A + VPS worker (2026-07)** | `start-machine` enqueue durable; VPS `gpuvietnam-lifecycle-worker`; docs `LIFECYCLE_WORKER.md` / `GO_LIVE_READINESS_AUDIT.md` |
+| **Clore-only chốt trên VPS (2026-07-24)** | `Environment=GPU_CLORE_ONLY=true` trên systemd + verify `/proc/.../environ`; tạm dừng trước Start sạch acceptance |
+| **Smoke note (2026-07-23)** | Khi CLORE_ONLY chưa vào process: dual Vast+Clore, Vast disk-only (`gpuCost=0`); Clore 502 walk đổi host liên tục → hết order. Không phải “Clore API chết”. |
+| **CP/Runtime v2.0** | ADR-005 + Continuity A→B Clore PASS WITH CONSTRAINTS |
+| **SCB 4.0 đóng băng** | Tag `scb-4.0`; ADR-001..004 closed |
+| **Dashboard UX** | Optimistic start/stop, boot progress, stop confirm, giờ 2 decimal |
+| **`/api/machines/status` infra-only** | Billing từ `/api/dashboard/me` |
+| **Image prod** | `dieuhaukieuhanh/gpuvietnam-comfyui:v3` |
 
 ---
 
@@ -601,23 +602,21 @@ npm run build        # Production build
 npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 ```
 
-**Checklist sau deploy code mới:**
+**Checklist sau deploy / P0-A:**
 
-1. `npm run build` pass
-2. SQL mới chạy trên Supabase (nếu có)
-3. Docker: build → push Docker Hub → cập nhật Vast template/image env
-4. Test: đăng ký → mua gói → bật máy → đổi môi trường → tắt máy → kiểm tra giờ/ví
+1. VPS worker `active` + `GPU_CLORE_ONLY=true` trong environ process
+2. Migration 0049 applied
+3. Start một lần từ `gpuvietnam.com` → `operationId` → Comfy → Stop sạch (Clore 1 order, Vast 0)
+4. (Tuỳ chọn) `systemctl restart` worker giữa provision — op không mất
 
 **Chat mới — copy nhanh:**
 
 ```
-Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/scb/SCB-MAINTENANCE-MODE.md.
-SCB 4.0 đã đóng băng (tag scb-4.0, ADR-001..004 closed set). Không refactor frozen components.
-Control Plane / Runtime v2.0 đã đóng băng (docs/architecture/ARCHITECTURE_V2_FREEZE.md, ADR-005).
-Triển khai theo v2.0 (Job/Attempt, Runtime Port, Comfy Adapter). Đổi kiến trúc CP/Runtime → ADR-006+ + evidence.
-Product layer OK: UI/Dashboard/Wallet/Billing UX trong giới hạn hai freeze.
-Docker Hub dieuhaukieuhanh/gpuvietnam-comfyui:v1. GPUService + billing + env workflow ✅.
-SSH: VAST_SSH_PRIVATE_KEY_PATH. Tiếp: push image → test Vast E2E.
+Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
+SCB 4.0 + ADR-005 CP/Runtime đã freeze. Go-Live: P0-A → P0-B → P0-C → P0-D.
+P0-A: VPS worker lên; GPU_CLORE_ONLY đã chốt 2026-07-24. Chưa đóng acceptance smoke.
+Tạm dừng sau chốt Clore-only. Image :v3. Branch: feat/cp-runtime-b1.
+Không Dual Run / warm pool trừ khi owner mở.
 ```
 
 ---
@@ -634,4 +633,4 @@ SSH: VAST_SSH_PRIVATE_KEY_PATH. Tiếp: push image → test Vast E2E.
 
 ---
 
-*Tài liệu cập nhật: 2026-07 — đối chiếu với codebase Next.js 14.2, 72 API routes, 32 SQL files, Docker CUDA 12.0. SCB 4.0 đóng băng tại tag `scb-4.0` (ADR-001..004).*
+*Tài liệu cập nhật: 2026-07-24 — P0-A VPS + Clore-only chốt; Continuity/ADR-005; SCB 4.0 (`scb-4.0`). Chi tiết tiến độ: `docs/PROGRESS.md`.*

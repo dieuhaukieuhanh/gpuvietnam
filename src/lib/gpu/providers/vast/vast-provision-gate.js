@@ -11,6 +11,7 @@ import {
 } from '../../../machine-ssh.js';
 import {
   isVastBadHostStatus,
+  isVastDiskOnlyBilling,
   isVastInstanceProvisionProgress,
   unwrapVastInstanceRecord,
 } from './vast-offer-sanity.js';
@@ -109,7 +110,9 @@ export async function waitForVastSshReady(client, instanceId, timeoutMs, pollMs)
       if (isVastBadHostStatus(live)) {
         return {
           ok: false,
-          detail: String(live?.status_msg ?? live?.actual_status ?? 'bad status'),
+          detail: isVastDiskOnlyBilling(live)
+            ? 'disk_only_billing (GPU struck through / stopped)'
+            : String(live?.status_msg ?? live?.actual_status ?? 'bad status'),
           live,
         };
       }
@@ -163,7 +166,9 @@ export async function waitForVastPortsReady(client, instanceId, internalPort, ti
       if (isVastBadHostStatus(live)) {
         return {
           ok: false,
-          detail: String(live?.status_msg ?? live?.actual_status ?? 'bad status'),
+          detail: isVastDiskOnlyBilling(live)
+            ? 'disk_only_billing (GPU struck through / stopped)'
+            : String(live?.status_msg ?? live?.actual_status ?? 'bad status'),
           live,
         };
       }

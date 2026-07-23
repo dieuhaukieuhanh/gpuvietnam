@@ -7,12 +7,20 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** `dieuhaukieuhanh/gpuvietnam-comfyui:v1` (Docker Hub) — **CUDA 12.0** + PyTorch **cu118**; **backend GPU: Vast.ai** (thuê theo giờ chạy, không tốn idle); port **8080**
+- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (Docker Hub); port **8080**; providers **Clore + Vast** (P0-A VPS: **Clore-only**)
+- **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
 
 ## Thay đổi gần đây (2026-07)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
+| **Architecture v2.0 CP / Runtime** | ✅ Freeze + ADR-005; Continuity A→B (Clore) đã chứng minh — Gate2 *PASS WITH CONSTRAINTS* |
+| **P0-A Durable start (lifecycle worker)** | 🟡 Code + migration 0049 + unit tests + VPS systemd **đã lên**; **chưa đóng** acceptance smoke (Start → Comfy → `completed`) |
+| **VPS lifecycle worker** | ✅ Host `gv-lifecycle-worker-*`; unit `gpuvietnam-lifecycle-worker`; **chốt `GPU_CLORE_ONLY=true` trên systemd + environ process** (2026-07-24) |
+| **Clore provider + bad-host / orphan / gate** | ✅ Adapter + reconcile; Continuity prod E2E trước đó PASS |
+| **Vast disk-only / storage billing** | 🟡 Harden local (`isVastDiskOnlyBilling`, `gpuCost=0`, `gpu_frac=1`); **chưa deploy** lên VPS (`1f700cd`); đêm smoke vẫn thấy Vast disk-only khi CLORE_ONLY chưa vào process |
+| **Single-start / cancel / dual-run max 2** | ✅ Trong `1f700cd` (+ docs LIFECYCLE_WORKER) |
+| **Go-Live order** | 🔴 P0-A smoke → P0-B billing T11 → P0-C alerts → P0-D E2E khách; Dual Run / warm pool **sau** |
 | **Auto-stop theo gói đang dùng** | ✅ Remaining/out-of-credit chỉ tính Starter/Pro/Studio đang chạy; hết giờ gói đó → tắt dù còn giờ gói khác |
 | **Cảnh báo 30 phút trước tắt (hết giờ)** | ✅ `credit_warning_sent` + notification `credit_warning`; UI `lowCreditWarning` = 30 phút |
 | **SCB 4.0 đóng băng** | ✅ Tag `scb-4.0` (commit `bbed8da`); ADR-004 ghi nhận 3 ngoại lệ product-layer |
@@ -20,21 +28,20 @@
 | **`/api/machines/status` infra-only** | ✅ Bỏ `billingView`/billing fields khỏi response; billing từ `/api/dashboard/me` |
 | **Dashboard optimistic UX** | ✅ Optimistic start/stop, boot progress bar, stop confirmation modal, giờ 2 decimal |
 | **Wallet tab merge** | ✅ Gộp Ví + Gia hạn tự động + modal nâng cấp bộ nhớ vào `/dashboard/wallet` |
-| Docker Hub thay GHCR | ✅ `dieuhaukieuhanh/gpuvietnam-comfyui:v1` |
-| Dockerfile: retry PyTorch / git clone / pin frontend | ✅ (build đang chạy lại) |
-| `setup-workstation.sh` — workflow theo môi trường | ✅ |
-| Wire `start-machine` → Vast + billing + đổi môi trường | ✅ (cần test sau push image) |
-| SSH `VAST_SSH_PRIVATE_KEY_PATH` | ✅ cấu hình local |
-| Push image mới lên Docker Hub | ⏳ chờ build xong |
+| Image prod ComfyUI | ✅ `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (Starter/Pro); không overwrite `:v3` trừ khi promote có chủ đích |
+| Wire `start-machine` → enqueue + worker | ✅ API trả `operationId`; không còn `void completeUserStartProvision` trên serverless |
 
-> **Build hiện tại:** `docker compose build --no-cache` đang chạy — chưa hoàn thành. Sau khi build xong: **push Docker Hub** → test luồng môi trường (Character / Commerce / Video AI) trên Vast.
+> **Go-Live / P0-A (cập nhật 2026-07-24):** VPS worker **active** + `GPU_CLORE_ONLY=true` đã verify trong `/proc/.../environ`. Smoke đêm 23–24/07: Start durable OK; lỗi chính = (1) CLORE_ONLY chưa vào process sớm → Vast+Clore song song / Vast disk-only; (2) candidate walk hủy host Clore khi HTTP **502** lúc pull image → đổi máy liên tục rồi hết order. **Tạm dừng** sau khi chốt Clore-only trên VPS — lần Start sạch tiếp theo = tiếp tục P0-A acceptance.
 >
-> **SCB:** Architecture Freeze v2 + ADR-004 = closed set ADR-001..004. Mọi thay đổi kiến trúc tiếp theo cần ADR-005+ và owner approval. Xem [`docs/scb/SCB-MAINTENANCE-MODE.md`](scb/SCB-MAINTENANCE-MODE.md).
+> **Docs ops:** [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md) · [`docs/operations/GO_LIVE_READINESS_AUDIT.md`](operations/GO_LIVE_READINESS_AUDIT.md)  
+> **SCB:** ADR-001..004 closed. **CP/Runtime:** ADR-005 frozen. Xem [`docs/scb/SCB-MAINTENANCE-MODE.md`](scb/SCB-MAINTENANCE-MODE.md).
 
 ## Bước tiếp theo
 
-> **SCB 4.0 ✅ đóng băng** (tag `scb-4.0`, ADR-001..004) · **Docker + Docker Hub ⏳** (build lại) · **GPUService + Vast runtime ✅** · **Wire start-machine ✅**  
-> **Kế tiếp:** push `dieuhaukieuhanh/gpuvietnam-comfyui:v1` → test workflow từng môi trường trên instance Vast. Mọi thay đổi kiến trúc SCB → ADR-005+ cần owner approval.
+> **Ngay:** P0-A acceptance trên Production + VPS (Clore-only đã chốt) — Start một lần → op `completed` → Comfy vào được → Stop sạch → (tuỳ chọn) restart worker / orphan check.  
+> **Sau P0-A PASS:** P0-B T11 billing → P0-C alerts → P0-D E2E khách.  
+> **Không làm ngay:** Dual Run product, warm pool, đổi GPU không reload trang.  
+> **Tech debt liên quan:** deploy harden Vast disk-only lên VPS; cân nhiễu gate 502 vs thời gian pull image Clore.
 
 ## Docker Image (ComfyUI) ✅
 
@@ -1007,8 +1014,26 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - [ ] **Hỗ trợ từ xa:** WebRTC screen share thật; thông báo Admin khi KH đồng ý/từ chối
 - [ ] Admin: các tab còn lại (Tổng quan, Phiên GPU, Doanh thu) — placeholder
 
+## Go-Live / P0-A (snapshot 2026-07-24)
+
+| Gate | Trạng thái |
+|------|------------|
+| Migration `user_start_provision` (0049) | ✅ |
+| `POST /api/user/start-machine` → enqueue `operationId` | ✅ |
+| Unit tests liên quan worker / harden | ✅ (local) |
+| VPS systemd `gpuvietnam-lifecycle-worker` | ✅ `active` + log `lifecycle worker ready` |
+| `GPU_CLORE_ONLY=true` trong process worker | ✅ đã verify `/proc/.../environ` |
+| Start → machine row + Comfy ready + op `completed` | ⬜ chưa PASS (smoke bị Vast dual-rent + Clore 502 walk) |
+| Worker restart / orphan / reclaim | ⬜ chưa ký acceptance |
+| Deploy harden Vast disk-only lên VPS | ⬜ (code local, VPS còn `1f700cd` + loader alias patch tay) |
+
+Chi tiết acceptance: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md).
+
 ## Đã xong (gần đây)
 
+- [x] **P0-A code path** — enqueue `user_start_provision` + VPS `scripts/lifecycle-worker.mjs` + systemd unit; bỏ fire-and-forget provision trên serverless
+- [x] **VPS Clore-only chốt** — `Environment=GPU_CLORE_ONLY=true` trên unit + verify environ (2026-07-24)
+- [x] **Continuity A→B (Clore)** — prod E2E trước đó; Gate2 PASS WITH CONSTRAINTS
 - [x] **Auto-stop theo gói đang dùng + cảnh báo 30 phút** — Remaining/out-of-credit scoped Starter/Pro/Studio của máy chạy; hết giờ gói đó → tắt dù còn giờ gói khác; `credit_warning` notification + `machines.credit_warning_sent` (migration `0035`)
 - [x] **SCB 4.0 đóng băng** — tag `scb-4.0` (commit `bbed8da`); ADR-004 + SCB_CHANGELOG entry; ADR-001..004 closed set
 - [x] **Server-authoritative remaining hours (Phương án 4)** — `POST /api/machines/destroy` nhận `clientRemainingHours` + `clientSessionDurationSeconds`; server validate drift ≤ 0.05h + non-gain; CAS-guarded override `subscriptions.hours_used` / `manual_hour_grants.hours_used` (projection only); settlement-fail guard; `gpu_sessions` SoT không đổi
@@ -1086,11 +1111,12 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 **Chat mới — copy nhanh:**
 
 ```
-Tiếp tục dự án GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/scb/SCB-MAINTENANCE-MODE.md.
-SCB 4.0 đã đóng băng (tag scb-4.0, ADR-001..004 closed set). Không refactor frozen components.
-Product layer OK: UI/Dashboard/Wallet/Billing UX. Architecture change → ADR-005+ cần owner approval.
-Docker Hub dieuhaukieuhanh/gpuvietnam-comfyui:v1 ⏳ (build --no-cache đang chạy).
-GPUService + start-machine + môi trường workflow ✅. Tiếp: push image → test Vast.
+Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
+SCB 4.0 + ADR-005 CP/Runtime đã freeze. Go-Live: P0-A → P0-B billing → P0-C alerts → P0-D E2E.
+P0-A: VPS lifecycle-worker đã lên; GPU_CLORE_ONLY=true đã chốt trên systemd/environ (2026-07-24).
+Chưa đóng P0-A: acceptance smoke Start→Comfy→completed (+ recovery/orphan).
+Tạm dừng sau chốt Clore-only. Không Dual Run / warm pool cho đến khi owner mở.
+Image: dieuhaukieuhanh/gpuvietnam-comfyui:v3. Branch làm việc: feat/cp-runtime-b1.
 ```
 
 **Lưu ý dev:** Giá GPU sửa trên Admin tab **Edit giá** (cần chạy `supabase/gpu-pricing-config.sql`). Giá SSD/Backup sửa tab Giá bộ nhớ. SQL mới: chạy `gpu-sessions.sql` + `seed-gpu-sessions.sql` nếu chưa có bảng lịch sử phiên; **`wallet-deposit-status.sql`** + **`user-plan-inventory.sql`** cho nạp Ví và kho gói; **`support-sessions.sql`** cho hỗ trợ từ xa (bắt buộc trước khi test luồng Admin → KH). Tab **Khách hàng** tại `/admin/customers`; cần bảng `machines` trên Supabase để online realtime đầy đủ (hiện fallback `gpu_sessions` / mock).
