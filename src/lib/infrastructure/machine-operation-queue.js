@@ -4,6 +4,7 @@
 
 import {
   MACHINE_OPERATION_STATE,
+  MACHINE_OPERATION,
   DEFAULT_RETRY_POLICY,
   resolveRetryAfterFailure,
   isMachineOperationsTableUnavailable,
@@ -20,6 +21,7 @@ import {
 } from './machine-operation-observability.js';
 import { buildOperationMetrics, mergeMetrics } from './machine-operation-metrics.js';
 import { kickMachineOperationWorkerForRow } from './machine-operation-worker-runner.js';
+import { canExecuteUserStartProvisionInThisProcess } from './user-start-execution-gate.js';
 
 const UNIQUE_VIOLATION = '23505';
 
@@ -199,13 +201,20 @@ export async function leaseNext(supabaseAdmin, options = {}) {
   const nowIso = now.toISOString();
   const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
 
-  const { data: candidates, error: selectError } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('machine_operations')
     .select('*')
     .eq('state', MACHINE_OPERATION_STATE.PENDING)
     .order('priority', { ascending: false })
     .order('created_at', { ascending: true })
     .limit(limit);
+
+  // Serverless/Vercel must not claim durable starts — leave them for VPS lifecycle worker.
+  if (!canExecuteUserStartProvisionInThisProcess()) {
+    query = query.neq('operation', MACHINE_OPERATION.USER_START_PROVISION);
+  }
+
+  const { data: candidates, error: selectError } = await query;
 
   if (selectError) throw selectError;
   if (!candidates?.length) return [];

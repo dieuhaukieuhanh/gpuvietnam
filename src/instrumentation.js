@@ -14,6 +14,8 @@ export async function register() {
     const { startMachineOperationBackgroundWorker } = await import(
       './lib/infrastructure/machine-operation-worker-runner.js'
     );
+    // Drift / projection ops may still drain in-process. Durable GPU Start
+    // (user_start_provision) is leased only by GPUVIETNAM_LIFECYCLE_WORKER=1.
     startMachineOperationBackgroundWorker();
 
     const { startCloreOrphanReconciliation } = await import(
