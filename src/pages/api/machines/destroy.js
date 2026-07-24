@@ -333,6 +333,8 @@ export default async function handler(req, res) {
 
       let destroyResult = null;
       let destroyError = null;
+      // Runtime DEAD: never block Close on backup / provider flakiness.
+      const effectiveForceStop = forceStop || machineStatus === 'error';
       try {
         destroyResult = await completeUserDestroy(supabaseAdmin, gpuService, {
           targetUserId,
@@ -341,8 +343,8 @@ export default async function handler(req, res) {
           lifecycleCtx,
           interrupted,
           reason,
-          forceStop,
-          waitForBackup,
+          forceStop: effectiveForceStop,
+          waitForBackup: effectiveForceStop ? false : waitForBackup,
         });
       } catch (error) {
         destroyError = error;
@@ -397,7 +399,75 @@ export default async function handler(req, res) {
           outcome: destroyResult?.outcome,
           lastStep: destroyResult?.lastStep,
           retryable: destroyResult?.retryable,
+          machineStatus,
+          forceStop,
+          settlement: destroyResult?.settlement?.settlementStatus ?? null,
         });
+
+        // Runtime DEAD / forceStop / billing already closed at P0-B Close:
+        // never 409→rollback to "online/running" (that traps the reconnect UI).
+        const billingAlreadyClosed = Boolean(
+          destroyResult?.settlement || destroyResult?.billingResult?.settlement,
+        );
+        const acceptLocalClose =
+          machineStatus === 'error' ||
+          forceStop === true ||
+          effectiveForceStop === true ||
+          billingAlreadyClosed;
+
+        if (acceptLocalClose) {
+          const nowIso = new Date().toISOString();
+          try {
+            if (activeMachine?.id) {
+              await supabaseAdmin
+                .from('machines')
+                .update({
+                  status: 'destroyed',
+                  stopped_at: nowIso,
+                  updated_at: nowIso,
+                  billing_started_at: null,
+                  gpu_session_id: null,
+                  projection_message: null,
+                })
+                .eq('id', String(activeMachine.id));
+            }
+            if (subscription?.id) {
+              await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
+            }
+            if (lifecycleRecord && subscription) {
+              await persistDestroyCompleted(
+                supabaseAdmin,
+                subscription.id,
+                lifecycleRecord,
+                { ...lifecycleCtx, providerDestroyedVerified: true },
+              );
+            }
+          } catch (cleanupErr) {
+            console.warn(
+              '[machines/destroy] local Runtime DEAD cleanup failed:',
+              cleanupErr instanceof Error ? cleanupErr.message : cleanupErr,
+            );
+          }
+
+          const idleView = buildIdleMachineSessionView(subscription, targetUserId);
+          await syncUserPlanInventory(supabaseAdmin, targetUserId).catch(() => {});
+          const settledBillingView = await resolveBillingSessionView(supabaseAdmin, targetUserId, {
+            machine: null,
+            machineSessionPhase: 'idle',
+          });
+          return res.status(200).json({
+            success: true,
+            accepted: true,
+            forcedLocalClose: true,
+            message: 'Đã đóng phiên làm việc.',
+            reason,
+            machineSessionView: idleView,
+            billingView: settledBillingView,
+            verifiedDestroyedAt: nowIso,
+            ...mapDestroyApiResponse(destroyResult),
+          });
+        }
+
         const rolledBack = await rollbackStopRequested(
           supabaseAdmin,
           subscription,

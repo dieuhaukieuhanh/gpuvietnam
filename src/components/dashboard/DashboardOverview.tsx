@@ -1370,15 +1370,22 @@ export default function DashboardOverview({
   const confirmStopMachine = useCallback(async () => {
     setShowStopConfirm(false);
     setShowBackupChoice(false);
+    const phase = machineSessionView?.phase;
+    // Runtime DEAD reconnect UX: skip backup wait — instance is often already gone.
+    const forceStop =
+      phase === 'disconnected' || phase === 'error' || phase === 'stopping';
     onMachineSessionView?.(
       buildOptimisticStoppingMachineSessionView(
         machineSessionView?.workspace?.name ?? effectiveEnvName,
-        STOP_POST_CHECK_COPY.backupSaving,
+        forceStop
+          ? 'Đang đóng phiên (máy đã mất kết nối)…'
+          : STOP_POST_CHECK_COPY.backupSaving,
       ),
     );
-    await stopMachine();
+    await stopMachine(forceStop ? { forceStop: true } : undefined);
   }, [
     machineSessionView?.workspace?.name,
+    machineSessionView?.phase,
     effectiveEnvName,
     onMachineSessionView,
     stopMachine,
