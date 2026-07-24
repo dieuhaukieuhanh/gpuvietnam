@@ -23,11 +23,16 @@ export const LOW_CREDIT_WARN_HOURS = CREDIT_WARN_MINUTES / 60;
 
 const BILLABLE_MACHINE_PHASES = new Set(['running', 'disconnected', 'error', 'stopping']);
 
-/** Live session burn — include opening when billing anchor is already set. */
+/** Live session burn — keep counting while Runtime DEAD (machine error) during replace. */
 export function shouldUseMachineRemainingRead(machine, machineSessionPhase) {
-  if (!machine || String(machine.status ?? '') !== 'running') return false;
+  if (!machine) return false;
+  const status = String(machine.status ?? '');
+  const anchored = Boolean(machine.billing_started_at);
+  // P0-B / P1: error machine still burns the open Billing Session.
+  if (status === 'error' && anchored) return true;
+  if (status !== 'running') return false;
   if (BILLABLE_MACHINE_PHASES.has(machineSessionPhase)) return true;
-  return machineSessionPhase === 'opening' && Boolean(machine.billing_started_at);
+  return machineSessionPhase === 'opening' && anchored;
 }
 
 /**

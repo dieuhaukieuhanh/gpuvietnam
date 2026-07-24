@@ -38,6 +38,9 @@ function timerLabel(
   if (phase === 'opening') return 'Chưa bắt đầu tính giờ';
   if (phase === 'running' && !billingStarted) return 'Chờ xác nhận billing từ server';
   if (mode === 'live') return null;
+  if (mode === 'live' && (phase === 'disconnected' || phase === 'error')) {
+    return 'Đang tính giờ — Generate tạm gián đoạn, đang khôi phục máy';
+  }
   if (mode === 'paused' && phase === 'disconnected') return 'Thời gian phiên (tạm dừng hiển thị)';
   if (mode === 'paused' && phase === 'stopping') {
     return stopPostCheckActive
@@ -65,7 +68,8 @@ export default function DashboardCurrentSessionCard({
 }: DashboardCurrentSessionCardProps) {
   const showStats =
     phase === 'running' ||
-    ((phase === 'disconnected' || phase === 'stopping') && billingStarted);
+    ((phase === 'disconnected' || phase === 'stopping' || phase === 'error') &&
+      billingStarted);
 
   const showTimer = timerMode !== 'hidden';
   const timerSeconds = timerMode === 'muted' && phase !== 'stopping' ? 0 : sessionDurationSec;

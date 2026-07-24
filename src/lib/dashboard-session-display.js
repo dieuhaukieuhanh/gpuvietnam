@@ -65,6 +65,9 @@ export function resolveTimerDisplayMode(phase, billingStarted) {
   if (phase === 'running') {
     return billingStarted ? 'live' : 'muted';
   }
+  // P0-B: Runtime DEAD / replace — wall-clock billing continues (do not freeze timer).
+  if (phase === 'disconnected' && billingStarted) return 'live';
+  if (phase === 'error' && billingStarted) return 'live';
   if (phase === 'disconnected' || phase === 'stopping') return 'paused';
   if (phase === 'error') return 'hidden';
   return 'hidden';
@@ -73,7 +76,9 @@ export function resolveTimerDisplayMode(phase, billingStarted) {
 /** @param {SessionPhase|null|undefined} phase @param {boolean} billingStarted */
 export function resolveShowSessionStats(phase, billingStarted) {
   if (phase === 'running') return true;
-  if (phase === 'disconnected' || phase === 'stopping') return billingStarted;
+  if (phase === 'disconnected' || phase === 'stopping' || phase === 'error') {
+    return billingStarted;
+  }
   return false;
 }
 
@@ -83,6 +88,7 @@ export function isPlanSessionActive(phase) {
     phase === 'opening' ||
     phase === 'running' ||
     phase === 'stopping' ||
-    phase === 'disconnected'
+    phase === 'disconnected' ||
+    phase === 'error'
   );
 }

@@ -38,7 +38,8 @@ describe('dashboard-session-display', () => {
     assert.equal(resolveTimerDisplayMode('opening', false), 'muted');
     assert.equal(resolveTimerDisplayMode('running', false), 'muted');
     assert.equal(resolveTimerDisplayMode('running', true), 'live');
-    assert.equal(resolveTimerDisplayMode('disconnected', true), 'paused');
+    assert.equal(resolveTimerDisplayMode('disconnected', true), 'live');
+    assert.equal(resolveTimerDisplayMode('error', true), 'live');
     assert.equal(resolveTimerDisplayMode('stopping', true), 'paused');
   });
 

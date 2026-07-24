@@ -49,6 +49,44 @@ export async function getActiveMachineForUser(supabaseAdmin, userId) {
 }
 
 /**
+ * Machine bound to an OPEN billable session — includes `error` during Runtime DEAD /
+ * auto-replace (not in ACTIVE_MACHINE_STATUSES, but billing must keep counting).
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ */
+export async function getBillableSessionMachineForUser(supabaseAdmin, userId) {
+  const active = await getActiveMachineForUser(supabaseAdmin, userId);
+  if (active) return active;
+
+  const openSession = await loadOpenBillableSessionForUser(supabaseAdmin, userId);
+  if (!openSession) return null;
+
+  if (openSession.machine_id) {
+    const { data: byId, error } = await supabaseAdmin
+      .from('machines')
+      .select('*')
+      .eq('id', String(openSession.machine_id))
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (byId && String(byId.status ?? '') !== 'destroyed') return byId;
+  }
+
+  const { data: bySession, error: bySessErr } = await supabaseAdmin
+    .from('machines')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('gpu_session_id', String(openSession.id))
+    .neq('status', 'destroyed')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (bySessErr) throw bySessErr;
+  return bySession;
+}
+
+/**
  * All non-destroyed machines still bootstrapping or running for a user.
  * Used to block multi-start (except CP dual-run / Render an toàn).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin

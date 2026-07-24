@@ -1,7 +1,11 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import { repairUserBillingState, getGpuService, getGpuServiceForMachine } from '@/lib/gpu';
 import { createCorrelationId } from '@/lib/scb-correlation';
-import { getActiveMachineForUser, pickPreferredActiveSubscription } from '@/lib/machines';
+import {
+  getActiveMachineForUser,
+  getBillableSessionMachineForUser,
+  pickPreferredActiveSubscription,
+} from '@/lib/machines';
 import { toSyncShape } from '@/lib/machines-drift';
 import { runReadPathProjectionFirst, subscriptionPrefetchFromDashboardRow } from '@/lib/machines-drift-projection';
 import { snapshotToMachineRecord, resolveMachineSessionView } from '@/lib/gpu/machine-session-view';
@@ -286,6 +290,11 @@ export default async function handler(req, res) {
       // Keep the live session visible if drift falsely nulled it (wrong offline subscription).
       activeMachine = activeMachineEarly;
     }
+    // P0-B / P1: Runtime DEAD marks machine error — still bind open billable session for timer.
+    if (!activeMachine || String(activeMachine.status ?? '') === 'destroyed') {
+      activeMachine =
+        (await getBillableSessionMachineForUser(supabaseAdmin, user.id)) ?? activeMachine;
+    }
     profEnd(machineSpan);
     let inventoryRows = null;
     let billablePlans = undefined;
@@ -305,9 +314,20 @@ export default async function handler(req, res) {
     }
 
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
+    const machineBillingStarted = Boolean(activeMachine?.billing_started_at);
+    const runtimeDeadKeepOpen =
+      machineBillingStarted && String(activeMachine?.status ?? '') === 'error';
     let machineSessionView = resolveMachineSessionView(machineRecord, {
       envName: syncedSubscription?.env_name,
-      billingStarted: Boolean(activeMachine?.billing_started_at),
+      billingStarted: machineBillingStarted,
+      // Show disconnect/replace UX instead of generic "error / không khởi động được".
+      disconnected: runtimeDeadKeepOpen,
+      message: runtimeDeadKeepOpen
+        ? String(
+            activeMachine?.projection_message ||
+              'Generate tạm gián đoạn — Phiên vẫn làm việc bình thường',
+          )
+        : null,
     });
 
     // Durable Start in flight but claim/machines row not visible yet → keep opening.
