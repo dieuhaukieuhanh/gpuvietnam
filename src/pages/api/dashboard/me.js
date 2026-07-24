@@ -7,7 +7,11 @@ import {
   getBillableSessionMachineForUser,
   pickPreferredActiveSubscription,
 } from '@/lib/machines';
-import { loadOpenBillableSessionForUser } from '@/lib/gpu/runtime-auto-replace-core';
+import {
+  loadOpenBillableSessionForUser,
+  RUNTIME_REPLACE_UX_MESSAGE,
+} from '@/lib/gpu/runtime-auto-replace-core';
+import { findActiveRuntimeAutoReplace } from '@/lib/infrastructure/enqueue-runtime-auto-replace';
 import { toSyncShape } from '@/lib/machines-drift';
 import { runReadPathProjectionFirst, subscriptionPrefetchFromDashboardRow } from '@/lib/machines-drift-projection';
 import { snapshotToMachineRecord, resolveMachineSessionView } from '@/lib/gpu/machine-session-view';
@@ -322,32 +326,56 @@ export default async function handler(req, res) {
     }
 
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
-    const machineBillingStarted = Boolean(activeMachine?.billing_started_at);
-    // Reconnect UX only while Billing Session is still open — not after User Close.
-    const openBillableSession = activeMachine
-      ? await loadOpenBillableSessionForUser(supabaseAdmin, user.id)
+    const openBillableSession = await loadOpenBillableSessionForUser(supabaseAdmin, user.id);
+    const replaceInFlight = openBillableSession
+      ? await findActiveRuntimeAutoReplace(
+          supabaseAdmin,
+          user.id,
+          String(openBillableSession.id),
+        )
       : null;
+    const machineBillingStarted =
+      Boolean(activeMachine?.billing_started_at) ||
+      Boolean(openBillableSession?.started_at && replaceInFlight);
+    // Reconnect UX: Runtime DEAD error machine OR replace rent in flight (old row may
+    // already be destroyed mid-replace).
     const runtimeDeadKeepOpen =
       Boolean(openBillableSession) &&
-      machineBillingStarted &&
-      String(activeMachine?.status ?? '') === 'error';
+      (String(activeMachine?.status ?? '') === 'error' || Boolean(replaceInFlight));
     let machineSessionView = resolveMachineSessionView(machineRecord, {
       envName: syncedSubscription?.env_name,
-      billingStarted: machineBillingStarted && Boolean(openBillableSession),
+      billingStarted: Boolean(openBillableSession?.started_at),
       // Show disconnect/replace UX instead of generic "error / không khởi động được".
       disconnected: runtimeDeadKeepOpen,
       message: runtimeDeadKeepOpen
         ? String(
             activeMachine?.projection_message ||
-              'Generate tạm gián đoạn — Phiên vẫn làm việc bình thường',
+              RUNTIME_REPLACE_UX_MESSAGE,
           )
         : null,
     });
 
+    // Replace in flight but no live machine row yet → keep interrupt UX + timer.
+    if (
+      runtimeDeadKeepOpen &&
+      (!machineSessionView || machineSessionView.phase === 'idle')
+    ) {
+      machineSessionView = {
+        phase: 'disconnected',
+        message: RUNTIME_REPLACE_UX_MESSAGE,
+        billingStarted: true,
+        workspace: {
+          name: syncedSubscription?.env_name ?? openBillableSession?.template ?? null,
+        },
+        comfyUrl: null,
+      };
+    }
+
     // Durable Start in flight but claim/machines row not visible yet → keep opening.
     if (
       (!machineSessionView || machineSessionView.phase === 'idle') &&
-      !activeMachine
+      !activeMachine &&
+      !replaceInFlight
     ) {
       const { data: startOp } = await supabaseAdmin
         .from('machine_operations')

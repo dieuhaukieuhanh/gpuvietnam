@@ -1,6 +1,8 @@
 /**
  * P1 — Replace dead Runtime while Billing Session stays OPEN.
  * Never Close/settle. Same gpu_sessions.id + started_at.
+ *
+ * Order: keep old projection for UX → rent new → rebind session → destroy old.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -92,36 +94,22 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     .maybeSingle();
 
   const previousEndpoint = oldMachine ? buildEndpointFromMachine(oldMachine) : null;
-
-  // 1) Orphan destroy provider only — never destroy-pipeline / settle.
-  if (oldMachine?.instance_id) {
-    try {
-      const svc = getGpuServiceForMachine(oldMachine) || getGpuService();
-      await svc.destroyInstance(String(oldMachine.instance_id));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/not found|404|does not exist/i.test(msg)) {
-        console.warn('[runtime-auto-replace] orphan destroy failed:', msg);
-      }
-    }
-  }
-
   const now = new Date().toISOString();
-  if (oldMachine) {
+
+  // 1) Keep old row visible as Runtime DEAD until the new GPU is bound
+  //    (destroy-first made Dashboard lose the interrupt banner).
+  if (oldMachine && String(oldMachine.status ?? '') !== 'destroyed') {
     await supabaseAdmin
       .from('machines')
       .update({
-        status: 'destroyed',
-        stopped_at: now,
+        status: 'error',
         updated_at: now,
-        gpu_session_id: null,
-        billing_started_at: null,
         projection_message: RUNTIME_REPLACE_UX_MESSAGE,
       })
       .eq('id', oldMachineId);
   }
 
-  // 2) Rent new GPU
+  // 2) Rent new GPU first
   const label = `gvn-replace-${String(userId).slice(0, 8)}-${Date.now()}`;
   const instance = await provisionGpuInstance(getGpuService(), {
     gpuLine,
@@ -153,10 +141,38 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
 
   await supabaseAdmin
     .from('subscriptions')
-    .update({ server_status: 'online', updated_at: now })
+    .update({ server_status: 'online', updated_at: new Date().toISOString() })
     .eq('id', subscriptionId);
 
-  // 4) Wait until Comfy ready (best-effort)
+  // 4) Destroy old Runtime (provider + local) — session already rebound.
+  if (oldMachine?.instance_id) {
+    try {
+      const svc = getGpuServiceForMachine(oldMachine) || getGpuService();
+      await svc.destroyInstance(String(oldMachine.instance_id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/not found|404|does not exist/i.test(msg)) {
+        console.warn('[runtime-auto-replace] orphan destroy failed:', msg);
+      }
+    }
+  }
+  if (oldMachine) {
+    const destroyedAt = new Date().toISOString();
+    await supabaseAdmin
+      .from('machines')
+      .update({
+        status: 'destroyed',
+        stopped_at: destroyedAt,
+        updated_at: destroyedAt,
+        gpu_session_id: null,
+        billing_started_at: null,
+        projection_message: RUNTIME_REPLACE_UX_MESSAGE,
+      })
+      .eq('id', oldMachineId)
+      .neq('status', 'destroyed');
+  }
+
+  // 5) Wait until Comfy ready (best-effort)
   let readyMachine = newMachine;
   const gpuService = getGpuServiceForMachine(newMachine) || getGpuService();
   for (let i = 0; i < MAX_READY_POLLS; i++) {
@@ -175,7 +191,7 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     await new Promise((r) => setTimeout(r, READY_POLL_MS));
   }
 
-  // 5) Rebind work URL / tokens to new upstream
+  // 6) Rebind work URL / tokens to new upstream
   const endpoint = buildEndpointFromMachine(readyMachine);
   const nextUpstream =
     endpoint?.comfyUrl ||
