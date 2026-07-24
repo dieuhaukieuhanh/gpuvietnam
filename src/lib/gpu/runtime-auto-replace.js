@@ -21,10 +21,15 @@ import {
 import { buildEndpointFromMachine } from '@/lib/endpoint-utils';
 import {
   RUNTIME_REPLACE_UX_MESSAGE,
+  evaluateRuntimeAutoReplaceEligibility,
   loadOpenBillableSessionForUser,
 } from './runtime-auto-replace-core.js';
 
-export { RUNTIME_REPLACE_UX_MESSAGE, loadOpenBillableSessionForUser };
+export {
+  RUNTIME_REPLACE_UX_MESSAGE,
+  evaluateRuntimeAutoReplaceEligibility,
+  loadOpenBillableSessionForUser,
+};
 
 const MAX_READY_POLLS = 24;
 const READY_POLL_MS = 10_000;
@@ -57,8 +62,22 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     .eq('id', sessionId)
     .maybeSingle();
   if (sessErr) throw sessErr;
-  if (!session || session.status !== 'running' || !session.started_at) {
-    return { skipped: true, reason: 'session_not_open_billable' };
+
+  // Skip if session already has another healthy machine (race / prior replace won).
+  const { data: healthyPeers } = await supabaseAdmin
+    .from('machines')
+    .select('id, status')
+    .eq('user_id', userId)
+    .eq('gpu_session_id', sessionId)
+    .in('status', ['creating', 'starting', 'running'])
+    .neq('id', oldMachineId)
+    .limit(1);
+
+  const eligibility = evaluateRuntimeAutoReplaceEligibility(session, {
+    hasHealthyActiveMachineForSession: Array.isArray(healthyPeers) && healthyPeers.length > 0,
+  });
+  if (!eligibility.allow) {
+    return { skipped: true, reason: eligibility.reason };
   }
 
   const billingStartedAt = String(params.billingStartedAt || session.started_at);

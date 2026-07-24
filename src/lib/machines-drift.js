@@ -232,7 +232,7 @@ export async function detectSubscriptionMachineDrift(supabaseAdmin, gpuService, 
           if (machine.gpu_session_id) {
             const { data: sess } = await supabaseAdmin
               .from('gpu_sessions')
-              .select('id, status, started_at, plan, template')
+              .select('id, status, started_at, ended_at, close_requested_at, plan, template')
               .eq('id', String(machine.gpu_session_id))
               .maybeSingle();
             openSession = sess;
@@ -265,6 +265,7 @@ export async function detectSubscriptionMachineDrift(supabaseAdmin, gpuService, 
                   machine.billing_started_at || openSession.started_at,
                 ),
                 provider: machine.provider != null ? String(machine.provider) : null,
+                session: openSession,
               });
             } catch (enqueueErr) {
               console.warn(
