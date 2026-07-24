@@ -17,7 +17,7 @@ type CpWorkspaceDuringBootCardProps = {
 
 /**
  * DEV/internal scaffold only — NOT mounted on the customer dashboard.
- * Product path: Comfy editor sync (`gpuvietnam_cp_sync`) + SessionRestoreBanner.
+ * Product path: Comfy editor sync (`gpuvietnam_cp_sync`); ready UX via projection_message.
  * Do not re-wire this card into DashboardPage without an explicit product decision.
  */
 export default function CpWorkspaceDuringBootCard({

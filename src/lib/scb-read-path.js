@@ -179,7 +179,7 @@ export function resolveProjectionMachineStatus(machine, subscription) {
     return projectionStatusResponse(
       machine,
       'running',
-      projectionMessage ?? 'ComfyUI sẵn sàng',
+      projectionMessage ?? 'Generate đã sẵn sàng',
       instanceId,
       true,
     );

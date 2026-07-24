@@ -3,7 +3,6 @@ import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import DashboardOverview from '@/components/dashboard/DashboardOverview';
 import DashboardShell from '@/components/dashboard/DashboardShell';
-import SessionRestoreBanner from '@/components/dashboard/SessionRestoreBanner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
 import { routes } from '@/lib/routes';
@@ -11,7 +10,7 @@ import { styles } from '@/styles/pages/dashboard.styles';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user: authUser, loading: authLoading, session } = useAuth();
+  const { user: authUser, loading: authLoading } = useAuth();
   const { user, subscription, loading, error, refresh, billingView, machineSessionView, applyMachineSessionView, applyBillingSessionView } = useDashboard();
   const [showPending, setShowPending] = useState(false);
   const [showActivated, setShowActivated] = useState(false);
@@ -81,7 +80,6 @@ export default function DashboardPage() {
             </button>
           </div>
         )}
-        <SessionRestoreBanner accessToken={session?.access_token} />
         <DashboardOverview
           user={user}
           subscription={subscription}

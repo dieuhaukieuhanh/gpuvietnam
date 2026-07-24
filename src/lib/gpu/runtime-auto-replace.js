@@ -166,7 +166,7 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
       await supabaseAdmin
         .from('machines')
         .update({
-          projection_message: 'ComfyUI sẵn sàng',
+          projection_message: 'Generate đã sẵn sàng',
           updated_at: new Date().toISOString(),
         })
         .eq('id', readyMachine.id);

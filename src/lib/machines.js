@@ -382,7 +382,7 @@ export async function resolveLiveMachineStatus(gpuService, machine, options = {}
     if (health?.healthy) {
       return {
         status: 'running',
-        message: 'ComfyUI sẵn sàng',
+        message: 'Generate đã sẵn sàng',
         instanceId,
         ip,
         port,
