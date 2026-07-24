@@ -28,6 +28,9 @@ import {
 } from '@/lib/machines-provisioning-sync';
 import { snapshotToMachineRecord } from '@/lib/gpu/machine-lifecycle';
 import { persistDestroyCompleted, persistDriftRepair } from '@/lib/gpu/machine-lifecycle-persist';
+import { shouldKeepBillingSessionOpenOnRuntimeDead } from '@/lib/gpu/billing-session-p0b.js';
+import { enqueueRuntimeAutoReplace } from '@/lib/infrastructure/enqueue-runtime-auto-replace.js';
+import { RUNTIME_REPLACE_UX_MESSAGE } from '@/lib/gpu/runtime-auto-replace-core.js';
 
 export { isScb21ReadPathDetectOnly, detectProvisionFailureDrift, toSyncShape } from '@/lib/machines-drift-core';
 
@@ -222,6 +225,60 @@ export async function detectSubscriptionMachineDrift(supabaseAdmin, gpuService, 
         if (/not found|404|does not exist|invalid instance/i.test(message)) {
           if (shouldSkipDeadInstanceDestroyDuringBoot(machine, message)) {
             return buildDetectResult(false, machine, subscription, null, null);
+          }
+
+          // P0-B / P1: open billable session → keep OPEN + auto-replace (never settle).
+          let openSession = null;
+          if (machine.gpu_session_id) {
+            const { data: sess } = await supabaseAdmin
+              .from('gpu_sessions')
+              .select('id, status, started_at, plan, template')
+              .eq('id', String(machine.gpu_session_id))
+              .maybeSingle();
+            openSession = sess;
+          }
+          if (shouldKeepBillingSessionOpenOnRuntimeDead(openSession)) {
+            const now = new Date().toISOString();
+            await supabaseAdmin
+              .from('machines')
+              .update({
+                status: 'error',
+                projection_message: RUNTIME_REPLACE_UX_MESSAGE,
+                updated_at: now,
+              })
+              .eq('id', machine.id);
+            try {
+              await enqueueRuntimeAutoReplace(supabaseAdmin, {
+                userId,
+                sessionId: String(openSession.id),
+                oldMachineId: String(machine.id),
+                subscriptionId: String(subscription.id),
+                planKey: String(
+                  subscription.plan_key || subscription.plan || openSession.plan || 'pro',
+                ).toLowerCase(),
+                planName: String(subscription.plan || openSession.plan || 'Pro'),
+                gpuLine: String(
+                  machine.gpu_line || machine.gpu_type || subscription.gpu_line || 'rtx_4090',
+                ),
+                envName: String(subscription.env_name || openSession.template || 'ComfyUI'),
+                billingStartedAt: String(
+                  machine.billing_started_at || openSession.started_at,
+                ),
+                provider: machine.provider != null ? String(machine.provider) : null,
+              });
+            } catch (enqueueErr) {
+              console.warn(
+                '[detectSubscriptionMachineDrift] enqueue runtime_auto_replace failed:',
+                enqueueErr instanceof Error ? enqueueErr.message : enqueueErr,
+              );
+            }
+            return buildDetectResult(
+              true,
+              { ...machine, status: 'error', projection_message: RUNTIME_REPLACE_UX_MESSAGE },
+              subscription,
+              'runtime_dead_session_kept_open',
+              null,
+            );
           }
 
           return buildDetectResult(

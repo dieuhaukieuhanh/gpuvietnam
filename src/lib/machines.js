@@ -14,6 +14,11 @@ import {
 } from './machines-provisioning-sync.js';
 import { resolveMachineImage } from './machines-image-resolve.js';
 import { shouldKeepBillingSessionOpenOnRuntimeDead } from './gpu/billing-session-p0b.js';
+import { enqueueRuntimeAutoReplace } from './infrastructure/enqueue-runtime-auto-replace.js';
+import {
+  RUNTIME_REPLACE_UX_MESSAGE,
+  loadOpenBillableSessionForUser,
+} from './gpu/runtime-auto-replace-core.js';
 
 export {
   claimSubscriptionForProvision,
@@ -751,6 +756,17 @@ export async function syncSubscriptionWithMachineState(supabaseAdmin, gpuService
   }
 
   if (!machine) {
+    // P0-B / P1: Billing Session OPEN (or replace in flight) — do not flip offline.
+    const openBillable = await loadOpenBillableSessionForUser(supabaseAdmin, userId);
+    if (openBillable && subscription.server_status === 'online') {
+      return {
+        changed: false,
+        machine: null,
+        subscription,
+        action: 'keep_online_open_session_no_active_machine',
+      };
+    }
+
     if (subscription.server_status === 'online') {
       await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
       return {
@@ -841,14 +857,43 @@ export async function syncSubscriptionWithMachineState(supabaseAdmin, gpuService
             .from('machines')
             .update({
               status: 'error',
-              projection_message:
-                'Runtime disconnected — Billing Session vẫn OPEN (chờ User/Policy Close)',
+              projection_message: RUNTIME_REPLACE_UX_MESSAGE,
               updated_at: now,
             })
             .eq('id', machine.id);
+
+          // P1: enqueue auto-replace (durable worker). Never settle.
+          try {
+            const planKey = String(
+              subscription.plan_key || subscription.plan || openSession.plan || 'pro',
+            ).toLowerCase();
+            const gpuLine = String(
+              machine.gpu_line || machine.gpu_type || subscription.gpu_line || 'rtx_4090',
+            );
+            await enqueueRuntimeAutoReplace(supabaseAdmin, {
+              userId,
+              sessionId: String(openSession.id),
+              oldMachineId: String(machine.id),
+              subscriptionId: String(subscription.id),
+              planKey,
+              planName: String(subscription.plan || openSession.plan || 'Pro'),
+              gpuLine,
+              envName: String(subscription.env_name || openSession.template || 'ComfyUI'),
+              billingStartedAt: String(
+                machine.billing_started_at || openSession.started_at,
+              ),
+              provider: machine.provider != null ? String(machine.provider) : null,
+            });
+          } catch (enqueueErr) {
+            console.warn(
+              '[syncSubscriptionWithMachineState] enqueue runtime_auto_replace failed:',
+              enqueueErr instanceof Error ? enqueueErr.message : enqueueErr,
+            );
+          }
+
           return {
             changed: true,
-            machine: { ...machine, status: 'error' },
+            machine: { ...machine, status: 'error', projection_message: RUNTIME_REPLACE_UX_MESSAGE },
             subscription,
             action: 'runtime_dead_session_kept_open',
           };

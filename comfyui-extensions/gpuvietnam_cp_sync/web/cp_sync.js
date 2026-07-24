@@ -715,7 +715,7 @@ function ensureRuntimeBanner() {
   });
 
   const title = document.createElement("div");
-  title.textContent = "Máy đã tắt / mất kết nối";
+  title.textContent = "Generate tạm gián đoạn — Phiên vẫn làm việc bình thường";
   Object.assign(title.style, {
     fontWeight: "700",
     fontSize: "15px",
@@ -725,7 +725,7 @@ function ensureRuntimeBanner() {
   const body = document.createElement("p");
   body.id = `${BANNER_ID}-body`;
   body.textContent =
-    "Không generate được cho đến khi Start lại trên Dashboard. Bạn vẫn sửa được graph — hãy Save/Export workflow trước khi đóng tab (không chờ tab tự nối lại).";
+    "Bạn vẫn sửa được graph — hãy Save/Export workflow trước khi đóng tab (không chờ tab tự nối lại).";
   Object.assign(body.style, {
     margin: "0 0 12px",
     fontSize: "13px",
@@ -758,19 +758,11 @@ function ensureRuntimeBanner() {
     return b;
   };
 
-  const saveBtn = mkBtn("Lưu lên Control Plane", true);
-  saveBtn.addEventListener("click", () => {
-    dirty = true;
-    void saveToCp({ force: true }).then(() => {
-      if (!dirty) setStatus(STATUS.saved, "ok");
-    });
-  });
-
   const dash = document.createElement("a");
   dash.href = dashboardUrl();
   dash.target = "_blank";
   dash.rel = "noopener noreferrer";
-  dash.textContent = "Về Dashboard · Start lại";
+  dash.textContent = "Về Dashboard";
   Object.assign(dash.style, {
     display: "inline-block",
     textDecoration: "none",
@@ -791,7 +783,7 @@ function ensureRuntimeBanner() {
     el.style.display = "none";
   });
 
-  actions.append(saveBtn, dash, dismiss);
+  actions.append(dash, dismiss);
   card.append(title, body, actions);
   el.appendChild(card);
   document.body.appendChild(el);
@@ -819,7 +811,7 @@ function setRuntimeLost(next, reason) {
 
   if (!was) {
     console.warn("[gpuvietnam_cp_sync] runtime lost", reason || "");
-    setStatus("Runtime: mất kết nối — không generate được", "error");
+    setStatus("Generate tạm gián đoạn — phiên vẫn mở", "error");
     // CP sync still works via Worker/apiBase — flush edits immediately.
     const now = Date.now();
     if (dirty && now - lastRuntimeFlushAt > 2000) {

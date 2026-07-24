@@ -528,6 +528,16 @@
       "depends_on": [
         "0021"
       ]
+    },
+    {
+      "id": "0051",
+      "file": "supabase/p1-runtime-auto-replace-op.sql",
+      "category": "migration",
+      "description": "P1: machine_operations.runtime_auto_replace for dead Runtime replace",
+      "idempotent": true,
+      "depends_on": [
+        "0049"
+      ]
     }
   ],
   "seeds": [

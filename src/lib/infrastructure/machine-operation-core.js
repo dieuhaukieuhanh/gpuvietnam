@@ -2,7 +2,7 @@
  * SCB 2.1 Phase 2 — Machine Operation Queue pure helpers (no Supabase imports).
  */
 
-/** @typedef {'drift_update_subscription' | 'drift_mark_destroyed_local' | 'drift_destroy_user_machine' | 'drift_destroy_and_subscription_offline' | 'projection_verify' | 'user_start_provision'} MachineOperationType */
+/** @typedef {'drift_update_subscription' | 'drift_mark_destroyed_local' | 'drift_destroy_user_machine' | 'drift_destroy_and_subscription_offline' | 'projection_verify' | 'user_start_provision' | 'runtime_auto_replace'} MachineOperationType */
 
 /** @typedef {'pending' | 'leased' | 'running' | 'completed' | 'failed' | 'cancelled' | 'retry_scheduled' | 'dead_letter'} MachineOperationState */
 
@@ -13,6 +13,7 @@ export const MACHINE_OPERATION = {
   DRIFT_DESTROY_AND_SUBSCRIPTION_OFFLINE: 'drift_destroy_and_subscription_offline',
   PROJECTION_VERIFY: 'projection_verify',
   USER_START_PROVISION: 'user_start_provision',
+  RUNTIME_AUTO_REPLACE: 'runtime_auto_replace',
 };
 
 export const MACHINE_OPERATION_STATE = {

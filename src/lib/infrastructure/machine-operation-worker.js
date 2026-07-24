@@ -6,6 +6,7 @@
 import { getGpuService } from '@/lib/gpu';
 import { executeSubscriptionMachineDriftRepair } from '@/lib/machines-drift';
 import { completeUserStartProvision } from '@/lib/gpu/user-start-provision';
+import { completeRuntimeAutoReplace } from '@/lib/gpu/runtime-auto-replace';
 import {
   detectResultFromOperationPayload,
   MACHINE_OPERATION,
@@ -47,10 +48,12 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
   const opType = String(row.operation);
   const isProjectionVerify = opType === MACHINE_OPERATION.PROJECTION_VERIFY;
   const isUserStartProvision = opType === MACHINE_OPERATION.USER_START_PROVISION;
+  const isRuntimeAutoReplace = opType === MACHINE_OPERATION.RUNTIME_AUTO_REPLACE;
   const pvTrace = isProjectionVerify ? createProjectionVerifyTraceContext(row) : null;
 
   const running = await markRunning(supabaseAdmin, operationId, {
-    leaseMs: isUserStartProvision ? PROVISION_LEASE_MS : undefined,
+    leaseMs:
+      isUserStartProvision || isRuntimeAutoReplace ? PROVISION_LEASE_MS : undefined,
   });
   if (isProjectionVerify) {
     logProjectionVerifyTrace('markRunning()', pvTrace, {
@@ -64,7 +67,7 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
 
   /** @type {ReturnType<typeof setInterval> | null} */
   let provisionHeartbeat = null;
-  if (isUserStartProvision) {
+  if (isUserStartProvision || isRuntimeAutoReplace) {
     provisionHeartbeat = setInterval(() => {
       void extendLease(supabaseAdmin, operationId, { leaseMs: PROVISION_LEASE_MS }).catch(() => {
         /* best-effort; self-heal uses lease_until */
@@ -150,6 +153,23 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
         correlationId: String(payload.correlationId ?? row.correlation_id ?? ''),
         provisionLabel: String(payload.provisionLabel ?? ''),
       });
+    } else if (isRuntimeAutoReplace) {
+      const payload =
+        row.payload && typeof row.payload === 'object'
+          ? /** @type {Record<string, unknown>} */ (row.payload)
+          : {};
+      await completeRuntimeAutoReplace(supabaseAdmin, {
+        userId: String(payload.userId ?? userId),
+        sessionId: String(payload.sessionId ?? ''),
+        oldMachineId: String(payload.oldMachineId ?? row.machine_id ?? ''),
+        subscriptionId: String(payload.subscriptionId ?? ''),
+        planKey: String(payload.planKey ?? 'pro'),
+        planName: String(payload.planName ?? 'Pro'),
+        gpuLine: String(payload.gpuLine ?? 'rtx_4090'),
+        envName: String(payload.envName ?? 'ComfyUI'),
+        billingStartedAt: String(payload.billingStartedAt ?? ''),
+        correlationId: String(payload.correlationId ?? row.correlation_id ?? ''),
+      });
     } else {
       const detectResult = detectResultFromOperationRow(row);
       if (!detectResult.repair) {
@@ -183,7 +203,9 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
         ? 'projection verify completed'
         : opType === MACHINE_OPERATION.USER_START_PROVISION
           ? 'user start provision completed'
-          : 'execute complete';
+          : opType === MACHINE_OPERATION.RUNTIME_AUTO_REPLACE
+            ? 'runtime auto-replace completed'
+            : 'execute complete';
     logMachineOperation(
       'machine-op-worker',
       { ...ctx, state: 'completed', durationMs: executionMs },

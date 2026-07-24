@@ -3,7 +3,7 @@
  * Worker and scheduler read from here only — no magic numbers in queue code.
  */
 
-/** @typedef {'default_drift' | 'user_start_provision'} MachineOperationRetryPolicyName */
+/** @typedef {'default_drift' | 'user_start_provision' | 'runtime_auto_replace'} MachineOperationRetryPolicyName */
 
 /**
  * @typedef {Object} MachineOperationRetryPolicy
@@ -50,6 +50,12 @@ export const MACHINE_OPERATION_RETRY_POLICIES = {
     maxAttempts: 3,
     delaysMs: [60_000, 300_000],
   },
+  /** P1: replace dead Runtime; keep Billing Session OPEN. */
+  runtime_auto_replace: {
+    name: 'runtime_auto_replace',
+    maxAttempts: 3,
+    delaysMs: [60_000, 180_000],
+  },
 };
 
 /** @type {Record<string, keyof typeof PRIORITY_CLASS>} */
@@ -59,6 +65,7 @@ export const OPERATION_PRIORITY_CLASS = {
   drift_mark_destroyed_local: 'RECOVER',
   drift_update_subscription: 'REPAIR',
   user_start_provision: 'PROVISION',
+  runtime_auto_replace: 'RECOVER',
   projection_verify: 'PROBE',
 };
 
