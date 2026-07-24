@@ -306,6 +306,15 @@ export async function completeUserStartProvision(supabaseAdmin, params) {
     const syncedMachine = await syncMachineFromLiveStatus(supabaseAdmin, machine, liveStatus);
     await onProgress(liveStatus.status === 'running' ? 'comfy_ready' : 'health_check');
 
+    // Do not leave subscription stuck in provisioning after a terminal boot error.
+    if (liveStatus.status === 'error') {
+      throw new Error(
+        liveStatus.message
+          ? String(liveStatus.message)
+          : 'GPU boot failed after rent',
+      );
+    }
+
     if (liveStatus.status === 'running') {
       await persistProviderRunning(
         supabaseAdmin,

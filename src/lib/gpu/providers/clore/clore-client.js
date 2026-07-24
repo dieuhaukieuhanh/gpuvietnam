@@ -1527,14 +1527,44 @@ export class CloreClient {
     return '';
   }
 
-  /** @param {string} orderId */
-  async getOrder(orderId) {
-    const orders = await this.listMyOrders();
-    const found = orders.find((order) => String(order?.order_id ?? order?.id) === String(orderId));
-    if (!found) {
-      throw new GPUProviderError('Clore order not found: ' + orderId, { retryable: true });
+  /**
+   * @param {string} orderId
+   * @param {{ retries?: number; waitsMs?: number[] }} [options]
+   */
+  async getOrder(orderId, options = {}) {
+    // my_orders can lag create_order by a few seconds — retry before failing.
+    const waitsMs =
+      Array.isArray(options.waitsMs) && options.waitsMs.length
+        ? options.waitsMs
+        : [400, 900, 1600, 2500];
+    const retries = Number.isFinite(options.retries) ? Number(options.retries) : waitsMs.length;
+    /** @type {Error | null} */
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const orders = await this.listMyOrders();
+        const found = orders.find(
+          (order) => String(order?.order_id ?? order?.id) === String(orderId),
+        );
+        if (found) return found;
+        lastError = new GPUProviderError('Clore order not found: ' + orderId, { retryable: true });
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const message = lastError.message;
+        if (!/429|code.?5|rate.?limit|order not found/i.test(message) && attempt >= retries) {
+          throw lastError;
+        }
+      }
+
+      if (attempt >= retries) break;
+      const waitMs = waitsMs[Math.min(attempt, waitsMs.length - 1)] ?? 1000;
+      await sleep(waitMs);
     }
-    return found;
+
+    throw (
+      lastError ?? new GPUProviderError('Clore order not found: ' + orderId, { retryable: true })
+    );
   }
 
   /**

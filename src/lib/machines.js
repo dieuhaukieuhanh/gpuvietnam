@@ -449,6 +449,17 @@ export async function resolveLiveMachineStatus(gpuService, machine, options = {}
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // Fresh Clore rent: my_orders lag must not hard-fail the boot claim.
+    if (/order not found/i.test(message) && isMachineBooting(machine)) {
+      return {
+        status: 'starting',
+        message: 'Đang khởi động ComfyUI...',
+        instanceId,
+        ip: machineEndpoint.ip,
+        port: machineEndpoint.port,
+        healthOk: false,
+      };
+    }
     if (/network|timeout|ECONN/i.test(message)) {
       if (isMachineBooting(machine)) {
         return {

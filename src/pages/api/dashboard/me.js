@@ -2,6 +2,7 @@ import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import { repairUserBillingState, getGpuService, getGpuServiceForMachine } from '@/lib/gpu';
 import { createCorrelationId } from '@/lib/scb-correlation';
 import {
+  clearStuckProvisioningAfterFailedBoot,
   getActiveMachineForUser,
   getBillableSessionMachineForUser,
   pickPreferredActiveSubscription,
@@ -232,6 +233,12 @@ export default async function handler(req, res) {
         const invSpan = profStart('syncUserPlanInventory');
         await syncUserPlanInventory(supabaseAdmin, user.id);
         profEnd(invSpan);
+      }
+      // Failed boot leaves machine=error (not "active") + claim=provisioning → UI hangs.
+      if (String(subscription.server_status ?? '') === 'provisioning') {
+        await clearStuckProvisioningAfterFailedBoot(supabaseAdmin, user.id, {
+          subscription,
+        });
       }
       const correlationId = createCorrelationId();
       const syncSpan = profStart('runReadPathProjectionFirst (call)');

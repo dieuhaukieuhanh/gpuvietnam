@@ -43,6 +43,7 @@ import {
 } from '@/lib/logging';
 
 import {
+  clearStuckProvisioningAfterFailedBoot,
   getActiveMachineForUser,
   listActiveMachinesForUser,
   resolveLiveMachineStatus,
@@ -414,6 +415,18 @@ async function startMachineHandler(req, res) {
     let existingMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
     if (existingMachine) {
       gpuService = getGpuServiceForMachine(existingMachine);
+    }
+
+    // Failed boot → machine error (not active) + claim still provisioning.
+    // Clear before "already starting" so the user can retry immediately.
+    if (!existingMachine && subscription.server_status === 'provisioning') {
+      const cleared = await clearStuckProvisioningAfterFailedBoot(supabaseAdmin, user.id, {
+        subscription,
+      });
+      if (cleared.cleared) {
+        subscription = { ...subscription, server_status: 'offline' };
+        console.warn('[user/start-machine] Cleared stuck provisioning after failed boot', cleared);
+      }
     }
 
 
