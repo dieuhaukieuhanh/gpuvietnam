@@ -83,7 +83,7 @@ describe('auto-renew threshold (M10 T1)', () => {
     assert.equal(isWithinAutoRenewThreshold(hoursRemaining, 10), true);
   });
 
-  it('no active session → remaining = entitlement − settled', () => {
+  it('no active session → remaining = post-settlement entitlement (not minus settled again)', () => {
     const remaining = calculateRemaining({
       entitlementPlans: [
         {
@@ -107,7 +107,7 @@ describe('auto-renew threshold (M10 T1)', () => {
 
     assert.equal(remaining.state, REMAINING_STATE_OK);
     assert.equal(remaining.settledSessionUsageHours, 2);
-    assert.equal(remaining.remainingHours, 8);
+    assert.equal(remaining.remainingHours, 10);
   });
 
   it('threshold boundary at 10h default', () => {

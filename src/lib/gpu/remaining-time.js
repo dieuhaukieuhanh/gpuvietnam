@@ -406,7 +406,12 @@ export function calculateSettledUsage(snapshot) {
 
   for (const session of sessions) {
     if (session.settlement_status !== 'settled') continue;
-    totalSeconds += calculateSessionBillableSeconds(session.started_at, session.ended_at);
+    // Skip corrupt / epoch anchors — same guard as live session elapsed.
+    if (parseValidSessionStartedMs(session.started_at) == null) continue;
+    const seconds = calculateSessionBillableSeconds(session.started_at, session.ended_at);
+    // Cap absurd durations so one bad row cannot dominate diagnostics.
+    if (seconds > 7 * 24 * 3600) continue;
+    totalSeconds += seconds;
   }
 
   return totalSeconds / 3600;
@@ -453,13 +458,19 @@ export function resolvePrimaryPlanType(plans, nowMs) {
 }
 
 /**
- * Remaining = TotalEntitlement − SettledSessionUsage − CurrentSessionElapsed (clamped ≥ 0).
+ * Remaining = TotalEntitlement − CurrentSessionElapsed (clamped ≥ 0).
+ *
+ * `hours_remaining` on inventory / grants is already post-settlement (W6).
+ * Historical settled session durations must **not** be subtracted again —
+ * that double-counts and falsely drives auto-renew when users have large
+ * settled history (or corrupt epoch `started_at` rows).
  *
  * When `snapshot.machine` is set (running session / auto-stop):
  * - TotalEntitlement is scoped to that machine's package only (Starter/Pro/Studio).
- * - SettledSessionUsage is **not** subtracted: `hours_remaining` on inventory rows
- *   is already post-settlement, and past sessions on other packages must not zero out
- *   the active package. Remaining = packageHours − CurrentSessionElapsed.
+ * - Past sessions on other packages must not zero out the active package.
+ *
+ * `settledSessionUsageHours` is still computed for diagnostics / projections,
+ * but is not applied to `remainingHours`.
  *
  * Returns {@link RemainingBreakdownInvalid} when session invariants are violated.
  *
@@ -487,16 +498,14 @@ export function calculateRemaining(snapshot, clock = systemClock()) {
   );
   const totalEntitlementHours = calculateTotalEntitlement(snapshot, clock);
   const packagePoolHours = calculateGiftComboEntitlement(snapshot, clock);
-  const machineScoped = Boolean(snapshot.machine);
-  const settledSessionUsageHours = machineScoped ? 0 : calculateSettledUsage(snapshot, clock);
+  const settledSessionUsageHours = calculateSettledUsage(snapshot, clock);
   const currentSessionElapsedHours = calculateCurrentSessionElapsed(snapshot, clock);
-  const rawRemaining =
-    totalEntitlementHours - settledSessionUsageHours - currentSessionElapsedHours;
+  const rawRemaining = totalEntitlementHours - currentSessionElapsedHours;
   // Plan/session card: prepaid package pool (gift+combo+giờ lẻ), no ví.
   // Fall back to full remaining when pool empty (wallet-only hourly).
   const rawPackageRemaining =
     packagePoolHours > 0
-      ? packagePoolHours - settledSessionUsageHours - currentSessionElapsedHours
+      ? packagePoolHours - currentSessionElapsedHours
       : rawRemaining;
 
   return {

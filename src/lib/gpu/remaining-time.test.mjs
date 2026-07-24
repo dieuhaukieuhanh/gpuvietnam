@@ -290,9 +290,10 @@ describe('calculateRemaining', () => {
     );
     assert.equal(result.state, REMAINING_STATE_OK);
     assert.equal(result.totalEntitlementHours, 10);
+    // Settled usage is diagnostic only — hours_remaining is already post-settlement.
     assert.equal(result.settledSessionUsageHours, 2);
     assert.equal(result.currentSessionElapsedHours, 1.5);
-    assert.equal(result.remainingHours, 6.5);
+    assert.equal(result.remainingHours, 8.5);
   });
 
   it('multiple settled sessions', () => {
@@ -318,7 +319,8 @@ describe('calculateRemaining', () => {
     );
     assert.equal(result.state, REMAINING_STATE_OK);
     assert.equal(result.settledSessionUsageHours, 3);
-    assert.equal(result.remainingHours, 17);
+    // Do not subtract settled again from post-settlement hours_remaining.
+    assert.equal(result.remainingHours, 20);
   });
 
   it('clamps negative remaining to 0 (full precision)', () => {
@@ -343,6 +345,32 @@ describe('calculateRemaining', () => {
     );
     assert.equal(result.state, REMAINING_STATE_OK);
     assert.equal(result.remainingHours, 0);
+  });
+
+  it('ignores corrupt epoch settled sessions in settled usage diagnostics', () => {
+    const result = calculateRemaining(
+      {
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 50 }],
+        sessions: [
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '1970-01-01T00:00:00.000Z',
+            ended_at: '2026-07-05T02:01:40.000Z',
+          },
+          {
+            status: 'closed',
+            settlement_status: 'settled',
+            started_at: '2026-06-28T08:00:00.000Z',
+            ended_at: '2026-06-28T09:00:00.000Z',
+          },
+        ],
+      },
+      clock,
+    );
+    assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.settledSessionUsageHours, 1);
+    assert.equal(result.remainingHours, 50);
   });
 
   it('ignores corrupt epoch started_at for current session elapsed (SCB M2 guard)', () => {
@@ -379,10 +407,10 @@ describe('calculateRemaining', () => {
     assert.equal(result.remainingHours, 18);
   });
 
-  it('remaining exactly 0', () => {
+  it('remaining exactly 0 when inventory already empty', () => {
     const result = calculateRemaining(
       {
-        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 2 }],
+        entitlementPlans: [{ status: 'active', plan_type: 'combo', hours_remaining: 0 }],
         sessions: [
           {
             status: 'closed',
@@ -395,6 +423,7 @@ describe('calculateRemaining', () => {
       clock,
     );
     assert.equal(result.state, REMAINING_STATE_OK);
+    assert.equal(result.settledSessionUsageHours, 2);
     assert.equal(result.remainingHours, 0);
   });
 
@@ -453,7 +482,7 @@ describe('calculateRemaining', () => {
     assert.equal(result.state, REMAINING_STATE_OK);
     // Starter inventory already post-settlement; do not subtract closed sessions again.
     assert.equal(result.totalEntitlementHours, 1);
-    assert.equal(result.settledSessionUsageHours, 0);
+    assert.equal(result.settledSessionUsageHours, 3);
     assert.equal(result.currentSessionElapsedHours, 0.5);
     assert.equal(result.remainingHours, 0.5);
   });
