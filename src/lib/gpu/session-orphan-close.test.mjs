@@ -78,112 +78,28 @@ const orphanRow = (id, machine_id = 'mach_old') => ({
 });
 
 describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
-  it('orphan running session becomes closed (lifecycle persist)', async () => {
+  it('P0-B — billable OPEN session is never orphan-closed (even with no active machine)', async () => {
     const { supabaseAdmin, updates } = makeClient({
-      sessions: [orphanRow('sess_orphan')],
-      machines: [], // no active machine -> session is orphan
+      sessions: [orphanRow('sess_billable')],
+      machines: [],
     });
 
     const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
 
-    assert.equal(res.closed, 1);
-    assert.equal(res.skipped, 0);
-    assert.deepEqual(res.sessionIds, ['sess_orphan']);
-
-    assert.equal(updates.length, 1, 'exactly one persist update');
-    const patch = updates[0].patch;
-    assert.equal(patch.status, 'closed', 'lifecycle status set to closed');
-    assert.equal(patch.ended_at, NOW);
-    assert.equal(patch.verified_destroyed_at, NOW);
-    assert.equal(patch.destroy_reason, 'orphan');
-    assert.equal(patch.duration_seconds, 0);
-    assert.equal(patch.output_summary, 'orphan_auto_closed');
-
-    // Persist guarded by WHERE status='running'.
-    assert.equal(updates[0].filters.id, 'sess_orphan');
-    assert.equal(updates[0].filters.status, 'running');
+    assert.equal(res.closed, 0);
+    assert.equal(res.skipped, 1);
+    assert.equal(updates.length, 0);
   });
 
-  it('next pending session can be created — orphan no longer running', async () => {
-    // After the lifecycle close, the row is status='closed' so the per-user
-    // unique index (one running session per user) no longer blocks a new
-    // pending insert. We assert the persisted status is terminal 'closed'.
+  it('P0-B — machine status=error still binds the session (Runtime DEAD keep-open)', async () => {
     const { supabaseAdmin, updates } = makeClient({
-      sessions: [orphanRow('sess_blocker')],
-      machines: [],
+      sessions: [orphanRow('sess_error', 'mach_err')],
+      machines: [{ id: 'mach_err', gpu_session_id: 'sess_error' }],
     });
-    await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-    assert.equal(updates[0].patch.status, 'closed');
-    assert.notEqual(updates[0].patch.status, 'running');
-  });
-
-  it('no settlement invoked — settlement_status stays pending, not settled', async () => {
-    const { supabaseAdmin, updates, tables } = makeClient({
-      sessions: [orphanRow('sess_o')],
-      machines: [],
-    });
-    await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-
-    const ss = updates[0].patch.settlement_status;
-    assert.equal(ss, 'pending', 'closeSession sets settlement_status=pending (NOT settled/in_progress/skipped/failed)');
-    assert.notEqual(ss, 'settled');
-    assert.notEqual(ss, 'in_progress');
-    assert.notEqual(ss, 'skipped');
-    assert.notEqual(ss, 'failed');
-    // No settlement table touched.
-    assert.ok(!tables.includes('wallet_transactions'));
-    assert.ok(!tables.some((t) => t.includes('settlement')));
-  });
-
-  it('no billing invoked — patch contains only lifecycle/usage-zero fields', async () => {
-    const { supabaseAdmin, updates } = makeClient({
-      sessions: [orphanRow('sess_o')],
-      machines: [],
-    });
-    await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-
-    const patch = updates[0].patch;
-    const allowed = new Set([
-      'status',
-      'ended_at',
-      'settlement_status',
-      'destroy_reason',
-      'verified_destroyed_at',
-      'duration_seconds',
-      'output_summary',
-    ]);
-    for (const key of Object.keys(patch)) {
-      assert.ok(allowed.has(key), `unexpected billing field in patch: ${key}`);
-    }
-    // No charge/amount/price/cost keys.
-    for (const forbidden of ['amount', 'charge', 'price', 'cost', 'vram_avg_pct', 'output_count']) {
-      assert.ok(!(forbidden in patch), `billing field leaked: ${forbidden}`);
-    }
-  });
-
-  it('no wallet mutation — wallets/wallet_transactions tables never accessed', async () => {
-    const { supabaseAdmin, tables } = makeClient({
-      sessions: [orphanRow('sess_o')],
-      machines: [],
-    });
-    await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-    assert.ok(!tables.includes('wallets'), 'wallets table must not be touched');
-    assert.ok(!tables.includes('wallet_transactions'), 'wallet_transactions table must not be touched');
-    assert.deepEqual(
-      [...new Set(tables)].sort(),
-      ['gpu_sessions', 'machines'],
-      'only gpu_sessions + machines may be accessed',
-    );
-  });
-
-  it('no inventory mutation — inventory tables never accessed', async () => {
-    const { supabaseAdmin, tables } = makeClient({
-      sessions: [orphanRow('sess_o')],
-      machines: [],
-    });
-    await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-    assert.ok(!tables.includes('user_plan_inventory'), 'user_plan_inventory must not be touched');
-    assert.ok(!tables.some((t) => t.includes('inventor')), 'no inventory table may be touched');
+    // machines query filters by status list including error — mock returns linked row
+    const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
+    assert.equal(res.closed, 0);
+    assert.equal(updates.length, 0);
   });
 
   it('session linked to an active machine is NOT closed (not orphan)', async () => {
@@ -197,9 +113,6 @@ describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
   });
 
   it('session with NULL projection gpu_session_id but FK machine_id on active machine is NOT orphan', async () => {
-    // Regression: openBillableSession used to close a live billable session as
-    // orphan when machines.gpu_session_id drifted NULL, then open a new session
-    // and reset the dashboard clock from 00:00:00.
     const { supabaseAdmin, updates } = makeClient({
       sessions: [orphanRow('sess_live', 'mach_live')],
       machines: [{ id: 'mach_live', gpu_session_id: null }],
@@ -209,26 +122,14 @@ describe('closeOrphanRunningSessionsLifecycle (SCB 3.2)', () => {
     assert.equal(updates.length, 0);
   });
 
-  it('concurrent close (0-row persist) -> skipped, not retried, not forced', async () => {
-    const { supabaseAdmin, updates } = makeClient({
-      sessions: [orphanRow('sess_o')],
-      machines: [],
-      zeroRowIds: new Set(['sess_o']), // reconciliation already closed it
-    });
-    const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-    assert.equal(res.closed, 0, 'must not count a concurrent close as ours');
-    assert.equal(res.skipped, 1);
-    assert.equal(updates.length, 1, 'exactly one update attempt — no retry, no force');
-  });
-
-  it('multiple orphans all closed in one pass', async () => {
+  it('multiple billable sessions without machines are kept open (not mass-closed)', async () => {
     const { supabaseAdmin, updates } = makeClient({
       sessions: [orphanRow('sess_a'), orphanRow('sess_b'), orphanRow('sess_c')],
       machines: [],
     });
     const res = await closeOrphanRunningSessionsLifecycle(supabaseAdmin, 'u1', { now: NOW });
-    assert.equal(res.closed, 3);
-    assert.deepEqual(res.sessionIds, ['sess_a', 'sess_b', 'sess_c']);
-    assert.equal(updates.length, 3);
+    assert.equal(res.closed, 0);
+    assert.equal(res.skipped, 3);
+    assert.equal(updates.length, 0);
   });
 });

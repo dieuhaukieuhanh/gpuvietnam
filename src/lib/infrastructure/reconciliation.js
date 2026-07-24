@@ -145,12 +145,18 @@ async function repairOrphanSession(supabaseAdmin, drift, deps) {
     return { outcome: REPAIR_OUTCOME.ALREADY_CONSISTENT, reason: 'not_running' };
   }
 
+  // P0-B: billable OPEN session must not be closed by orphan repair.
+  if (row.started_at) {
+    return {
+      outcome: REPAIR_OUTCOME.SKIPPED,
+      reason: 'open_billable_session_kept_open',
+    };
+  }
+
   const record = mapSessionRowToRecord(row);
   const now = deps.now ?? new Date().toISOString();
 
-  // SCB 3.0: an orphan running session (no active machine) is closed directly
-  // running -> closed. The provider instance is gone, so provider-destroyed is
-  // treated as verified. Settlement is then handled by settlement-drift repair.
+  // Non-billable running (no started_at): close lifecycle only.
   const closeResult = closeSession(
     record,
     { providerDestroyedVerified: true, now },
@@ -345,7 +351,7 @@ export async function runInfrastructureReconciliation(supabaseAdmin, deps = {}, 
     supabaseAdmin
       .from('machines')
       .select('*')
-      .in('status', ['creating', 'starting', 'running', 'closing', 'destroyed'])
+      .in('status', ['creating', 'starting', 'running', 'closing', 'error', 'destroyed'])
       .order('updated_at', { ascending: false })
       .limit(limit),
   ]);

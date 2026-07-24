@@ -29,8 +29,12 @@ import {
   SESSION_STATUS,
 } from './session-lifecycle.js';
 
-/** Machine statuses that count as "active" (linked to a live machine). */
-const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running'];
+/**
+ * Machine statuses that still bind an open Billing Session.
+ * Include `error` — P0-B/P1 Runtime DEAD marks the row error while session stays OPEN
+ * (auto-replace). Treating error as unbound incorrectly orphan-closes the session.
+ */
+const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running', 'error'];
 
 const ORPHAN_SELECT =
   'id, user_id, status, machine_id, started_at, ended_at, settlement_status, destroy_reason, verified_running_at, verified_destroyed_at, created_at';
@@ -119,6 +123,13 @@ export async function closeOrphanRunningSessionsLifecycle(supabaseAdmin, userId,
     // Projection gpu_session_id may be NULL while FK machine_id still points at
     // a live machine — do not treat that as orphan (would reset billing clock).
     if (sessionMachineId && activeMachineIds.has(sessionMachineId)) continue;
+
+    // P0-B / P1: Runtime DEAD keep-open — never lifecycle-close a billable OPEN session.
+    // (Machine may be status=error during auto-replace; that is not an orphan.)
+    if (row.started_at) {
+      skipped += 1;
+      continue;
+    }
 
     const record = mapRowToRecord(row);
 

@@ -23,7 +23,7 @@ const MACHINE_ID = '33333333-3333-3333-3333-333333333333';
 const NOW = '2026-07-03T12:00:00.000Z';
 
 describe('reconciliation-core detection (M13)', () => {
-  it('T1 — zombie local when DB running and provider destroyed', () => {
+  it('T1 — zombie local when DB running (no started_at) and provider destroyed', () => {
     const drift = detectZombieLocal(
       { id: SESSION_ID, status: 'running', user_id: USER_ID },
       { id: MACHINE_ID, status: 'running', instance_id: 'inst-1', user_id: USER_ID },
@@ -31,6 +31,21 @@ describe('reconciliation-core detection (M13)', () => {
       { outcome: 'verified_destroyed' },
     );
     assert.equal(drift?.driftType, DRIFT_TYPE.ZOMBIE_LOCAL);
+  });
+
+  it('P0-B — open billable session is not zombie_local when provider destroyed', () => {
+    const drift = detectZombieLocal(
+      {
+        id: SESSION_ID,
+        status: 'running',
+        started_at: NOW,
+        user_id: USER_ID,
+      },
+      { id: MACHINE_ID, status: 'error', instance_id: 'inst-1', user_id: USER_ID },
+      { normalizedState: 'destroyed', instanceId: 'inst-1' },
+      { outcome: 'verified_destroyed' },
+    );
+    assert.equal(drift, null);
   });
 
   it('T2 — destroyed mismatch when DB destroyed but provider running', () => {
@@ -53,12 +68,20 @@ describe('reconciliation-core detection (M13)', () => {
     assert.equal(drift?.driftType, DRIFT_TYPE.STALE_CLOSING);
   });
 
-  it('detects orphan running session without active machine', () => {
+  it('detects orphan running session without active machine (non-billable)', () => {
     const drift = detectOrphanSession(
       { id: SESSION_ID, status: 'running', user_id: USER_ID },
       { id: MACHINE_ID, status: 'destroyed' },
     );
     assert.equal(drift?.driftType, DRIFT_TYPE.ORPHAN_SESSION);
+  });
+
+  it('P0-B — billable OPEN session is never orphan_session', () => {
+    const drift = detectOrphanSession(
+      { id: SESSION_ID, status: 'running', started_at: NOW, user_id: USER_ID },
+      { id: MACHINE_ID, status: 'error' },
+    );
+    assert.equal(drift, null);
   });
 
   it('detects settlement failed on closed session', () => {
@@ -90,7 +113,7 @@ describe('reconciliation-core detection (M13)', () => {
 });
 
 describe('repairDriftItem (M13)', () => {
-  it('T5 — repair orphan closes session without settlement', async () => {
+  it('T5 — P0-B repair orphan skips billable OPEN session (no close / no settle)', async () => {
     /** @type {Record<string, unknown>} */
     const session = {
       id: SESSION_ID,
@@ -149,9 +172,9 @@ describe('repairDriftItem (M13)', () => {
       },
     );
 
-    assert.equal(result.outcome, REPAIR_OUTCOME.REPAIRED);
-    assert.equal(session.status, 'closed');
-    assert.equal(session.settlement_status, 'pending');
+    assert.equal(result.outcome, REPAIR_OUTCOME.SKIPPED);
+    assert.equal(result.reason, 'open_billable_session_kept_open');
+    assert.equal(session.status, 'running');
     assert.equal(settleCalled, false);
   });
 

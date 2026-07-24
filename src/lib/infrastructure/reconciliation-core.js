@@ -26,7 +26,8 @@ export const REPAIR_OUTCOME = Object.freeze({
 /** @type {number} */
 export const DEFAULT_STALE_CLOSING_MS = 30 * 60 * 1000;
 
-const ACTIVE_MACHINE_STATUSES = new Set(['creating', 'starting', 'running', 'closing']);
+/** Include `error`: Runtime DEAD keep-open (P0-B/P1) — not an orphan session. */
+const ACTIVE_MACHINE_STATUSES = new Set(['creating', 'starting', 'running', 'closing', 'error']);
 
 const SETTLEMENT_RETRY_STATUSES = new Set(['failed', 'pending', 'in_progress', 'awaiting_verify']);
 
@@ -127,6 +128,12 @@ export function detectZombieLocal(session, machine, providerSnapshot, verifyResu
     return null;
   }
 
+  // P0-B: open billable session must stay OPEN when Runtime is DEAD — auto-replace
+  // (not destroy-pipeline / orphan close). Provider-missing is expected during replace.
+  if (sessionRunning && session?.started_at) {
+    return null;
+  }
+
   if (!isProviderDestroyed(providerSnapshot, verifyResult)) {
     return null;
   }
@@ -181,6 +188,12 @@ export function detectDestroyedMismatch(machine, providerSnapshot) {
  */
 export function detectOrphanSession(session, machine) {
   if (String(session?.status ?? '') !== 'running') {
+    return null;
+  }
+
+  // P0-B / P1: billable OPEN session is never "orphan-closed" — Runtime DEAD keeps
+  // the Billing Session open until User/Policy Close (auto-replace may be in flight).
+  if (session?.started_at) {
     return null;
   }
 
