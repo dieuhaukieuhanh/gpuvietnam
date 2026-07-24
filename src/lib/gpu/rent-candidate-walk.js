@@ -4,11 +4,14 @@
  * Contract: before trying the next host after a failed rent, the provider MUST
  * cancel any instance/order that may have been created for the failed offer.
  * Walking without cancel leaves multiple live GPUs for one user start.
+ *
+ * If orphan cancel fails, the walk MUST stop (no second rent). Prefer one failed
+ * start over two billed GPUs.
  */
 
 /**
- * Best-effort orphan destroy. Never throws — logs and continues so the walk
- * can still move to the next candidate.
+ * Best-effort orphan destroy. Never throws to the caller — returns whether
+ * cleanup succeeded so the walk can refuse a second rent.
  *
  * @param {{
  *   providerId: string;
@@ -45,6 +48,16 @@ export async function cancelOrphanBeforeNextHost(input) {
     );
     return { cancelled: false, skipped: false, error };
   }
+}
+
+/**
+ * True when the walk may safely try another host (orphan cleanup ok or skipped).
+ * @param {{ cancelled?: boolean; skipped?: boolean; error?: unknown }} result
+ */
+export function canWalkToNextHostAfterCancel(result) {
+  if (result?.skipped) return false;
+  if (result?.error) return false;
+  return Boolean(result?.cancelled);
 }
 
 /**
@@ -113,12 +126,23 @@ export async function walkRentCandidates(input) {
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
-      await cancelOrphanBeforeNextHost({
+      const cancelResult = await cancelOrphanBeforeNextHost({
         providerId,
         offerId,
         cancelOrphan: () => input.cancelOrphan(candidate, offerId, error),
         log,
       });
+
+      if (!canWalkToNextHostAfterCancel(cancelResult)) {
+        log(
+          `[${providerId}/rent] Aborting candidate walk after offer ${offerId} — ` +
+            'orphan cancel did not succeed; refusing a second rent',
+          cancelResult.error instanceof Error
+            ? cancelResult.error.message
+            : cancelResult.error ?? 'cancel skipped or failed',
+        );
+        break;
+      }
 
       const actionRaw = await input.afterFailure({
         candidate,

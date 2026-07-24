@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  canWalkToNextHostAfterCancel,
   cancelOrphanBeforeNextHost,
   walkRentCandidates,
 } from "./rent-candidate-walk.js";
@@ -19,6 +20,7 @@ describe("cancelOrphanBeforeNextHost", () => {
     });
     assert.equal(called, 1);
     assert.equal(result.cancelled, false);
+    assert.equal(canWalkToNextHostAfterCancel(result), false);
   });
 });
 
@@ -81,5 +83,28 @@ describe("walkRentCandidates", () => {
       /auth/,
     );
     assert.deepEqual(rented, ["a"]);
+  });
+
+  it("refuses second rent when orphan cancel fails", async () => {
+    const rented = [];
+    const walked = await walkRentCandidates({
+      providerId: "test",
+      sourceLabel: "initial",
+      candidates: [{ id: "a" }, { id: "b" }],
+      getOfferId: (c) => c.id,
+      rentOne: async (_c, offerId) => {
+        rented.push(offerId);
+        throw new Error("rent failed after create");
+      },
+      cancelOrphan: async () => {
+        throw new Error("cancel boom");
+      },
+      afterFailure: () => "continue",
+      log: () => {},
+    });
+
+    assert.deepEqual(rented, ["a"], "must not rent host b while orphan may still be live");
+    assert.equal(walked.result, null);
+    assert.match(String(walked.lastError?.message ?? ""), /rent failed after create/);
   });
 });

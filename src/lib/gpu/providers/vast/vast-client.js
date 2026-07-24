@@ -510,9 +510,23 @@ export class VastClient {
           triedOfferIds.add(offerId);
           return this.rentOffer(best, offerId, rentBody, params.gpuLine);
         },
-        cancelOrphan: async (_best, offerId) => {
+        cancelOrphan: async (_best, offerId, error) => {
           // rentOffer already destroys on post-rent gate failure; this catches
           // lost-response / partial-create cases before walking to the next host.
+          const knownId =
+            error &&
+            typeof error === 'object' &&
+            'providerInstanceId' in error &&
+            error.providerInstanceId != null
+              ? String(error.providerInstanceId).trim()
+              : '';
+          if (knownId) {
+            console.warn(
+              `[vast/createInstance] Cancel orphan instance ${knownId} for offer ${offerId} before next candidate`,
+            );
+            await this.destroyInstance(knownId);
+            return;
+          }
           const label = String(rentBody.label ?? '').trim();
           if (!label) return;
           const rows = await this.listInstancesByLabel(label);
@@ -720,9 +734,12 @@ export class VastClient {
           destroyError instanceof Error ? destroyError.message : destroyError,
         );
       }
-      throw new GPUProviderError(formatVastBadHostError(instanceId, ready.detail), {
-        retryable: true,
-      });
+      const gateError = new GPUProviderError(
+        formatVastBadHostError(instanceId, ready.detail),
+        { retryable: true },
+      );
+      /** @type {any} */ (gateError).providerInstanceId = instanceId;
+      throw gateError;
     }
 
     appendProvisionJournal(

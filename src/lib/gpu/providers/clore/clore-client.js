@@ -967,9 +967,16 @@ export class CloreClient {
             tick,
             params.gpuLine,
           ),
-        cancelOrphan: async (_best, offerId) => {
-          const orphan = await this.findLatestOrderForServer(offerId);
-          const orphanId = orphan ? extractCloreOrderId(orphan) : '';
+        cancelOrphan: async (_best, offerId, error) => {
+          const knownId =
+            error &&
+            typeof error === 'object' &&
+            'providerInstanceId' in error &&
+            error.providerInstanceId != null
+              ? String(error.providerInstanceId).trim()
+              : '';
+          const orphan = knownId ? null : await this.findLatestOrderForServer(offerId);
+          const orphanId = knownId || (orphan ? extractCloreOrderId(orphan) : '');
           if (!orphanId) return;
           console.warn(
             '[clore/createInstance] Cancel orphan order ' +
@@ -1330,18 +1337,26 @@ export class CloreClient {
           gpuLine: gpuLine != null ? String(gpuLine) : null,
         });
       }
+      let destroyFailed = false;
       try {
         await this.destroyInstance(orderId);
       } catch (destroyError) {
+        destroyFailed = true;
         console.warn(
           '[clore/createInstance] destroy after gate fail:',
           destroyError instanceof Error ? destroyError.message : destroyError,
         );
       }
-      throw new GPUProviderError(
-        `Clore bad host (gate ${gate.step}) for order ${orderId}: ${gate.detail || 'failed'} — trying next offer`,
+      // Always tag the order id so the walk can cancel by id (not only server lookup).
+      // If destroy already failed, walk must abort when cancel also fails — never rent #2.
+      const gateError = new GPUProviderError(
+        destroyFailed
+          ? `Clore bad host (gate ${gate.step}) for order ${orderId}: ${gate.detail || 'failed'} — orphan still live`
+          : `Clore bad host (gate ${gate.step}) for order ${orderId}: ${gate.detail || 'failed'} — trying next offer`,
         { retryable: true },
       );
+      /** @type {any} */ (gateError).providerInstanceId = orderId;
+      throw gateError;
     }
 
     appendProvisionJournal(
