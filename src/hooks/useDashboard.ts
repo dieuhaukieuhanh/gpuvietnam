@@ -180,18 +180,20 @@ export function useDashboard() {
             nowMs: Date.now(),
           },
         ) as MachineSessionView | null;
-        // Resume-first: restore boot guard after refresh when a session is in flight / running
+        // Resume-first: only re-arm boot guard when server says resume an in-flight session.
+        // Do NOT extend the guard on every poll while phase===opening — that trapped cancel→idle
+        // (merge kept optimistic opening forever as the 45s window kept sliding forward).
         const resume = result.sessionResume as
           | { shouldResume?: boolean; currentState?: string }
           | undefined;
-        if (
-          resume?.shouldResume ||
-          merged?.phase === 'opening' ||
-          merged?.phase === 'running' ||
-          merged?.phase === 'disconnected'
-        ) {
+        if (resume?.shouldResume === true) {
           markOpeningBootGuard();
-        } else {
+        } else if (
+          merged?.phase === 'idle' ||
+          merged?.phase === 'error' ||
+          merged?.phase === 'stopping' ||
+          !merged
+        ) {
           clearOpeningBootGuard();
         }
         return merged;

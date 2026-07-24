@@ -1061,19 +1061,20 @@ export default function DashboardOverview({
     const token = session?.access_token;
     if (!token) return;
 
+    // Always abort in-flight Start fetch, then call cancel API so server/queue/UI stay aligned.
     if (startMachineAbortRef.current) {
       startMachineAbortRef.current.abort();
       startMachineAbortRef.current = null;
-      onMachineSessionView?.(
-        buildIdleMachineSessionViewForUi(subscription?.env_name ?? effectiveEnvName),
-      );
-      setSessionWorkspace(null);
-      setToast('Đã hủy khởi tạo phiên làm việc');
-      return;
     }
 
     setIsCancellingBoot(true);
     setStartMessage('');
+    setProvisionProgress(null);
+    onMachineSessionView?.(
+      buildIdleMachineSessionViewForUi(subscription?.env_name ?? effectiveEnvName),
+    );
+    setSessionWorkspace(null);
+
     try {
       const res = await fetch('/api/user/cancel-start-machine', {
         method: 'POST',
@@ -1084,18 +1085,25 @@ export default function DashboardOverview({
         message?: string;
         machineSessionView?: MachineSessionView;
         billingView?: BillingSessionView;
+        alreadyIdle?: boolean;
       };
-      if (!res.ok) {
+      // 400 "not starting" is OK after abort — treat as idle.
+      if (!res.ok && res.status !== 400) {
         setStartMessage(data.error ?? 'Không hủy được khởi tạo.');
         return;
       }
       if (data.machineSessionView) {
         onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+      } else {
+        onMachineSessionView?.(
+          buildIdleMachineSessionViewForUi(subscription?.env_name ?? effectiveEnvName),
+        );
       }
       if (data.billingView) {
         onBillingSessionView?.(data.billingView);
       }
       setSessionWorkspace(null);
+      setProvisionProgress(null);
       setToast('Đã hủy khởi tạo phiên làm việc');
       notifyUserPlansChanged();
       await onRefresh({ silent: true });

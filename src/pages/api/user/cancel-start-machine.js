@@ -45,16 +45,32 @@ export default async function handler(req, res) {
     const provisioning =
       String(subscription.server_status ?? '') === 'provisioning' || phase === 'opening';
 
-    if (!provisioning) {
-      return res.status(400).json({ error: 'Máy không ở trạng thái đang khởi động.' });
-    }
-
-    // Free durable queue slot first so a later Start cannot race a dying op.
+    // Always free durable queue slot (even if subscription already flipped offline).
     const cancelledOps = await cancelActiveUserStartProvisions(
       supabaseAdmin,
       user.id,
       'user_cancel_start',
     );
+
+    if (!provisioning && !activeMachine && cancelledOps.count === 0) {
+      const machineSessionView = resolveMachineSessionView(
+        snapshotToMachineRecord({ ...subscription, server_status: 'offline' }, null, user.id),
+        { envName: subscription.env_name ?? null },
+      );
+      const billingView = await resolveBillingViewForCommand(supabaseAdmin, user.id, {
+        machineSessionView,
+        machine: null,
+        gpuService: getGpuServiceForMachine(null),
+      });
+      return res.status(200).json({
+        success: true,
+        alreadyIdle: true,
+        message: 'Không có phiên đang khởi tạo.',
+        cancelledOperations: cancelledOps.cancelledIds,
+        machineSessionView,
+        billingView,
+      });
+    }
 
     const lifecycleCtx = {
       subscriptionActive: subscription.status === 'active',
