@@ -209,9 +209,11 @@ export async function leaseNext(supabaseAdmin, options = {}) {
     .order('created_at', { ascending: true })
     .limit(limit);
 
-  // Serverless/Vercel must not claim durable starts — leave them for VPS lifecycle worker.
+  // Serverless/Vercel must not claim durable rent ops — leave them for VPS lifecycle worker.
   if (!canExecuteUserStartProvisionInThisProcess()) {
-    query = query.neq('operation', MACHINE_OPERATION.USER_START_PROVISION);
+    query = query
+      .neq('operation', MACHINE_OPERATION.USER_START_PROVISION)
+      .neq('operation', MACHINE_OPERATION.RUNTIME_AUTO_REPLACE);
   }
 
   const { data: candidates, error: selectError } = await query;

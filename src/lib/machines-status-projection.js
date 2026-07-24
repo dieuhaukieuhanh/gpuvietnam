@@ -15,7 +15,10 @@ import { buildConsumerEndpoint, isEndpointReadyForTraffic } from '@/lib/endpoint
 import {
   fetchActiveSubscription,
   getActiveMachineForUser,
+  getBillableSessionMachineForUser,
 } from '@/lib/machines';
+import { RUNTIME_REPLACE_UX_MESSAGE } from '@/lib/gpu/runtime-auto-replace-core';
+import { enqueueRuntimeAutoReplace } from '@/lib/infrastructure/enqueue-runtime-auto-replace';
 import { fetchLiveMetrics } from '@/lib/gpu/metrics';
 import { runReadPathProjectionFirst } from '@/lib/machines-drift-projection';
 import { toSyncShape } from '@/lib/machines-drift-core';
@@ -50,7 +53,13 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     hasMachine: Boolean(sync.machine),
   });
 
-  if (sync.changed && !sync.machine) {
+  let machine = sync.machine ?? (await getActiveMachineForUser(supabaseAdmin, user.id));
+  // Runtime DEAD keep-open: error machine is not in ACTIVE statuses.
+  if (!machine || String(machine.status ?? '') === 'destroyed') {
+    machine = (await getBillableSessionMachineForUser(supabaseAdmin, user.id)) ?? machine;
+  }
+
+  if (sync.changed && !machine) {
     const subscription =
       sync.subscription ?? (await fetchActiveSubscription(supabaseAdmin, user.id));
     if (subscription?.server_status === 'provisioning') {
@@ -74,7 +83,6 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     return res.status(200).json(payload);
   }
 
-  const machine = sync.machine ?? (await getActiveMachineForUser(supabaseAdmin, user.id));
   if (!machine) {
     const subscription =
       sync.subscription ?? (await fetchActiveSubscription(supabaseAdmin, user.id));
@@ -115,12 +123,44 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
   const consumerEndpoint = buildConsumerEndpoint(machine, healthOk);
   const { ip, port, comfyUrl } = consumerEndpoint;
 
-  if (liveStatus.status === 'error') {
+  // Open billable + Runtime DEAD → reconnect/replace UX (never fake idle autostop).
+  if (
+    liveStatus.status === 'error' ||
+    (String(machine.status ?? '') === 'error' && Boolean(machine.billing_started_at))
+  ) {
+    const sessionId = machine.gpu_session_id ? String(machine.gpu_session_id) : '';
+    const subscriptionId = String(machine.subscription_id ?? subscription?.id ?? '');
+    if (sessionId && subscriptionId) {
+      try {
+        await enqueueRuntimeAutoReplace(supabaseAdmin, {
+          userId: user.id,
+          sessionId,
+          oldMachineId: String(machine.id),
+          subscriptionId,
+          planKey: String(subscription?.plan_key || subscription?.plan || 'pro').toLowerCase(),
+          planName: String(subscription?.plan || 'Pro'),
+          gpuLine: String(machine.gpu_line || machine.gpu_type || 'rtx_4090'),
+          envName: String(subscription?.env_name || machine.template || 'ComfyUI'),
+          billingStartedAt: String(machine.billing_started_at || ''),
+          provider: machine.provider != null ? String(machine.provider) : null,
+          correlationId,
+        });
+      } catch (enqueueErr) {
+        console.warn(
+          '[machines-status-projection] enqueue runtime_auto_replace failed:',
+          enqueueErr instanceof Error ? enqueueErr.message : enqueueErr,
+        );
+      }
+    }
     const payload = {
-      status: 'error',
-      message: liveStatus.message ?? 'Khởi tạo máy thất bại',
+      status: 'disconnected',
+      message: RUNTIME_REPLACE_UX_MESSAGE,
+      machineId: machine.id,
+      instanceId: machine.instance_id ? String(machine.instance_id) : null,
+      projectionFirst: true,
+      runtimeReplace: true,
     };
-    scbDbg('EXIT error', { id: scbReqId, payload });
+    scbDbg('EXIT runtime-dead-keep-open', { id: scbReqId, payload });
     return res.status(200).json(payload);
   }
 

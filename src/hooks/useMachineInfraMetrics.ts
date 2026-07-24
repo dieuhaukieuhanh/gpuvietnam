@@ -101,7 +101,14 @@ export function useMachineInfraMetrics({
       const offlineMessage = data.message ?? '';
       const viewPhase = phaseRef.current;
 
-      if (isAutostopOfflineMessage(offlineMessage) && viewPhase === 'running') {
+      // Runtime DEAD / auto-replace UX uses disconnected|error — never treat as idle autostop.
+      const runtimeDeadKeepOpen = viewPhase === 'disconnected' || viewPhase === 'error';
+
+      if (
+        isAutostopOfflineMessage(offlineMessage) &&
+        viewPhase === 'running' &&
+        !runtimeDeadKeepOpen
+      ) {
         setMetrics(createEmptyMachineMetrics());
         if (!isInitial) {
           await onAutostopDetected?.(offlineMessage);
@@ -116,8 +123,9 @@ export function useMachineInfraMetrics({
       });
 
       if (
+        !runtimeDeadKeepOpen &&
         (data.status === 'offline' || isAutostopOfflineMessage(offlineMessage)) &&
-        (viewPhase === 'running' || viewPhase === 'stopping' || viewPhase === 'disconnected') &&
+        (viewPhase === 'running' || viewPhase === 'stopping') &&
         !isInitial
       ) {
         await onAutostopDetected?.();

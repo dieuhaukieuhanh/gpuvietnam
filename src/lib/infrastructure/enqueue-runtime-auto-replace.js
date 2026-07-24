@@ -6,6 +6,7 @@ import {
   evaluateRuntimeAutoReplaceEligibility,
   runtimeAutoReplaceIdempotencyKey,
 } from '../gpu/runtime-auto-replace-core.js';
+import { createCorrelationId } from '../scb-correlation.js';
 import {
   MACHINE_OPERATION,
   MACHINE_OPERATION_STATE,
@@ -140,9 +141,8 @@ export async function enqueueRuntimeAutoReplace(supabaseAdmin, input) {
     return { operation: active, created: false, deduped: true, reason: 'replace_already_in_flight' };
   }
 
-  const correlationId =
-    input.correlationId ||
-    `rar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  // machine_operations.correlation_id is uuid — never use a non-uuid prefix.
+  const correlationId = createCorrelationId(input.correlationId);
 
   const payload = {
     userId,
