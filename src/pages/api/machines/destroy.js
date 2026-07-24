@@ -18,6 +18,7 @@ import {
 } from '@/lib/machine-destroy';
 import {
   getActiveMachineForUser,
+  getBillableSessionMachineForUser,
   resetProvisioningSubscription,
   updateSubscriptionServerStatus,
 } from '@/lib/machines';
@@ -222,7 +223,10 @@ export default async function handler(req, res) {
       reason = normalizeDestroyReason(req.body);
     }
 
-    const activeMachine = await getActiveMachineForUser(supabaseAdmin, targetUserId);
+    // Include Runtime DEAD (error) machines bound to an open billable session.
+    const activeMachine =
+      (await getActiveMachineForUser(supabaseAdmin, targetUserId)) ??
+      (await getBillableSessionMachineForUser(supabaseAdmin, targetUserId));
 
     // Prefer the subscription linked to the running machine — not "newest active"
     // (user may have Starter + Pro; wrong row breaks stop lifecycle / settlement).
@@ -260,11 +264,14 @@ export default async function handler(req, res) {
     const forceStop = Boolean(req.body?.forceStop);
     const waitForBackup = Boolean(req.body?.waitForBackup);
     const hasActiveMachine = Boolean(activeMachine);
-    const lifecycleRunning = lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.RUNNING;
+    const machineStatus = String(activeMachine?.status ?? '');
+    const lifecycleRunning =
+      lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.RUNNING ||
+      lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.ERROR;
     const billableActive =
       hasActiveMachine &&
-      String(activeMachine.status ?? '') === 'running' &&
-      Boolean(activeMachine.billing_started_at);
+      Boolean(activeMachine.billing_started_at) &&
+      ['running', 'error', 'starting', 'creating'].includes(machineStatus);
 
     if ((lifecycleRunning || billableActive) && subscription && hasActiveMachine) {
       const stopResult = await persistStopRequested(

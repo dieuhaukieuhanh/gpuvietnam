@@ -354,6 +354,38 @@ describe('runDestroyPipeline', () => {
     assert.equal(settleCalls, 1);
   });
 
+  it('T2c — Runtime DEAD (error) force-completes destroy after provider fail', async () => {
+    const mock = createMockSupabase(runningSession(), runningMachine({ status: 'error' }));
+    let settleCalls = 0;
+
+    const result = await runDestroyPipeline(
+      mock.client,
+      {
+        gpuService: {
+          destroyInstance: async () => {
+            throw new Error('provider gone');
+          },
+        },
+        verifyDestroyed: async () => stillRunningVerify(),
+        settle: async () => {
+          settleCalls += 1;
+          mock.session.settlement_status = 'settled';
+          return { state: 'OK', settlementStatus: 'settled' };
+        },
+        skipSettlement: async () => ({ state: 'SKIPPED' }),
+        clearMachineBillingFields: async () => {
+          mock.machine.billing_started_at = null;
+        },
+      },
+      { userId: USER_ID, machine: mock.machine, reason: 'user_stop', skipBackup: true },
+    );
+
+    assert.equal(result.destroyed, true);
+    assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.DESTROYED);
+    assert.equal(settleCalls, 1);
+    assert.equal(mock.machine.status, 'destroyed');
+  });
+
   it('T2b — destroy error but verify destroyed continues to settle', async () => {
     const mock = createMockSupabase(runningSession());
     let settleCalls = 0;

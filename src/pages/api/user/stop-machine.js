@@ -6,10 +6,11 @@ import {
   resolveMachineSessionView,
   persistStopRequested,
   persistDestroyCompleted,
+  MACHINE_LIFECYCLE_STATUS,
 } from '@/lib/gpu';
 import { mapDestroyApiResponse } from '@/lib/gpu/api-scb';
 import { destroyMachineWithBackup, notifyAfterMachineDestroy } from '@/lib/machine-destroy';
-import { getActiveMachineForUser } from '@/lib/machines';
+import { getActiveMachineForUser, getBillableSessionMachineForUser } from '@/lib/machines';
 import { resolveBillingViewForCommand } from '@/lib/gpu/billing-session-view';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
@@ -24,31 +25,54 @@ export default async function handler(req, res) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    const { data: subscription } = await supabaseAdmin
-      .from('subscriptions')
-      .select('id, server_status, env_name, status')
-      .eq('user_id', user.id)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Include Runtime DEAD (error) machines bound to an open billable session.
+    const activeMachine =
+      (await getActiveMachineForUser(supabaseAdmin, user.id)) ??
+      (await getBillableSessionMachineForUser(supabaseAdmin, user.id));
+
+    // Prefer the subscription linked to the running machine — not "newest active".
+    let subscription = null;
+    if (activeMachine?.subscription_id) {
+      const { data } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, server_status, env_name, status')
+        .eq('id', String(activeMachine.subscription_id))
+        .maybeSingle();
+      subscription = data;
+    }
+    if (!subscription) {
+      const { data } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, server_status, env_name, status')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      subscription = data;
+    }
 
     if (!subscription) {
       return res.status(404).json({ error: 'Không tìm thấy gói để tắt máy.' });
     }
 
-    const activeMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
     const gpuService = getGpuServiceForMachine(activeMachine);
     let lifecycleRecord = snapshotToMachineRecord(subscription, activeMachine, user.id);
     const lifecycleCtx = { subscriptionActive: subscription.status === 'active', providerDestroyedVerified: true };
 
-    if (lifecycleRecord?.status === 'running') {
+    if (
+      lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.RUNNING ||
+      lifecycleRecord?.status === MACHINE_LIFECYCLE_STATUS.ERROR
+    ) {
       const stopResult = await persistStopRequested(supabaseAdmin, subscription.id, lifecycleRecord, lifecycleCtx);
       if (stopResult.machine) lifecycleRecord = stopResult.machine;
     }
 
     const result = await destroyMachineWithBackup(supabaseAdmin, gpuService, user.id, {
       reason: 'user_stop',
+      // Runtime DEAD: skip backup wait — instance may already be gone.
+      skipBackup: String(activeMachine?.status ?? '') === 'error',
+      forceStop: String(activeMachine?.status ?? '') === 'error',
     });
 
     if (!result.destroyed) {

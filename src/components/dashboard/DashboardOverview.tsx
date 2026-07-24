@@ -1977,7 +1977,11 @@ export default function DashboardOverview({
         </div>
       )}
 
-      {metricsLoaded && serverCardPhase === 'disconnected' && !isPending && (
+      {metricsLoaded &&
+        serverCardPhase === 'disconnected' &&
+        !isPending &&
+        !isStoppingSession &&
+        !stopPostCheckActive && (
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">📡</span>
           <div className="alert-content">
@@ -2177,7 +2181,9 @@ export default function DashboardOverview({
                       </span>
                     </p>
                   )}
-                  {serverCardPhase === 'disconnected' && (
+                  {serverCardPhase === 'disconnected' &&
+                    !isStoppingSession &&
+                    !stopPostCheckActive && (
                     <p className="dashboard-workspace-status">📡 Đang thử kết nối lại máy GPU...</p>
                   )}
                   {serverCardPhase === 'error' && (

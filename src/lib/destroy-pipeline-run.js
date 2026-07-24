@@ -8,6 +8,8 @@ import {
   createProviderVerifyPortFromGpuService,
   verifyInstanceDestroyed,
   isVerifyPass,
+  PROVIDER_VERIFY_STATE,
+  PROVIDER_VERIFY_OUTCOME,
 } from './gpu/provider-verify.js';
 import {
   closeSession,
@@ -29,6 +31,8 @@ import {
 import { profStart, profEnd } from './prof.js';
 
 const ACTIVE_MACHINE_STATUSES = ['creating', 'starting', 'running'];
+/** Include error: Runtime DEAD keep-open still needs User Close / destroy. */
+const DESTROYABLE_MACHINE_STATUSES = [...ACTIVE_MACHINE_STATUSES, 'error'];
 
 /**
  * @param {Record<string, unknown> | null | undefined} machine
@@ -48,7 +52,7 @@ async function resolveActiveMachine(supabaseAdmin, userId) {
     .from('machines')
     .select('*')
     .eq('user_id', userId)
-    .in('status', ACTIVE_MACHINE_STATUSES)
+    .in('status', DESTROYABLE_MACHINE_STATUSES)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -543,6 +547,23 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
           error instanceof Error ? error.message : error,
         );
         verifyResult = postFailVerify;
+      } else if (String(machine.status ?? '') === 'error' && billingClosedEarly) {
+        // Runtime DEAD already classified by CP — User Close must clear local
+        // projection even if provider API is flaky / instance already gone.
+        console.warn(
+          '[destroy-pipeline] Runtime DEAD machine — force local destroy after provider fail',
+          error instanceof Error ? error.message : error,
+        );
+        verifyResult = {
+          state: PROVIDER_VERIFY_STATE.OK,
+          outcome: PROVIDER_VERIFY_OUTCOME.VERIFIED_DESTROYED,
+          snapshot: {
+            normalizedState: 'destroyed',
+            checkedAt: new Date().toISOString(),
+            message: 'forced_after_runtime_dead',
+          },
+          verifiedAt: new Date().toISOString(),
+        };
       } else {
         console.warn('[destroy-pipeline] provider destroy failed:', error);
         return {
@@ -551,12 +572,29 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
           lastStep: DESTROY_PIPELINE_STEP.PROVIDER_DESTROY,
           machine,
           session: sessionRow,
-          settlement: null,
+          settlement: settlementResult,
           verify: postFailVerify,
           backupSuccess,
           reason: destroyReason,
           retryable: true,
-          billingResult: null,
+          billingResult: settlementResult
+            ? {
+                durationSeconds: calculateBillableSeconds(
+                  sessionRow?.started_at,
+                  sessionRow?.ended_at ?? sessionRow?.close_requested_at,
+                ),
+                hoursUsed: roundHours(
+                  calculateBillableSeconds(
+                    sessionRow?.started_at,
+                    sessionRow?.ended_at ?? sessionRow?.close_requested_at,
+                  ) / 3600,
+                ),
+                sessionId,
+                endedAt: sessionRow?.ended_at ?? sessionRow?.close_requested_at ?? null,
+                settlement: settlementResult,
+                walletCharge: Number(settlementResult?.walletCharge ?? 0),
+              }
+            : null,
           metrics,
           stepTrace,
         };

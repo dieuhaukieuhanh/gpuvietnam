@@ -6,6 +6,7 @@ import {
   getBillableSessionMachineForUser,
   pickPreferredActiveSubscription,
 } from '@/lib/machines';
+import { loadOpenBillableSessionForUser } from '@/lib/gpu/runtime-auto-replace-core';
 import { toSyncShape } from '@/lib/machines-drift';
 import { runReadPathProjectionFirst, subscriptionPrefetchFromDashboardRow } from '@/lib/machines-drift-projection';
 import { snapshotToMachineRecord, resolveMachineSessionView } from '@/lib/gpu/machine-session-view';
@@ -315,11 +316,17 @@ export default async function handler(req, res) {
 
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
     const machineBillingStarted = Boolean(activeMachine?.billing_started_at);
+    // Reconnect UX only while Billing Session is still open — not after User Close.
+    const openBillableSession = activeMachine
+      ? await loadOpenBillableSessionForUser(supabaseAdmin, user.id)
+      : null;
     const runtimeDeadKeepOpen =
-      machineBillingStarted && String(activeMachine?.status ?? '') === 'error';
+      Boolean(openBillableSession) &&
+      machineBillingStarted &&
+      String(activeMachine?.status ?? '') === 'error';
     let machineSessionView = resolveMachineSessionView(machineRecord, {
       envName: syncedSubscription?.env_name,
-      billingStarted: machineBillingStarted,
+      billingStarted: machineBillingStarted && Boolean(openBillableSession),
       // Show disconnect/replace UX instead of generic "error / không khởi động được".
       disconnected: runtimeDeadKeepOpen,
       message: runtimeDeadKeepOpen

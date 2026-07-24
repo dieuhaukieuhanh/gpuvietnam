@@ -365,6 +365,20 @@ const MACHINE_TRANSITION_MAP = [
     },
   },
   {
+    transitionId: 'MCH-TR-010b',
+    from: MACHINE_LIFECYCLE_STATUS.ERROR,
+    command: MACHINE_COMMAND.STOP_REQUESTED,
+    to: MACHINE_LIFECYCLE_STATUS.STOPPING,
+    guards: [],
+    event: MACHINE_DOMAIN_EVENT.MACHINE_STOPPING,
+    apply(machine) {
+      return { ...machine, status: MACHINE_LIFECYCLE_STATUS.STOPPING, serverStatus: 'stopping' };
+    },
+    idempotent(machine) {
+      return machine.status === MACHINE_LIFECYCLE_STATUS.STOPPING;
+    },
+  },
+  {
     transitionId: 'MCH-TR-011',
     from: MACHINE_LIFECYCLE_STATUS.PROVISIONING,
     command: MACHINE_COMMAND.CANCEL_REQUESTED,
