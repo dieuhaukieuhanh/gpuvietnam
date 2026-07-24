@@ -54,6 +54,8 @@ export {
   nextProviderInRotation,
   provisionWithProviderFailover,
   resolveProviderAttemptOrder,
+  isEnvFlagTrue,
+  isCloreOnlyMode,
 } from './provider-routing.js';
 export { CloreProvider } from './providers/clore/clore-provider.js';
 export { CloreProviderAdapter } from './providers/clore/clore-provider-adapter.js';

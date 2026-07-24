@@ -18,12 +18,31 @@ import {
 /** @type {number} */
 let routingCursor = 0;
 
-/** True when env flag is set (tolerates CRLF / case / surrounding spaces). */
+/** True when env flag is set (tolerates CRLF / case / surrounding spaces / quotes). */
 export function isEnvFlagTrue(name) {
   return String(process.env[name] ?? '')
     .replace(/\r/g, '')
     .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .trim()
     .toLowerCase() === 'true';
+}
+
+/**
+ * Clore-only routing:
+ * - GPU_CLORE_ONLY=true → always
+ * - Lifecycle worker (VPS) → Clore-only by default unless GPU_ALLOW_VAST=true
+ *   (prevents silent Vast disk-only rents when env/CRLF drops the flag)
+ */
+export function isCloreOnlyMode() {
+  if (isEnvFlagTrue('GPU_CLORE_ONLY')) return true;
+  if (
+    process.env.GPUVIETNAM_LIFECYCLE_WORKER === '1' &&
+    !isEnvFlagTrue('GPU_ALLOW_VAST')
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -81,7 +100,7 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
     return filtered.length ? filtered : ['vast'];
   };
 
-  if (isEnvFlagTrue('GPU_CLORE_ONLY')) {
+  if (isCloreOnlyMode()) {
     if (!cloreAllowed) {
       logger('provider').warn(
         {
@@ -89,7 +108,7 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
           gpuLine: gpuLine != null ? String(gpuLine) : null,
           phase: 'SKIP',
         },
-        'GPU_CLORE_ONLY ignored for unsupported Clore gpuLine; using Vast',
+        'Clore-only ignored for unsupported Clore gpuLine; using Vast',
       );
       return ['vast'];
     }
@@ -267,7 +286,7 @@ export async function provisionWithProviderFailover(options) {
   });
   // Clore-only: keep the real provider error (e.g. code 1 / 429) for diagnosis
   // instead of collapsing everything to the generic stock message.
-  if (isEnvFlagTrue('GPU_CLORE_ONLY') && lastError) {
+  if (isCloreOnlyMode() && lastError) {
     throw lastError;
   }
   throw new GPUProviderError(NO_AVAILABLE_WORKSTATION_MESSAGE, {

@@ -15,6 +15,7 @@ import {
 import {
   provisionWithProviderFailover,
   resolveProviderAttemptOrder,
+  isCloreOnlyMode,
 } from './provider-routing.js';
 import { CloreClient } from './providers/clore/clore-client.js';
 import { logger } from '../logging/index.js';
@@ -74,11 +75,18 @@ export async function provisionGpuInstance(_gpuService, params) {
         return cloreClient.isConfigured() && isCloreGpuLineSupported(params.gpuLine);
       }
       if (providerId === 'vast') {
+        if (isCloreOnlyMode()) return false;
         return Boolean((process.env.VAST_AI_KEY ?? process.env.VAST_API_KEY ?? '').trim());
       }
       return false;
     },
     async createWithProvider(providerId) {
+      if (providerId === 'vast' && isCloreOnlyMode()) {
+        throw new GPUProviderError('Clore-only mode: refusing Vast provision', {
+          retryable: false,
+          code: 'CLORE_ONLY_REFUSE_VAST',
+        });
+      }
       const adapter = tryGetProviderAdapter(providerId) ?? getProviderAdapter(providerId);
       if (params.onProgress) await params.onProgress('provider_attempt_' + providerId);
       logger('provider').info(
@@ -90,6 +98,7 @@ export async function provisionGpuInstance(_gpuService, params) {
           gpuLine: createParams.gpuLine,
           image,
           diskGb: diskSize,
+          cloreOnly: isCloreOnlyMode(),
         },
         `provider=${providerId} plan=${createParams.plan} gpu=${createParams.gpuLine} image=${image} disk=${diskSize}GB`,
       );

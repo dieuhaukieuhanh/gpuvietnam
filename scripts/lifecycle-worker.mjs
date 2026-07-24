@@ -65,14 +65,13 @@ async function main() {
   initLogging();
   logStartupDiagnostics();
   const log = logger('worker');
-  const cloreOnly =
-    String(process.env.GPU_CLORE_ONLY ?? '')
-      .replace(/\r/g, '')
-      .trim()
-      .toLowerCase() === 'true';
+  const { isCloreOnlyMode } = await import('../src/lib/gpu/provider-routing.js');
+  const cloreOnly = isCloreOnlyMode();
   log.info(
     {
       GPU_CLORE_ONLY: process.env.GPU_CLORE_ONLY ?? null,
+      GPU_ALLOW_VAST: process.env.GPU_ALLOW_VAST ?? null,
+      GPUVIETNAM_LIFECYCLE_WORKER: process.env.GPUVIETNAM_LIFECYCLE_WORKER ?? null,
       cloreOnlyActive: cloreOnly,
       GPU_VAST_ONLY: process.env.GPU_VAST_ONLY ?? null,
     },
@@ -80,8 +79,11 @@ async function main() {
   );
   if (!cloreOnly) {
     log.warn(
-      { GPU_CLORE_ONLY: process.env.GPU_CLORE_ONLY ?? null },
-      'GPU_CLORE_ONLY not active — Start may rent Vast (disk-only risk)',
+      {
+        GPU_CLORE_ONLY: process.env.GPU_CLORE_ONLY ?? null,
+        GPU_ALLOW_VAST: process.env.GPU_ALLOW_VAST ?? null,
+      },
+      'Clore-only inactive — Start may rent Vast (disk-only risk)',
     );
   }
 
