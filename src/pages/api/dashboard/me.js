@@ -305,10 +305,46 @@ export default async function handler(req, res) {
     }
 
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
-    const machineSessionView = resolveMachineSessionView(machineRecord, {
+    let machineSessionView = resolveMachineSessionView(machineRecord, {
       envName: syncedSubscription?.env_name,
       billingStarted: Boolean(activeMachine?.billing_started_at),
     });
+
+    // Durable Start in flight but claim/machines row not visible yet → keep opening.
+    if (
+      (!machineSessionView || machineSessionView.phase === 'idle') &&
+      !activeMachine
+    ) {
+      const { data: startOp } = await supabaseAdmin
+        .from('machine_operations')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('operation', 'user_start_provision')
+        .in('state', ['pending', 'leased', 'running', 'retry_scheduled'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (startOp) {
+        machineSessionView = {
+          phase: 'opening',
+          lifecycleStatus: 'provisioning',
+          serverStatus: 'provisioning',
+          workspace: {
+            name: syncedSubscription?.env_name ?? null,
+            locked: true,
+          },
+          machine: null,
+          actions: {
+            canStart: false,
+            canCancel: true,
+            canStop: false,
+            canOpenComfy: false,
+          },
+          message: 'Đang mở phiên làm việc...',
+          domainEvent: 'MACHINE_PROVISIONING',
+        };
+      }
+    }
 
     const billingView = await resolveBillingSessionView(supabaseAdmin, user.id, {
       machine: activeMachine,

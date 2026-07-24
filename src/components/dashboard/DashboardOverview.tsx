@@ -938,7 +938,19 @@ export default function DashboardOverview({
         }
         setStartSupportRequestId(null);
         if (data.machineSessionView) {
-          onMachineSessionView?.(data.machineSessionView as MachineSessionView);
+          const serverView = data.machineSessionView as MachineSessionView;
+          // Never let a stale idle projection wipe the just-accepted Start.
+          if (serverView.phase === 'idle') {
+            onMachineSessionView?.(buildOptimisticOpeningMachineSessionView(effectiveEnvName));
+          } else {
+            onMachineSessionView?.({
+              ...serverView,
+              clientOptimistic:
+                serverView.phase === 'opening' ? true : serverView.clientOptimistic,
+            });
+          }
+        } else {
+          onMachineSessionView?.(buildOptimisticOpeningMachineSessionView(effectiveEnvName));
         }
         if (data.billingView) {
           onBillingSessionView?.(data.billingView as BillingSessionView);
@@ -947,9 +959,12 @@ export default function DashboardOverview({
           setProvisionProgress(data.progress as ProvisionProgressSnapshot);
         }
         setStartMessage('');
-        await onRefresh({ silent: true });
-        await reloadPlans();
-        void refreshMetrics();
+        // Defer refresh slightly so durable claim/op is visible; merge keeps opening.
+        window.setTimeout(() => {
+          void onRefresh({ silent: true });
+          void reloadPlans({ silent: true });
+          void refreshMetrics();
+        }, 1200);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
         setStartMessage('Lỗi mạng khi khởi động máy.');

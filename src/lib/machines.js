@@ -506,26 +506,7 @@ export async function syncMachineFromLiveStatus(supabaseAdmin, machine, live) {
     error_message: live.status === 'error' ? live.message ?? null : null,
   };
 
-  const updated = await updateMachineRecord(supabaseAdmin, String(machine.id), patch);
-
-  // Error machines leave ACTIVE_MACHINE_STATUSES — without clearing the claim,
-  // UI stays on "đang khởi tạo" and Start will not rent a new GPU.
-  if (status === 'error' && machine.subscription_id) {
-    try {
-      await updateSubscriptionServerStatus(
-        supabaseAdmin,
-        String(machine.subscription_id),
-        'offline',
-      );
-    } catch (error) {
-      console.warn(
-        '[syncMachineFromLiveStatus] failed to clear provisioning claim after error:',
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-
-  return updated;
+  return updateMachineRecord(supabaseAdmin, String(machine.id), patch);
 }
 
 /**
@@ -656,6 +637,22 @@ export async function clearStuckProvisioningAfterFailedBoot(supabaseAdmin, userI
     return { cleared: false, reason: 'active_machine_exists' };
   }
 
+  // Never clear while durable Start is still leased/running — Clore may already
+  // be rented before the machines row exists; wiping the claim drops UI to idle.
+  const { data: activeStart, error: opErr } = await supabaseAdmin
+    .from('machine_operations')
+    .select('id,state')
+    .eq('user_id', userId)
+    .eq('operation', 'user_start_provision')
+    .in('state', ['pending', 'leased', 'running', 'retry_scheduled'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (opErr) throw opErr;
+  if (activeStart) {
+    return { cleared: false, reason: 'start_op_in_flight', operationId: String(activeStart.id) };
+  }
+
   const subscription =
     options.subscription ?? (await fetchActiveSubscription(supabaseAdmin, userId));
   if (!subscription || String(subscription.server_status ?? '') !== 'provisioning') {
@@ -665,6 +662,10 @@ export async function clearStuckProvisioningAfterFailedBoot(supabaseAdmin, userI
   const provisioningStartedAt = subscription.provisioning_started_at
     ? new Date(String(subscription.provisioning_started_at)).getTime()
     : 0;
+  // Missing started_at: do not guess from an older destroyed row.
+  if (!Number.isFinite(provisioningStartedAt) || provisioningStartedAt <= 0) {
+    return { cleared: false, reason: 'missing_provisioning_started_at' };
+  }
 
   const { data: latest, error } = await supabaseAdmin
     .from('machines')
@@ -685,7 +686,7 @@ export async function clearStuckProvisioningAfterFailedBoot(supabaseAdmin, userI
   }
 
   const latestCreated = latest.created_at ? new Date(String(latest.created_at)).getTime() : 0;
-  if (provisioningStartedAt > 0 && latestCreated + 1000 < provisioningStartedAt) {
+  if (latestCreated + 1000 < provisioningStartedAt) {
     return { cleared: false, reason: 'latest_before_claim' };
   }
 

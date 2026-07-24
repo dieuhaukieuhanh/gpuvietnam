@@ -950,9 +950,16 @@ async function startMachineHandler(req, res) {
 
     provisioningSubscriptionId = subscription.id;
 
-    const openingView = buildMachineSessionView(subscription, null, user.id, {
-      envName,
-    });
+    const openingView = {
+      ...buildMachineSessionView(subscription, null, user.id, {
+        envName,
+      }),
+      // Keep dashboard from flickering idle on the first /me poll before
+      // machines row / worker lease is visible.
+      clientOptimistic: true,
+      phase: 'opening',
+      serverStatus: 'provisioning',
+    };
 
     const billingView = await billingViewForStart(
       supabaseAdmin,
