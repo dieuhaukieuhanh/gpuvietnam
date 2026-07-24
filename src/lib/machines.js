@@ -506,7 +506,26 @@ export async function syncMachineFromLiveStatus(supabaseAdmin, machine, live) {
     error_message: live.status === 'error' ? live.message ?? null : null,
   };
 
-  return updateMachineRecord(supabaseAdmin, String(machine.id), patch);
+  const updated = await updateMachineRecord(supabaseAdmin, String(machine.id), patch);
+
+  // Error machines leave ACTIVE_MACHINE_STATUSES — without clearing the claim,
+  // UI stays on "đang khởi tạo" and Start will not rent a new GPU.
+  if (status === 'error' && machine.subscription_id) {
+    try {
+      await updateSubscriptionServerStatus(
+        supabaseAdmin,
+        String(machine.subscription_id),
+        'offline',
+      );
+    } catch (error) {
+      console.warn(
+        '[syncMachineFromLiveStatus] failed to clear provisioning claim after error:',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  return updated;
 }
 
 /**
@@ -620,6 +639,63 @@ export async function reconcileOrphanedProvisioning(supabaseAdmin, userId) {
 
   await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
   return { reconciled: true, subscriptionId: subscription.id };
+}
+
+/**
+ * Clear provisioning claim when the latest boot already failed (machine error/destroyed)
+ * and there is no active machine. Safe for read path — does not clear mid-boot
+ * before a machine row exists.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ * @param {{ subscription?: Record<string, unknown>|null }} [options]
+ */
+export async function clearStuckProvisioningAfterFailedBoot(supabaseAdmin, userId, options = {}) {
+  const active = await getActiveMachineForUser(supabaseAdmin, userId);
+  if (active) {
+    return { cleared: false, reason: 'active_machine_exists' };
+  }
+
+  const subscription =
+    options.subscription ?? (await fetchActiveSubscription(supabaseAdmin, userId));
+  if (!subscription || String(subscription.server_status ?? '') !== 'provisioning') {
+    return { cleared: false, reason: 'not_provisioning' };
+  }
+
+  const provisioningStartedAt = subscription.provisioning_started_at
+    ? new Date(String(subscription.provisioning_started_at)).getTime()
+    : 0;
+
+  const { data: latest, error } = await supabaseAdmin
+    .from('machines')
+    .select('id,status,created_at,subscription_id,error_message')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!latest) {
+    return { cleared: false, reason: 'no_machine_row_yet' };
+  }
+
+  const latestStatus = String(latest.status ?? '');
+  if (latestStatus !== 'error' && latestStatus !== 'destroyed') {
+    return { cleared: false, reason: 'latest_not_terminal' };
+  }
+
+  const latestCreated = latest.created_at ? new Date(String(latest.created_at)).getTime() : 0;
+  if (provisioningStartedAt > 0 && latestCreated + 1000 < provisioningStartedAt) {
+    return { cleared: false, reason: 'latest_before_claim' };
+  }
+
+  await updateSubscriptionServerStatus(supabaseAdmin, String(subscription.id), 'offline');
+  return {
+    cleared: true,
+    action: 'clear_stuck_provisioning_after_failed_boot',
+    subscriptionId: String(subscription.id),
+    machineId: String(latest.id),
+  };
 }
 
 /**

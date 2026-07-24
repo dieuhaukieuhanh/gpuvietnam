@@ -79,6 +79,20 @@ export async function handleMachinesStatusProjectionFirst(req, res, ctx) {
     const subscription =
       sync.subscription ?? (await fetchActiveSubscription(supabaseAdmin, user.id));
     if (subscription?.server_status === 'provisioning') {
+      // Terminal failed boot left claim stuck (error machine is not "active").
+      const { clearStuckProvisioningAfterFailedBoot } = await import('@/lib/machines');
+      const cleared = await clearStuckProvisioningAfterFailedBoot(supabaseAdmin, user.id, {
+        subscription,
+      });
+      if (cleared.cleared) {
+        const payload = {
+          status: 'offline',
+          message: 'Máy chưa bật',
+          reconciled: cleared.action ?? 'clear_stuck_provisioning_after_failed_boot',
+        };
+        scbDbg('EXIT offline-after-failed-boot-claim-clear', { id: scbReqId, payload });
+        return res.status(200).json(payload);
+      }
       const payload = {
         status: 'creating',
         message: 'Đang khởi tạo máy...',
