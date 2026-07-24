@@ -513,6 +513,65 @@ describe('settleSession', () => {
     assert.equal(mock.session.settlement_status, 'skipped');
   });
 
+  it('T8b — epoch started_at auto-skips (no entitlement burn)', async () => {
+    const mock = createMockSupabase(
+      closedSession({
+        started_at: '1970-01-01T00:00:00.000Z',
+        ended_at: '2026-07-05T02:01:40.000Z',
+      }),
+      {
+        plans: [
+          {
+            id: 1,
+            user_id: USER_ID,
+            plan_type: 'combo',
+            plan_name: 'pro',
+            hours_remaining: 230,
+            status: 'active',
+          },
+        ],
+      },
+    );
+
+    const result = await settleSession(
+      mock.client,
+      { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
+    );
+
+    assert.equal(result.state, 'SKIPPED');
+    assert.equal(mock.session.settlement_status, 'skipped');
+    assert.equal(mock.session.settlement_breakdown?.skip_reason, 'invalid_started_at');
+  });
+
+  it('T8c — billable > 7d auto-skips', async () => {
+    const mock = createMockSupabase(
+      closedSession({
+        started_at: '2026-01-01T00:00:00.000Z',
+        ended_at: '2026-01-10T00:00:00.000Z',
+      }),
+      {
+        plans: [
+          {
+            id: 1,
+            user_id: USER_ID,
+            plan_type: 'combo',
+            plan_name: 'pro',
+            hours_remaining: 230,
+            status: 'active',
+          },
+        ],
+      },
+    );
+
+    const result = await settleSession(
+      mock.client,
+      { sessionId: SESSION_ID, userId: USER_ID, providerDestroyedVerified: true },
+    );
+
+    assert.equal(result.state, 'SKIPPED');
+    assert.equal(mock.session.settlement_breakdown?.skip_reason, 'billable_exceeds_7d_guard');
+  });
+
   it('T7 — second settle after committed T returns IDEMPOTENT (no double debit) [SCB 3.4 §7]', async () => {
     const mock = createMockSupabase(closedSession({ settlement_status: 'failed' }), {
       plans: [

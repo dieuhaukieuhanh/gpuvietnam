@@ -301,6 +301,20 @@ export async function settleSession(supabaseAdmin, input) {
     return skipSessionSettlement(supabaseAdmin, sessionId, 'zero_billable', { userId });
   }
 
+  // Guard: epoch / corrupt started_at (e.g. 1970-01-01) must never charge.
+  const startedMs = session.started_at ? new Date(session.started_at).getTime() : NaN;
+  if (!Number.isFinite(startedMs) || startedMs < Date.UTC(2000, 0, 1)) {
+    return skipSessionSettlement(supabaseAdmin, sessionId, 'invalid_started_at', { userId });
+  }
+
+  // Guard: absurd duration (corrupt timestamps) — refuse to burn entitlements.
+  const MAX_BILLABLE_SECONDS = 7 * 24 * 3600;
+  if (billableSeconds > MAX_BILLABLE_SECONDS) {
+    return skipSessionSettlement(supabaseAdmin, sessionId, 'billable_exceeds_7d_guard', {
+      userId,
+    });
+  }
+
   // ──────────────── PRE-T (JS business math) ────────────────
   // All allocation / breakdown math stays in JS. The RPC receives the
   // prepared plan and executes it atomically (SCB 3.4A §2).
