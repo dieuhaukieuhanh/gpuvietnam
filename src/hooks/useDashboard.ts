@@ -141,6 +141,9 @@ export function useDashboard() {
     }
 
     const controller = new AbortController();
+    // Hard cap — never leave Dashboard on "Đang tải..." forever (apex me is ~5s typically).
+    const timeoutMs = options?.silent ? 45_000 : 30_000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     if (!options?.silent) {
       refreshAbortRef.current = controller;
     }
@@ -160,6 +163,7 @@ export function useDashboard() {
       if (!response.ok) {
         if (!options?.silent) {
           setError(result.error ?? 'Không tải được dữ liệu.');
+          setDataLoaded(true);
         }
         return;
       }
@@ -194,13 +198,22 @@ export function useDashboard() {
       });
       setDataLoaded(true);
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      if (!options?.silent && refreshAbortRef.current !== controller) return;
+      const aborted = err instanceof Error && err.name === 'AbortError';
+      const replaced =
+        !options?.silent && refreshAbortRef.current !== controller;
+      // Replaced by a newer refresh — ignore. Timeout / real abort must unblock UI.
+      if (aborted && replaced) return;
+      if (!options?.silent && replaced) return;
       if (!options?.silent) {
-        setError('Không tải được dữ liệu dashboard.');
+        setError(
+          aborted
+            ? 'Tải dashboard quá lâu — thử lại.'
+            : 'Không tải được dữ liệu dashboard.',
+        );
       }
       setDataLoaded(true);
     } finally {
+      clearTimeout(timeoutId);
       if (!options?.silent) {
         if (refreshAbortRef.current !== controller) return;
         refreshAbortRef.current = null;
@@ -233,19 +246,25 @@ export function useDashboard() {
     [mergeBillingView],
   );
 
-  useEffect(() => {
-    if (authLoading) return;
-    refresh();
-  }, [authLoading, refresh]);
+  const prevAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
-    if (!session?.access_token) {
+    const token = session?.access_token ?? null;
+    if (!token) {
+      prevAccessTokenRef.current = null;
       setDataLoaded(true);
+      setLoading(false);
       return;
     }
-    setDataLoaded(false);
-  }, [authLoading, session?.access_token]);
+    // Only reset loaded flag when the token actually changes (login / refresh),
+    // not on every mount — that previously left the UI stuck on "Đang tải...".
+    if (prevAccessTokenRef.current !== token) {
+      prevAccessTokenRef.current = token;
+      setDataLoaded(false);
+    }
+    void refresh();
+  }, [authLoading, session?.access_token, refresh]);
 
   useEffect(() => {
     return () => {
