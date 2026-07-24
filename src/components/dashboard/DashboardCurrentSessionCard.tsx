@@ -37,10 +37,10 @@ function timerLabel(
 ): string | null {
   if (phase === 'opening') return 'Chưa bắt đầu tính giờ';
   if (phase === 'running' && !billingStarted) return 'Chờ xác nhận billing từ server';
-  if (mode === 'live') return null;
   if (mode === 'live' && (phase === 'disconnected' || phase === 'error')) {
     return 'Đang tính giờ — Generate tạm gián đoạn, đang khôi phục máy';
   }
+  if (mode === 'live') return null;
   if (mode === 'paused' && phase === 'disconnected') return 'Thời gian phiên (tạm dừng hiển thị)';
   if (mode === 'paused' && phase === 'stopping') {
     return stopPostCheckActive
