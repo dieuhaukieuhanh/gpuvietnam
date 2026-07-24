@@ -6,6 +6,7 @@
  */
 
 import { calculateSessionBillableSeconds } from './remaining-time.js';
+import { isBillingCloseSettlementAllowed } from './billing-session-p0b.js';
 
 export const SETTLEMENT_MODULE_VERSION = '1.0';
 
@@ -335,7 +336,7 @@ export function buildSettlementBreakdown(input) {
 
 /**
  * @param {Record<string, unknown>|null|undefined} session
- * @param {{ providerDestroyedVerified?: boolean }} [options]
+ * @param {{ providerDestroyedVerified?: boolean; billingCloseVerified?: boolean }} [options]
  * @returns {{ ok: true } | { ok: false; code: string; message: string }}
  */
 export function evaluateSettlementEligibility(session, options = {}) {
@@ -364,13 +365,12 @@ export function evaluateSettlementEligibility(session, options = {}) {
     };
   }
 
-  const destroyedVerified =
-    options.providerDestroyedVerified === true || Boolean(session.verified_destroyed_at);
-  if (!destroyedVerified) {
+  // P0-B: billing Close OR provider destroy verify unlocks settlement.
+  if (!isBillingCloseSettlementAllowed(session, options)) {
     return {
       ok: false,
       code: SETTLEMENT_ERROR_CODE.VERIFY_NOT_DESTROYED,
-      message: 'Settlement blocked until provider verify DESTROYED (OP-1)',
+      message: 'Settlement blocked until billing Close or provider verify DESTROYED',
     };
   }
 

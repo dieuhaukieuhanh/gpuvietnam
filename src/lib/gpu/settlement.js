@@ -283,9 +283,11 @@ export async function settleSession(supabaseAdmin, input) {
     };
   }
 
-  // Eligibility — pure JS (settlement-core.js). Unchanged.
+  // Eligibility — pure JS (settlement-core.js). P0-B: billing Close OR destroy verify.
   const eligibility = evaluateSettlementEligibility(session, {
     providerDestroyedVerified: input.providerDestroyedVerified,
+    billingCloseVerified:
+      input.billingCloseVerified === true || Boolean(session.close_requested_at),
   });
   if (!eligibility.ok) {
     return {
@@ -386,6 +388,8 @@ export async function settleSession(supabaseAdmin, input) {
     sessionId,
     userId,
     providerDestroyedVerified: input.providerDestroyedVerified === true,
+    billingCloseVerified:
+      input.billingCloseVerified === true || Boolean(session.close_requested_at),
     expectedPreSettlementStatus: String(session.settlement_status),
     lines: allocationLines,
     plans: scopedPlans,

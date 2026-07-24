@@ -77,6 +77,8 @@ DECLARE
   v_session_id              uuid        := (payload ->> 'session_id')::uuid;
   v_user_id                 uuid        := (payload ->> 'user_id')::uuid;
   v_provider_destroyed      boolean     := COALESCE((payload ->> 'provider_destroyed_verified')::boolean, false);
+  -- P0-B: billing Close may settle before provider destroy verify.
+  v_billing_close           boolean     := COALESCE((payload ->> 'billing_close_verified')::boolean, false);
   v_expected_pre            text        := payload ->> 'expected_pre_settlement_status';
   v_wallet_charge           json        := payload -> 'wallet_charge';
   v_wallet_amount           numeric     := 0;
@@ -116,14 +118,14 @@ DECLARE
   v_idx                     integer;
 BEGIN
   -- ---------------------------------------------------------------
-  -- Precondition echo (SCB 3.4A §3: provider_destroyed_verified).
+  -- Precondition echo (SCB 3.4A §3 + P0-B billing Close).
   -- JS has already enforced this; defence in depth.
   -- ---------------------------------------------------------------
-  IF v_provider_destroyed IS NOT TRUE THEN
+  IF v_provider_destroyed IS NOT TRUE AND v_billing_close IS NOT TRUE THEN
     RETURN json_build_object(
       'state', 'ERROR',
       'code', 'CLAIM_PRECONDITION',
-      'message', 'provider_destroyed_verified is false',
+      'message', 'provider_destroyed_verified and billing_close_verified are both false',
       'rolled_back', true,
       'settlement_status', NULL
     );

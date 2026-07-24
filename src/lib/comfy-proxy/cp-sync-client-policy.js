@@ -47,3 +47,40 @@ export function resolveComfySyncPatchOutcome(result) {
 export const WORKSPACE_OFFLINE_EXTENSIONS = Object.freeze([
   '/extensions/gpuvietnam_cp_sync/cp_sync.js',
 ]);
+
+/** HTTP statuses that mean Runtime/upstream is gone (not a soft blip). */
+export const RUNTIME_UNREACHABLE_STATUSES = Object.freeze([
+  426, 502, 503, 504, 521, 522, 523, 530,
+]);
+
+/**
+ * Classify a /system_stats (or /api/system_stats) probe for UX banner.
+ * @param {{ ok?: boolean; status?: number; body?: any; networkError?: boolean }} probe
+ * @returns {{ online: boolean | null; kind: string }}
+ *   online true = Runtime up; false = treat as lost; null = inconclusive
+ */
+export function classifyRuntimeProbe(probe) {
+  if (probe?.networkError) {
+    return { online: false, kind: 'network' };
+  }
+  const status = Number(probe?.status ?? 0);
+  if (!probe?.ok) {
+    if (RUNTIME_UNREACHABLE_STATUSES.includes(status)) {
+      return { online: false, kind: 'unreachable' };
+    }
+    return { online: null, kind: 'unknown_http' };
+  }
+  const body = probe?.body && typeof probe.body === 'object' ? probe.body : {};
+  if (body?.a1?.runtimeOnline === false || body?.a1?.mode === 'editor') {
+    return { online: false, kind: 'workspace_offline' };
+  }
+  return { online: true, kind: 'ok' };
+}
+
+/**
+ * beforeunload should fire only when the graph has unsaved local edits.
+ * @param {{ dirty?: boolean; syncReady?: boolean }} state
+ */
+export function shouldWarnBeforeUnload(state) {
+  return Boolean(state?.syncReady && state?.dirty);
+}

@@ -13,6 +13,7 @@ import {
   shouldSkipDeadInstanceDestroyDuringBoot,
 } from './machines-provisioning-sync.js';
 import { resolveMachineImage } from './machines-image-resolve.js';
+import { shouldKeepBillingSessionOpenOnRuntimeDead } from './gpu/billing-session-p0b.js';
 
 export {
   claimSubscriptionForProvision,
@@ -824,10 +825,40 @@ export async function syncSubscriptionWithMachineState(supabaseAdmin, gpuService
           return { changed: false, machine, subscription, action: null };
         }
 
+        // P0-B: Runtime DEAD must NOT settle / close Billing Session.
+        let openSession = null;
+        if (machine.gpu_session_id) {
+          const { data: sess } = await supabaseAdmin
+            .from('gpu_sessions')
+            .select('id, status, started_at')
+            .eq('id', String(machine.gpu_session_id))
+            .maybeSingle();
+          openSession = sess;
+        }
+        if (shouldKeepBillingSessionOpenOnRuntimeDead(openSession)) {
+          const now = new Date().toISOString();
+          await supabaseAdmin
+            .from('machines')
+            .update({
+              status: 'error',
+              projection_message:
+                'Runtime disconnected — Billing Session vẫn OPEN (chờ User/Policy Close)',
+              updated_at: now,
+            })
+            .eq('id', machine.id);
+          return {
+            changed: true,
+            machine: { ...machine, status: 'error' },
+            subscription,
+            action: 'runtime_dead_session_kept_open',
+          };
+        }
+
         await destroyUserMachine(supabaseAdmin, gpuService, userId, {
           skipBackup: true,
           interrupted: true,
           reason: 'user_stop',
+          skipBilling: !machine.billing_started_at,
         });
         await updateSubscriptionServerStatus(supabaseAdmin, subscription.id, 'offline');
 

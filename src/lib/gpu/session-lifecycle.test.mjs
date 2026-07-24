@@ -261,6 +261,35 @@ describe('closeSession (running -> closed)', () => {
     assert.equal(result.session.destroy_reason, 'user');
   });
 
+  it('closes with billingCloseRequested without destroy verify (P0-B)', () => {
+    const pending = createPendingSession(
+      { id: 's-p0b', userId: 'u1', machineId: 'm1' },
+      { subscriptionActive: true, otherRunningSessionCount: 0, now: '2026-01-01T10:00:00.000Z' },
+    );
+    const running = activateRunningSession(
+      pending.session,
+      {
+        subscriptionActive: true,
+        machineExists: true,
+        providerRunningVerified: true,
+        otherRunningSessionCount: 0,
+        now: '2026-01-01T10:00:00.000Z',
+      },
+      { started_at: '2026-01-01T10:00:00.000Z', verified_running_at: '2026-01-01T10:00:00.000Z' },
+    );
+    const closed = closeSession(
+      running.session,
+      { billingCloseRequested: true, now: '2026-01-01T11:00:00.000Z' },
+      {
+        ended_at: '2026-01-01T11:00:00.000Z',
+        close_requested_at: '2026-01-01T11:00:00.000Z',
+      },
+    );
+    assert.equal(closed.state, 'OK');
+    assert.equal(closed.session.close_requested_at, '2026-01-01T11:00:00.000Z');
+    assert.equal(closed.session.verified_destroyed_at, null);
+  });
+
   it('rejects close without provider destroyed verify (OP-1)', () => {
     const session = runningSession();
     const result = closeSession(session, ctx({ providerDestroyedVerified: false }));

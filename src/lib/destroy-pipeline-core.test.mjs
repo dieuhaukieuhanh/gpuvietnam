@@ -9,7 +9,7 @@ import {
   machineHasBillableSession,
   isProvenDestroySession,
   sessionBelongsToMachineForDestroy,
-  assertSettlementAfterVerify,
+  assertSettlementAtBillingClose,
 } from './destroy-pipeline-core.js';
 import {
   PROVIDER_VERIFY_STATE,
@@ -83,19 +83,19 @@ describe('pipeline helpers', () => {
     );
   });
 
-  it('T8 — settlement must follow verify in step trace', () => {
+  it('T8 — P0-B: settlement at billing Close precedes destroy verify', () => {
     assert.equal(
-      assertSettlementAfterVerify([
-        DESTROY_PIPELINE_STEP.VERIFY_DESTROYED,
+      assertSettlementAtBillingClose([
         DESTROY_PIPELINE_STEP.SESSION_CLOSED,
         DESTROY_PIPELINE_STEP.SETTLEMENT,
+        DESTROY_PIPELINE_STEP.VERIFY_DESTROYED,
       ]),
       true,
     );
     assert.equal(
-      assertSettlementAfterVerify([
-        DESTROY_PIPELINE_STEP.SETTLEMENT,
+      assertSettlementAtBillingClose([
         DESTROY_PIPELINE_STEP.VERIFY_DESTROYED,
+        DESTROY_PIPELINE_STEP.SETTLEMENT,
       ]),
       false,
     );

@@ -164,7 +164,8 @@ export function isProvenDestroySession(session, machine) {
 }
 
 /**
- * Assert settlement is not invoked before verify in orchestration traces (T8).
+ * Legacy helper (pre-P0-B): settlement after destroy verify.
+ * Prefer {@link assertSettlementAtBillingClose} for P0-B.
  * @param {string[]} stepTrace
  * @returns {boolean}
  */
@@ -174,4 +175,13 @@ export function assertSettlementAfterVerify(stepTrace) {
   if (settleIdx === -1) return true;
   if (verifyIdx === -1) return false;
   return verifyIdx < settleIdx;
+}
+
+/** P0-B: settlement step must occur before destroy verify when both present. */
+export function assertSettlementAtBillingClose(stepTrace) {
+  const verifyIdx = stepTrace.indexOf(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED);
+  const settleIdx = stepTrace.indexOf(DESTROY_PIPELINE_STEP.SETTLEMENT);
+  if (settleIdx === -1) return true;
+  if (verifyIdx === -1) return true;
+  return settleIdx < verifyIdx;
 }

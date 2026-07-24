@@ -5,6 +5,11 @@ const STORAGE_KEY = "gvn_cp_bootstrap_v1";
 const SYNC_PATH = "/gpuvietnam/cp/sync";
 const DEBOUNCE_MS = 3500;
 const INDICATOR_ID = "gvn-cp-sync-indicator";
+const BANNER_ID = "gvn-runtime-lost-banner";
+const RUNTIME_PROBE_MS = 4000;
+const RUNTIME_FAIL_THRESHOLD = 2;
+const RUNTIME_OK_THRESHOLD = 1;
+const RECONNECTING_DOM_MS = 8000;
 
 /** @type {{ token?: string; workflowId?: string; apiBase?: string; revision?: number } | null} */
 let bootstrap = null;
@@ -30,6 +35,13 @@ let expectedGate1 = null;
 /** Last CP document we intended to inject (for one re-inject after Manager thrash). */
 let pendingInjectDocument = null;
 let lastError = "";
+/** Runtime (GPU) gone — graph editor may still work; generate will not. */
+let runtimeLost = false;
+let runtimeFailStreak = 0;
+let runtimeOkStreak = 0;
+let reconnectingSeenAt = 0;
+let bannerDismissed = false;
+let lastRuntimeFlushAt = 0;
 
 function decodeBootstrapFromHash() {
   const raw = String(location.hash || "").replace(/^#/, "");
@@ -625,6 +637,293 @@ function attachLifecycleFlush() {
   });
 }
 
+function dashboardUrl() {
+  const base = String(bootstrap?.apiBase || "https://gpuvietnam.com").replace(/\/$/, "");
+  return `${base}/dashboard`;
+}
+
+/**
+ * Mirror of src/lib/comfy-proxy/cp-sync-client-policy.js#classifyRuntimeProbe
+ * (kept inline — Comfy extension cannot import Next lib).
+ */
+function classifyRuntimeProbe(probe) {
+  if (probe?.networkError) return { online: false, kind: "network" };
+  const status = Number(probe?.status ?? 0);
+  if (!probe?.ok) {
+    if ([426, 502, 503, 504, 521, 522, 523, 530].includes(status)) {
+      return { online: false, kind: "unreachable" };
+    }
+    return { online: null, kind: "unknown_http" };
+  }
+  const body = probe?.body && typeof probe.body === "object" ? probe.body : {};
+  if (body?.a1?.runtimeOnline === false || body?.a1?.mode === "editor") {
+    return { online: false, kind: "workspace_offline" };
+  }
+  return { online: true, kind: "ok" };
+}
+
+async function probeRuntimeOnce() {
+  const paths = ["/system_stats", "/api/system_stats"];
+  let last = { ok: false, status: 0, networkError: true };
+  for (const path of paths) {
+    try {
+      const res = await fetch(path, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const body = await res.json().catch(() => ({}));
+      last = { ok: res.ok, status: res.status, body, networkError: false };
+      if (res.ok || [426, 502, 503, 504, 521, 522, 523, 530].includes(res.status)) {
+        return last;
+      }
+    } catch {
+      last = { ok: false, status: 0, networkError: true };
+    }
+  }
+  return last;
+}
+
+function ensureRuntimeBanner() {
+  let el = document.getElementById(BANNER_ID);
+  if (el) return el;
+
+  el = document.createElement("div");
+  el.id = BANNER_ID;
+  el.setAttribute("role", "alert");
+  el.setAttribute("aria-live", "assertive");
+  Object.assign(el.style, {
+    display: "none",
+    position: "fixed",
+    left: "12px",
+    right: "12px",
+    top: "12px",
+    zIndex: "100000",
+    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+    maxWidth: "640px",
+    margin: "0 auto",
+  });
+
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    background: "rgba(28, 22, 18, 0.94)",
+    color: "#f5efe6",
+    border: "1px solid rgba(232, 180, 120, 0.45)",
+    borderRadius: "10px",
+    padding: "14px 16px",
+    boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "Máy đã tắt / mất kết nối";
+  Object.assign(title.style, {
+    fontWeight: "700",
+    fontSize: "15px",
+    marginBottom: "6px",
+  });
+
+  const body = document.createElement("p");
+  body.id = `${BANNER_ID}-body`;
+  body.textContent =
+    "Không generate được cho đến khi Start lại trên Dashboard. Bạn vẫn sửa được graph — hãy Save/Export workflow trước khi đóng tab (không chờ tab tự nối lại).";
+  Object.assign(body.style, {
+    margin: "0 0 12px",
+    fontSize: "13px",
+    lineHeight: "1.45",
+    color: "#e8e0d4",
+  });
+
+  const actions = document.createElement("div");
+  Object.assign(actions.style, {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "8px",
+    alignItems: "center",
+  });
+
+  const mkBtn = (label, primary) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    Object.assign(b.style, {
+      cursor: "pointer",
+      border: primary ? "none" : "1px solid rgba(245,239,230,0.35)",
+      background: primary ? "#e8b478" : "transparent",
+      color: primary ? "#1c1612" : "#f5efe6",
+      borderRadius: "6px",
+      padding: "7px 12px",
+      fontSize: "13px",
+      fontWeight: "600",
+    });
+    return b;
+  };
+
+  const saveBtn = mkBtn("Lưu lên Control Plane", true);
+  saveBtn.addEventListener("click", () => {
+    dirty = true;
+    void saveToCp({ force: true }).then(() => {
+      if (!dirty) setStatus(STATUS.saved, "ok");
+    });
+  });
+
+  const dash = document.createElement("a");
+  dash.href = dashboardUrl();
+  dash.target = "_blank";
+  dash.rel = "noopener noreferrer";
+  dash.textContent = "Về Dashboard · Start lại";
+  Object.assign(dash.style, {
+    display: "inline-block",
+    textDecoration: "none",
+    border: "1px solid rgba(245,239,230,0.35)",
+    color: "#f5efe6",
+    borderRadius: "6px",
+    padding: "7px 12px",
+    fontSize: "13px",
+    fontWeight: "600",
+  });
+  dash.addEventListener("click", () => {
+    dash.href = dashboardUrl();
+  });
+
+  const dismiss = mkBtn("Ẩn", false);
+  dismiss.addEventListener("click", () => {
+    bannerDismissed = true;
+    el.style.display = "none";
+  });
+
+  actions.append(saveBtn, dash, dismiss);
+  card.append(title, body, actions);
+  el.appendChild(card);
+  document.body.appendChild(el);
+  return el;
+}
+
+function setRuntimeLost(next, reason) {
+  const was = runtimeLost;
+  runtimeLost = Boolean(next);
+  if (!runtimeLost) {
+    bannerDismissed = false;
+    const el = document.getElementById(BANNER_ID);
+    if (el) el.style.display = "none";
+    if (was) {
+      setStatus("Runtime: đã kết nối lại", "ok");
+    }
+    return;
+  }
+
+  ensureRuntimeBanner();
+  const el = document.getElementById(BANNER_ID);
+  const link = el?.querySelector("a");
+  if (link) link.href = dashboardUrl();
+  if (!bannerDismissed && el) el.style.display = "block";
+
+  if (!was) {
+    console.warn("[gpuvietnam_cp_sync] runtime lost", reason || "");
+    setStatus("Runtime: mất kết nối — không generate được", "error");
+    // CP sync still works via Worker/apiBase — flush edits immediately.
+    const now = Date.now();
+    if (dirty && now - lastRuntimeFlushAt > 2000) {
+      lastRuntimeFlushAt = now;
+      void saveToCp({ force: true });
+    }
+  }
+}
+
+function applyProbeResult(classified) {
+  if (classified.online === true) {
+    runtimeOkStreak += 1;
+    runtimeFailStreak = 0;
+    if (runtimeOkStreak >= RUNTIME_OK_THRESHOLD) {
+      setRuntimeLost(false, classified.kind);
+    }
+    return;
+  }
+  if (classified.online === false) {
+    runtimeFailStreak += 1;
+    runtimeOkStreak = 0;
+    if (runtimeFailStreak >= RUNTIME_FAIL_THRESHOLD) {
+      setRuntimeLost(true, classified.kind);
+    }
+  }
+}
+
+function comfyDomShowsReconnecting() {
+  try {
+    const text = String(document.body?.innerText || "");
+    return /\bReconnecting\b/i.test(text) || /đang kết nối lại/i.test(text);
+  } catch {
+    return false;
+  }
+}
+
+function readComfySocketState() {
+  try {
+    const api = app?.api;
+    const sock = api?.socket || api?.client || null;
+    if (!sock || typeof sock.readyState !== "number") return null;
+    return sock.readyState;
+  } catch {
+    return null;
+  }
+}
+
+function attachRuntimeWatch() {
+  ensureRuntimeBanner();
+
+  const tick = async () => {
+    const probe = await probeRuntimeOnce();
+    applyProbeResult(classifyRuntimeProbe(probe));
+
+    const rs = readComfySocketState();
+    if (rs === WebSocket.CLOSED || rs === WebSocket.CLOSING) {
+      runtimeFailStreak = Math.max(runtimeFailStreak, RUNTIME_FAIL_THRESHOLD - 1);
+      applyProbeResult({ online: false, kind: "ws_closed" });
+    }
+
+    if (comfyDomShowsReconnecting()) {
+      if (!reconnectingSeenAt) reconnectingSeenAt = Date.now();
+      if (Date.now() - reconnectingSeenAt >= RECONNECTING_DOM_MS) {
+        setRuntimeLost(true, "comfy_reconnecting_stale");
+      }
+    } else {
+      reconnectingSeenAt = 0;
+    }
+  };
+
+  void tick();
+  setInterval(() => {
+    void tick();
+  }, RUNTIME_PROBE_MS);
+
+  try {
+    const api = app?.api;
+    if (api && typeof api.addEventListener === "function") {
+      api.addEventListener("reconnecting", () => {
+        if (!reconnectingSeenAt) reconnectingSeenAt = Date.now();
+      });
+      api.addEventListener("reconnected", () => {
+        reconnectingSeenAt = 0;
+        runtimeOkStreak = RUNTIME_OK_THRESHOLD;
+        applyProbeResult({ online: true, kind: "ws_reconnected" });
+      });
+      api.addEventListener("status", () => {
+        /* status ticks while alive — probe interval handles loss */
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function attachBeforeUnloadGuard() {
+  window.addEventListener("beforeunload", (event) => {
+    if (!(syncReady && dirty)) return;
+    flushKeepalive();
+    event.preventDefault();
+    event.returnValue = "";
+  });
+}
+
 app.registerExtension({
   name: EXT_NAME,
   async setup() {
@@ -649,5 +948,7 @@ app.registerExtension({
     dirty = false;
     attachGraphListeners();
     attachLifecycleFlush();
+    attachBeforeUnloadGuard();
+    attachRuntimeWatch();
   },
 });

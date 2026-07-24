@@ -33,6 +33,10 @@ import {
   isVerifyPass,
 } from './provider-verify.js';
 import { selectPrimaryBillablePlanForMachine } from './remaining-time.js';
+import {
+  RUNTIME_READY_FOR_BILLING,
+  isRuntimeReadyForBilling,
+} from './billing-session-p0b.js';
 
 /**
  * @param {Record<string, unknown>} row
@@ -251,25 +255,16 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     }
   }
 
-  if (!isProjectionTrafficReady(machine)) {
-    // Allow live verify when endpoint is already published — projection worker
-    // can lag; do not block billing forever with traffic_not_ready.
-    const endpointReady =
-      String(machine.status ?? '') === 'running' && isEndpointResolved(machine);
-    if (!endpointReady) {
-      scbObs('RETURN skip', {
-        reason: 'traffic_not_ready',
-        machineId: machine.id,
-        projection_verified_at: machine.projection_verified_at ?? null,
-        projection_message: machine.projection_message ?? null,
-      });
-      return { skipped: true, reason: 'traffic_not_ready' };
-    }
-    scbObs('traffic_not_ready bypass', {
+  // P0-B: only RUNTIME_READY_FOR_BILLING may open the billable clock.
+  // Pre-check Workspace attachability; provider RUNNING verify follows.
+  if (!isProjectionTrafficReady(machine) && !isEndpointResolved(machine)) {
+    scbObs('RETURN skip', {
+      reason: 'traffic_not_ready',
       machineId: machine.id,
-      reason: 'endpoint_resolved_live_verify',
       projection_verified_at: machine.projection_verified_at ?? null,
+      projection_message: machine.projection_message ?? null,
     });
+    return { skipped: true, reason: 'traffic_not_ready' };
   }
 
   const verifyPort = createProviderVerifyPortFromGpuService(gpuService);
@@ -295,6 +290,14 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
       verifyStatus,
       verifyResult,
     };
+  }
+
+  if (!isRuntimeReadyForBilling(machine, { providerRunningVerified: true })) {
+    scbObs('RETURN skip', {
+      reason: 'runtime_not_ready_for_billing',
+      machineId: machine.id,
+    });
+    return { skipped: true, reason: 'runtime_not_ready_for_billing' };
   }
 
   const verifiedAt =
@@ -661,7 +664,13 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     };
   }
 
-  // ACTIVATED — proceed to link machine projection.
+  // ACTIVATED — P0-B sole billable start (RUNTIME_READY_FOR_BILLING).
+  scbObs(RUNTIME_READY_FOR_BILLING, {
+    machineId: machine.id,
+    sessionId,
+    started_at: activated.started_at ?? verifiedAt,
+    event: RUNTIME_READY_FOR_BILLING,
+  });
 
   try {
     await linkMachineToBillingSession(

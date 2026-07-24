@@ -63,6 +63,7 @@ create table if not exists public.gpu_sessions (
   destroy_reason text,
   verified_running_at timestamptz,
   verified_destroyed_at timestamptz,
+  close_requested_at timestamptz,
   output_summary text,
   output_count integer,
   output_size_gb numeric,
@@ -98,8 +99,13 @@ create table if not exists public.gpu_sessions (
     check (status != 'running' or verified_running_at is not null),
   constraint gpu_sessions_closed_requires_ended_at
     check (status != 'closed' or ended_at is not null),
-  constraint gpu_sessions_closed_requires_verified_destroyed_at
-    check (status != 'closed' or verified_destroyed_at is not null)
+  -- P0-B: closed may settle on billing Close before destroy verify.
+  constraint gpu_sessions_closed_destroy_or_billing_close
+    check (
+      status != 'closed'
+      or verified_destroyed_at is not null
+      or close_requested_at is not null
+    )
 );
 
 comment on table public.gpu_sessions is

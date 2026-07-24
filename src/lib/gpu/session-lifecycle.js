@@ -31,6 +31,7 @@
  * @property {string|null} [destroy_reason]
  * @property {string|null} [verified_running_at]
  * @property {string|null} [verified_destroyed_at]
+ * @property {string|null} [close_requested_at]
  * @property {string} [created_at]
  */
 
@@ -41,6 +42,7 @@
  * @property {string|null} [machineStatus]
  * @property {boolean} [providerRunningVerified]
  * @property {boolean} [providerDestroyedVerified]
+ * @property {boolean} [billingCloseRequested] P0-B: User/Policy Close without destroy verify yet
  * @property {number} [otherRunningSessionCount]
  * @property {string} [now]
  */
@@ -126,7 +128,7 @@ export const ILLEGAL_POLICY = Object.freeze({
 });
 
 /** Semantic version of the session state machine definition (bump when transitions change). */
-export const SESSION_STATE_MACHINE_VERSION = '2.0';
+export const SESSION_STATE_MACHINE_VERSION = '2.1';
 
 /**
  * Recursively freeze plain objects and arrays (functions are frozen as object refs only).
@@ -419,6 +421,18 @@ export const SESSION_GUARDS = Object.freeze({
     return { ok: true };
   },
 
+  /** P0-B: Close authorized by destroy verify OR billing Close request. */
+  closeAuthorized(_session, context) {
+    if (context.providerDestroyedVerified === true) return { ok: true };
+    if (context.billingCloseRequested === true) return { ok: true };
+    return {
+      ok: false,
+      code: SESSION_ERROR_CODE.PROVIDER_NOT_VERIFIED,
+      message: 'Close requires provider DESTROYED verify or billing Close request (P0-B)',
+      policy: ILLEGAL_POLICY.DOMAIN_ERROR,
+    };
+  },
+
   endedAtSet(session) {
     if (session?.status === SESSION_STATUS.CLOSED && session.ended_at == null) {
       return {
@@ -545,6 +559,7 @@ const SESSION_TRANSITION_MAP = [
         destroy_reason: null,
         verified_running_at: null,
         verified_destroyed_at: null,
+        close_requested_at: null,
         created_at: payload.created_at ?? now,
       };
     },
@@ -585,7 +600,7 @@ const SESSION_TRANSITION_MAP = [
       'statusRunning',
       'startedAtSet',
       'machineLinked',
-      'providerDestroyedVerified',
+      'closeAuthorized',
     ],
     event: SESSION_DOMAIN_EVENT.SESSION_CLOSED,
     illegalPolicy: ILLEGAL_POLICY.DOMAIN_ERROR,
@@ -593,11 +608,22 @@ const SESSION_TRANSITION_MAP = [
       assertSessionIntegrity(session);
       const endedAt = payload.ended_at ?? ctxNow(context);
       assertImmutableField(session, 'ended_at', endedAt, SESSION_ERROR_CODE.ENDED_AT_IMMUTABLE);
+      const closeRequestedAt =
+        payload.close_requested_at ??
+        session.close_requested_at ??
+        (context.billingCloseRequested === true ? endedAt : session.close_requested_at ?? null);
+      const verifiedDestroyedAt =
+        payload.verified_destroyed_at != null
+          ? String(payload.verified_destroyed_at)
+          : context.providerDestroyedVerified === true
+            ? (session.verified_destroyed_at ?? ctxNow(context))
+            : session.verified_destroyed_at ?? null;
       return {
         ...session,
         status: SESSION_STATUS.CLOSED,
         ended_at: session.ended_at ?? endedAt,
-        verified_destroyed_at: payload.verified_destroyed_at ?? ctxNow(context),
+        close_requested_at: closeRequestedAt,
+        verified_destroyed_at: verifiedDestroyedAt,
         destroy_reason: payload.destroyReason != null ? String(payload.destroyReason) : session.destroy_reason,
         settlement_status: SETTLEMENT_STATUS.PENDING,
       };

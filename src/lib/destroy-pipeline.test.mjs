@@ -3,7 +3,6 @@ import { describe, it } from 'node:test';
 import {
   DESTROY_PIPELINE_OUTCOME,
   DESTROY_PIPELINE_STEP,
-  assertSettlementAfterVerify,
 } from './destroy-pipeline-core.js';
 import { runDestroyPipeline } from './destroy-pipeline-run.js';
 import {
@@ -190,11 +189,15 @@ describe('runDestroyPipeline', () => {
     assert.equal(destroyCalls, 1);
     assert.equal(settleCalls, 1);
     assert.equal(mock.machine.status, 'destroyed');
-    assert.equal(assertSettlementAfterVerify(steps), true);
-    assert.ok(steps.indexOf(DESTROY_PIPELINE_STEP.SETTLEMENT) > steps.indexOf(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED));
+    // P0-B: settle at Close, before destroy verify.
+    assert.ok(
+      steps.indexOf(DESTROY_PIPELINE_STEP.SETTLEMENT) <
+        steps.indexOf(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED),
+    );
+    assert.ok(mock.session.close_requested_at);
   });
 
-  it('T3 — verify still running: no settlement, rollback', async () => {
+  it('T3 — P0-B: destroy rollback after billing Close still settled', async () => {
     const mock = createMockSupabase(runningSession());
     let settleCalls = 0;
 
@@ -205,7 +208,8 @@ describe('runDestroyPipeline', () => {
         verifyDestroyed: async () => stillRunningVerify(),
         settle: async () => {
           settleCalls += 1;
-          return { state: 'OK' };
+          mock.session.settlement_status = 'settled';
+          return { state: 'OK', settlementStatus: 'settled' };
         },
         skipSettlement: async () => ({ state: 'SKIPPED' }),
       },
@@ -214,13 +218,15 @@ describe('runDestroyPipeline', () => {
 
     assert.equal(result.destroyed, false);
     assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.ROLLED_BACK);
-    assert.equal(mock.session.status, 'running');
-    assert.equal(settleCalls, 0);
+    // Billing Session closed+settled at Close; Runtime destroy may still fail.
+    assert.equal(mock.session.status, 'closed');
+    assert.equal(settleCalls, 1);
   });
 
-  it('requireBackupSuccess — backup fail blocks provider destroy', async () => {
+  it('requireBackupSuccess — backup fail blocks destroy but billing already closed', async () => {
     const mock = createMockSupabase(runningSession());
     let destroyCalls = 0;
+    let settleCalls = 0;
 
     const result = await runDestroyPipeline(
       mock.client,
@@ -232,7 +238,11 @@ describe('runDestroyPipeline', () => {
         },
         backupBeforeStop: async () => false,
         verifyDestroyed: async () => destroyedVerify(),
-        settle: async () => ({ state: 'OK' }),
+        settle: async () => {
+          settleCalls += 1;
+          mock.session.settlement_status = 'settled';
+          return { state: 'OK', settlementStatus: 'settled' };
+        },
         skipSettlement: async () => ({ state: 'SKIPPED' }),
       },
       {
@@ -247,7 +257,8 @@ describe('runDestroyPipeline', () => {
     assert.equal(result.destroyed, false);
     assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.BACKUP_FAILED);
     assert.equal(destroyCalls, 0);
-    assert.equal(mock.session.status, 'running');
+    assert.equal(mock.session.status, 'closed');
+    assert.equal(settleCalls, 1);
   });
 
   it('T4 — idempotent when provider already destroyed', async () => {
@@ -314,7 +325,7 @@ describe('runDestroyPipeline', () => {
     assert.equal(mock.session.settlement_status, 'skipped');
   });
 
-  it('T2 — provider destroy fail keeps session running, no settlement', async () => {
+  it('T2 — P0-B: provider destroy fail after billing Close (settled, not destroyed)', async () => {
     const mock = createMockSupabase(runningSession());
     let settleCalls = 0;
 
@@ -329,7 +340,8 @@ describe('runDestroyPipeline', () => {
         verifyDestroyed: async () => stillRunningVerify(),
         settle: async () => {
           settleCalls += 1;
-          return { state: 'OK' };
+          mock.session.settlement_status = 'settled';
+          return { state: 'OK', settlementStatus: 'settled' };
         },
         skipSettlement: async () => ({ state: 'SKIPPED' }),
       },
@@ -338,8 +350,8 @@ describe('runDestroyPipeline', () => {
 
     assert.equal(result.destroyed, false);
     assert.equal(result.outcome, DESTROY_PIPELINE_OUTCOME.PROVIDER_DESTROY_FAILED);
-    assert.equal(mock.session.status, 'running');
-    assert.equal(settleCalls, 0);
+    assert.equal(mock.session.status, 'closed');
+    assert.equal(settleCalls, 1);
   });
 
   it('T2b — destroy error but verify destroyed continues to settle', async () => {
@@ -439,7 +451,11 @@ describe('runDestroyPipeline', () => {
     assert.equal(mock.machine.status, 'destroyed');
     assert.ok(steps.includes(DESTROY_PIPELINE_STEP.SESSION_CLOSED));
     assert.ok(steps.includes(DESTROY_PIPELINE_STEP.SETTLEMENT));
-    assert.equal(assertSettlementAfterVerify(steps), true);
+    // P0-B: settlement precedes destroy verify.
+    assert.ok(
+      steps.indexOf(DESTROY_PIPELINE_STEP.SETTLEMENT) <
+        steps.indexOf(DESTROY_PIPELINE_STEP.VERIFY_DESTROYED),
+    );
   });
 
   it('T6b — missing billing_started_at with unproven session skips settlement', async () => {

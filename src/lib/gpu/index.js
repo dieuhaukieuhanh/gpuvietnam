@@ -85,6 +85,12 @@ export {
   interruptPendingSessionForUser,
   loadActiveSessionRow,
 } from './session-start.js';
+export {
+  RUNTIME_READY_FOR_BILLING,
+  isRuntimeReadyForBilling,
+  shouldKeepBillingSessionOpenOnRuntimeDead,
+  calculateBillableSecondsFromClose,
+} from './billing-session-p0b.js';
 export { mapRemainingResultToBillingCredit, resolveScbRemainingHours } from './billing-projection.js';
 export {
   loadScbRemainingForUser,

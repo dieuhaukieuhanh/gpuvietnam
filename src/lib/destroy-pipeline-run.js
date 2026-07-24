@@ -83,6 +83,7 @@ function toSessionRecord(row, machineId = null) {
     verified_destroyed_at: row.verified_destroyed_at
       ? String(row.verified_destroyed_at)
       : null,
+    close_requested_at: row.close_requested_at ? String(row.close_requested_at) : null,
   };
 }
 
@@ -114,9 +115,127 @@ async function persistSessionRecord(supabaseAdmin, sessionId, record) {
       settlement_status: record.settlement_status,
       destroy_reason: record.destroy_reason,
       verified_destroyed_at: record.verified_destroyed_at,
+      close_requested_at: record.close_requested_at ?? null,
     })
     .eq('id', sessionId);
   if (error) throw error;
+}
+
+/**
+ * P0-B: stamp close_requested_at, close Billing Session, settle immediately.
+ * Does not require provider destroy. Idempotent on repeat Close.
+ */
+async function closeAndSettleBillingOnRequest(supabaseAdmin, deps, {
+  sessionId,
+  sessionRow,
+  sessionRecord,
+  userId,
+  destroyReason,
+  skipBilling,
+  trace,
+}) {
+  let row = sessionRow;
+  let record = sessionRecord;
+  /** @type {Record<string, unknown>|null} */
+  let settlementResult = null;
+
+  if (!record || !sessionId) {
+    return { sessionRow: row, sessionRecord: record, settlementResult, closed: false };
+  }
+
+  // Close before Ready (pending, no started_at): dispose = bill 0.
+  if (record.status === 'pending' || (record.status === 'running' && !record.started_at)) {
+    const { error: delErr } = await supabaseAdmin.from('gpu_sessions').delete().eq('id', sessionId);
+    if (delErr) throw delErr;
+    return {
+      sessionRow: null,
+      sessionRecord: null,
+      settlementResult: {
+        state: 'SKIPPED',
+        sessionId,
+        settlementStatus: 'skipped',
+        billableSeconds: 0,
+        chargedSeconds: 0,
+        walletCharge: 0,
+        reason: 'close_before_ready',
+      },
+      closed: true,
+      disposedPending: true,
+    };
+  }
+
+  if (record.status === 'closed' && isSessionTerminalSettled(row)) {
+    settlementResult = {
+      state: 'IDEMPOTENT',
+      sessionId,
+      settlementStatus: String(row.settlement_status),
+      breakdown: row.settlement_breakdown ?? null,
+      billableSeconds: calculateBillableSeconds(row.started_at, row.ended_at ?? row.close_requested_at),
+      chargedSeconds: 0,
+      walletCharge: 0,
+    };
+    return { sessionRow: row, sessionRecord: record, settlementResult, closed: true };
+  }
+
+  const closeAt = record.close_requested_at || row?.close_requested_at || new Date().toISOString();
+
+  if (record.status === 'running') {
+    trace(DESTROY_PIPELINE_STEP.SESSION_CLOSED);
+    const closeResult = closeSession(
+      record,
+      { billingCloseRequested: true, now: closeAt },
+      {
+        ended_at: closeAt,
+        close_requested_at: closeAt,
+        destroyReason,
+      },
+    );
+    assertTransitionOk(closeResult);
+    record = closeResult.session;
+    await persistSessionRecord(supabaseAdmin, sessionId, record);
+    row = { ...row, ...record, close_requested_at: closeAt };
+  } else if (record.status === 'closed' && !record.close_requested_at) {
+    await supabaseAdmin
+      .from('gpu_sessions')
+      .update({ close_requested_at: closeAt, ended_at: record.ended_at ?? closeAt })
+      .eq('id', sessionId);
+    record = { ...record, close_requested_at: closeAt, ended_at: record.ended_at ?? closeAt };
+    row = { ...row, ...record };
+  }
+
+  if (sessionId && row && isSessionReadyForSettlement(row) && deps.settle && deps.skipSettlement) {
+    trace(DESTROY_PIPELINE_STEP.SETTLEMENT);
+    if (skipBilling) {
+      settlementResult = await deps.skipSettlement(supabaseAdmin, sessionId, 'billing_waived', {
+        userId,
+      });
+    } else if (!isSessionTerminalSettled(row)) {
+      settlementResult = await deps.settle(supabaseAdmin, {
+        sessionId,
+        userId,
+        billingCloseVerified: true,
+        providerDestroyedVerified: Boolean(row.verified_destroyed_at),
+      });
+    } else {
+      settlementResult = {
+        state: 'IDEMPOTENT',
+        sessionId,
+        settlementStatus: String(row.settlement_status),
+        breakdown: row.settlement_breakdown ?? null,
+        billableSeconds: calculateBillableSeconds(row.started_at, row.ended_at),
+        chargedSeconds: 0,
+        walletCharge: 0,
+      };
+    }
+    // Refresh settlement_status on row after settle
+    const refreshed = await loadSessionRow(supabaseAdmin, sessionId);
+    if (refreshed) {
+      row = refreshed;
+      record = toSessionRecord(refreshed, record.machineId);
+    }
+  }
+
+  return { sessionRow: row, sessionRecord: record, settlementResult, closed: true };
 }
 
 /**
@@ -279,6 +398,47 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     };
   }
 
+  let sessionRow = null;
+  const sessionId = machine.gpu_session_id ? String(machine.gpu_session_id) : null;
+
+  if (sessionId) {
+    const candidate = await loadSessionRow(supabaseAdmin, sessionId);
+    if (machineHasBillableSession(machine)) {
+      sessionRow = candidate;
+    } else if (isProvenDestroySession(candidate, machine)) {
+      sessionRow = candidate;
+    } else if (candidate?.status === 'pending') {
+      // Close before Ready — dispose pending (bill 0).
+      sessionRow = candidate;
+    }
+  }
+
+  let sessionRecord = toSessionRecord(sessionRow, String(machine.id));
+  /** @type {Record<string, unknown>|null} */
+  let settlementResult = null;
+  let billingClosedEarly = false;
+
+  // P0-B: settle at Close intent — before backup/destroy latency.
+  if (sessionRecord && (sessionRecord.status === 'running' || sessionRecord.status === 'pending' || sessionRecord.status === 'closed')) {
+    const early = await closeAndSettleBillingOnRequest(supabaseAdmin, deps, {
+      sessionId,
+      sessionRow,
+      sessionRecord,
+      userId,
+      destroyReason,
+      skipBilling: input.skipBilling === true,
+      trace,
+    });
+    sessionRow = early.sessionRow;
+    sessionRecord = early.sessionRecord;
+    settlementResult = early.settlementResult;
+    billingClosedEarly = early.closed === true;
+    if (early.disposedPending) {
+      // Clear link so later logic does not re-load deleted session.
+      machine = { ...machine, gpu_session_id: null, billing_started_at: null };
+    }
+  }
+
   let backupSuccess = null;
   if (shouldRunBackup(machine, input) && deps.backupBeforeStop) {
     trace(DESTROY_PIPELINE_STEP.BACKUP);
@@ -310,18 +470,37 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     // Interactive user stop: do not cancel GPU until backup fully succeeds,
     // unless caller set forceStop (skipBackup) or requireBackupSuccess=false.
     if (input.requireBackupSuccess === true && backupSuccess !== true) {
+      // P0-B: billing may already be settled at Close; backup failure must not
+      // reopen the Billing Session or continue charging.
       return {
         destroyed: false,
         outcome: DESTROY_PIPELINE_OUTCOME.BACKUP_FAILED,
         lastStep: DESTROY_PIPELINE_STEP.BACKUP,
         machine,
-        session: null,
-        settlement: null,
+        session: sessionRow,
+        settlement: settlementResult,
         verify: null,
         backupSuccess: false,
         reason: destroyReason,
         retryable: true,
-        billingResult: null,
+        billingResult: settlementResult
+          ? {
+              durationSeconds: calculateBillableSeconds(
+                sessionRow?.started_at,
+                sessionRow?.ended_at ?? sessionRow?.close_requested_at,
+              ),
+              hoursUsed: roundHours(
+                calculateBillableSeconds(
+                  sessionRow?.started_at,
+                  sessionRow?.ended_at ?? sessionRow?.close_requested_at,
+                ) / 3600,
+              ),
+              sessionId,
+              endedAt: sessionRow?.ended_at ?? sessionRow?.close_requested_at ?? null,
+              settlement: settlementResult,
+              walletCharge: Number(settlementResult?.walletCharge ?? 0),
+            }
+          : null,
         metrics: null,
         stepTrace,
         backupStatus: backupSuccess === false ? 'failed' : 'incomplete',
@@ -342,22 +521,7 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   const { port } = extractEndpointFromMachine(machine);
   const verifyPort = createProviderVerifyPortFromGpuService(deps.gpuService);
 
-  let sessionRow = null;
-  const sessionId = machine.gpu_session_id ? String(machine.gpu_session_id) : null;
-
-  if (sessionId) {
-    const candidate = await loadSessionRow(supabaseAdmin, sessionId);
-    if (machineHasBillableSession(machine)) {
-      sessionRow = candidate;
-    } else if (isProvenDestroySession(candidate, machine)) {
-      sessionRow = candidate;
-    }
-  }
-
-  let sessionRecord = toSessionRecord(sessionRow, String(machine.id));
-
-  // SCB 3.0: no `closing` intermediate state. A running session stays running
-  // until provider-destroyed is verified, then transitions directly to closed.
+  // Session may already be CLOSED + settled (P0-B early path). Destroy continues.
 
   let verifyResult = null;
 
@@ -449,13 +613,26 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
 
   const verifiedAt = verifyResult.verifiedAt ?? new Date().toISOString();
 
-  if (sessionRecord && sessionRecord.status === 'running') {
+  // Patch destroy verify onto already-closed billing session (P0-B order).
+  if (sessionId && sessionRecord && sessionRecord.status === 'closed') {
+    trace(DESTROY_PIPELINE_STEP.SESSION_CLOSED);
+    if (!sessionRecord.verified_destroyed_at) {
+      await supabaseAdmin
+        .from('gpu_sessions')
+        .update({ verified_destroyed_at: verifiedAt })
+        .eq('id', sessionId);
+      sessionRecord = { ...sessionRecord, verified_destroyed_at: verifiedAt };
+      sessionRow = { ...sessionRow, verified_destroyed_at: verifiedAt };
+    }
+  } else if (sessionRecord && sessionRecord.status === 'running' && !billingClosedEarly) {
+    // Fallback: legacy path if early billing close did not run.
     trace(DESTROY_PIPELINE_STEP.SESSION_CLOSED);
     const closeResult = closeSession(
       sessionRecord,
-      { providerDestroyedVerified: true, now: verifiedAt },
+      { providerDestroyedVerified: true, billingCloseRequested: true, now: verifiedAt },
       {
-        ended_at: verifiedAt,
+        ended_at: sessionRecord.close_requested_at ?? verifiedAt,
+        close_requested_at: sessionRecord.close_requested_at ?? verifiedAt,
         verified_destroyed_at: verifiedAt,
         destroyReason,
       },
@@ -464,14 +641,16 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     sessionRecord = closeResult.session;
     await persistSessionRecord(supabaseAdmin, sessionId, sessionRecord);
     sessionRow = { ...sessionRow, ...sessionRecord };
-  } else if (sessionRecord && sessionRecord.status === 'closed') {
-    trace(DESTROY_PIPELINE_STEP.SESSION_CLOSED);
   }
 
-  /** @type {Record<string, unknown>|null} */
-  let settlementResult = null;
-
-  if (sessionId && sessionRow && isSessionReadyForSettlement(sessionRow) && deps.settle && deps.skipSettlement) {
+  if (
+    !billingClosedEarly &&
+    sessionId &&
+    sessionRow &&
+    isSessionReadyForSettlement(sessionRow) &&
+    deps.settle &&
+    deps.skipSettlement
+  ) {
     trace(DESTROY_PIPELINE_STEP.SETTLEMENT);
     if (input.skipBilling) {
       settlementResult = await deps.skipSettlement(supabaseAdmin, sessionId, 'billing_waived', {
@@ -482,6 +661,7 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
         sessionId,
         userId,
         providerDestroyedVerified: true,
+        billingCloseVerified: Boolean(sessionRow.close_requested_at),
       });
     } else {
       settlementResult = {

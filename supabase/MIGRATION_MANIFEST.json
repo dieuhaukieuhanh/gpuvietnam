@@ -518,6 +518,16 @@
       "depends_on": [
         "0032"
       ]
+    },
+    {
+      "id": "0050",
+      "file": "supabase/p0b-billing-session-close.sql",
+      "category": "migration",
+      "description": "P0-B: close_requested_at + allow settle on billing Close before destroy verify",
+      "idempotent": true,
+      "depends_on": [
+        "0021"
+      ]
     }
   ],
   "seeds": [

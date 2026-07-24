@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import {
   resolveComfySyncPatchOutcome,
   WORKSPACE_OFFLINE_EXTENSIONS,
+  classifyRuntimeProbe,
+  shouldWarnBeforeUnload,
 } from './cp-sync-client-policy.js';
 import { offlineBootStub } from '../../../workers/comfy-proxy/src/workspace-shell.js';
 
@@ -49,5 +51,27 @@ describe('A1 M3 CP sync client policy', () => {
       'workers/comfy-proxy/public/extensions/gpuvietnam_cp_sync/cp_sync.js',
     );
     assert.equal(existsSync(p), true, 'run scripts/vendor-cp-sync-extension.mjs');
+  });
+
+  it('classifies Runtime probe for disconnect banner', () => {
+    assert.equal(classifyRuntimeProbe({ ok: true, status: 200, body: {} }).online, true);
+    assert.equal(
+      classifyRuntimeProbe({
+        ok: true,
+        status: 200,
+        body: { a1: { runtimeOnline: false, mode: 'editor' } },
+      }).online,
+      false,
+    );
+    assert.equal(classifyRuntimeProbe({ ok: false, status: 502 }).online, false);
+    assert.equal(classifyRuntimeProbe({ ok: false, status: 426 }).kind, 'unreachable');
+    assert.equal(classifyRuntimeProbe({ networkError: true }).online, false);
+    assert.equal(classifyRuntimeProbe({ ok: false, status: 401 }).online, null);
+  });
+
+  it('beforeunload only when dirty and sync ready', () => {
+    assert.equal(shouldWarnBeforeUnload({ syncReady: true, dirty: true }), true);
+    assert.equal(shouldWarnBeforeUnload({ syncReady: true, dirty: false }), false);
+    assert.equal(shouldWarnBeforeUnload({ syncReady: false, dirty: true }), false);
   });
 });

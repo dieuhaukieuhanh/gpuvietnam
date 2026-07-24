@@ -174,6 +174,7 @@ export async function readCasGuardValues(supabaseAdmin, userId, lines, plans) {
  *   sessionId: string;
  *   userId: string;
  *   providerDestroyedVerified: boolean;
+ *   billingCloseVerified?: boolean;
  *   expectedPreSettlementStatus: string;
  *   lines: SettlementAllocationLine[];
  *   plans: Record<string, unknown>[];
@@ -237,6 +238,7 @@ export function buildSettlementTransactionPayload(input) {
     session_id: input.sessionId,
     user_id: input.userId,
     provider_destroyed_verified: input.providerDestroyedVerified === true,
+    billing_close_verified: input.billingCloseVerified === true,
     expected_pre_settlement_status: input.expectedPreSettlementStatus,
     wallet_charge: walletCharge,
     entitlement_lines: entitlementLines,
@@ -331,6 +333,7 @@ export function translateSettlementRpcResult(rpcResponse, jsContext) {
  *   sessionId: string;
  *   userId: string;
  *   providerDestroyedVerified: boolean;
+ *   billingCloseVerified?: boolean;
  *   expectedPreSettlementStatus: string;
  *   lines: SettlementAllocationLine[];
  *   plans: Record<string, unknown>[];
@@ -348,6 +351,7 @@ export async function executeSettlementTransaction(supabaseAdmin, input) {
     sessionId: input.sessionId,
     userId: input.userId,
     providerDestroyedVerified: input.providerDestroyedVerified,
+    billingCloseVerified: input.billingCloseVerified,
     expectedPreSettlementStatus: input.expectedPreSettlementStatus,
     lines: input.lines,
     plans: input.plans,
