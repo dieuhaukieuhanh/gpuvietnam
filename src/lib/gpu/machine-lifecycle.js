@@ -150,8 +150,9 @@ export function snapshotToMachineRecord(subscription, machine, userId, context =
 export function deriveSessionPhase(record, options = {}) {
   if (!record) return 'idle';
   if (record.status === MACHINE_LIFECYCLE_STATUS.STOPPING) return 'stopping';
-  if (record.status === MACHINE_LIFECYCLE_STATUS.ERROR) return 'error';
+  // Runtime DEAD keep-open: disconnect UX + live timer over generic error.
   if (options.disconnected || options.providerPhase === 'disconnected') return 'disconnected';
+  if (record.status === MACHINE_LIFECYCLE_STATUS.ERROR) return 'error';
   if (record.status === MACHINE_LIFECYCLE_STATUS.RUNNING) return 'running';
   if (record.status === MACHINE_LIFECYCLE_STATUS.PROVISIONING) return 'opening';
   return 'idle';

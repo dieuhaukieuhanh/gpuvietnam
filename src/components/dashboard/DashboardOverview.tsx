@@ -621,21 +621,27 @@ export default function DashboardOverview({
   const viewPhase = machineSessionView?.phase;
   const billingStarted = Boolean(billingView?.billingStarted);
   // Keep ticking through optimistic "stopping" so a failed destroy does not zero the clock.
+  // P0-B / P1: Runtime DEAD (disconnected/error) — wall-clock keeps ticking.
   const showLiveTimer =
     billingStarted &&
     (viewPhase === 'running' ||
       viewPhase === 'stopping' ||
-      viewPhase === 'disconnected');
+      viewPhase === 'disconnected' ||
+      viewPhase === 'error');
 
   const sessionActive =
     (viewPhase === 'running' ||
       viewPhase === 'disconnected' ||
+      viewPhase === 'error' ||
       (viewPhase === 'opening' && billingStarted)) &&
     billingStarted;
 
   const planCardSessionActive =
     Boolean(billingView?.billingStarted) &&
-    (viewPhase === 'running' || viewPhase === 'disconnected' || viewPhase === 'stopping');
+    (viewPhase === 'running' ||
+      viewPhase === 'disconnected' ||
+      viewPhase === 'stopping' ||
+      viewPhase === 'error');
 
   const sessionDurationSec = useSessionElapsedSeconds(
     billingView?.sessionDurationSeconds ?? 0,
