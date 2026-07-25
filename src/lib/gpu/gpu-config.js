@@ -282,7 +282,7 @@ export const CLORE_PRICE_GUARD = {
   /** Max multiple of the cheapest ranked candidate (by $/h). */
   maxMultipleOfCheapest: 2.0,
   /** Absolute ceiling for 1x line daily USD (host on_demand). 0 = no absolute cap. */
-  maxDailyUsd: 8,
+  maxDailyUsd: 10,
 };
 
 /**

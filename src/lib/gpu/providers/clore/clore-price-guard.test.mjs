@@ -27,10 +27,10 @@ describe('applyCloreRankedPriceGuard', () => {
     ];
     const { offers, dropped, cheapestDaily, capDaily } = applyCloreRankedPriceGuard(ranked, {
       maxMultipleOfCheapest: 2,
-      maxDailyUsd: 8,
+      maxDailyUsd: 10,
     });
     assert.equal(cheapestDaily, 3.2);
-    assert.equal(capDaily, 6.4); // min(3.2*2, 8)
+    assert.equal(capDaily, 6.4); // min(3.2*2, 10)
     assert.equal(dropped, 2);
     assert.deepEqual(
       offers.map((o) => o.offerId),
