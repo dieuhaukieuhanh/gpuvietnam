@@ -69,7 +69,8 @@ export function failoverProvider(providerId) {
  * Ordered attempt list: Vast first, Clore failover (unless forced).
  * Clore is only eligible for 3090 / 4090 — never 5090/Studio.
  * Set GPU_CLORE_ONLY=true to force Clore-only on supported lines (journal / probe).
- * Set GPU_VAST_ONLY=true to disable Clore entirely.
+ * Set GPU_VAST_ONLY=true to disable Clore entirely (takes precedence over Clore-only /
+ * lifecycle-worker default Clore-only).
  * @param {'clore'|'vast'|string | { forcedPrimary?: string; gpuLine?: string | null }} [forcedPrimaryOrOptions]
  * @param {{ gpuLine?: string | null }} [maybeOptions]
  * @returns {Array<'clore'|'vast'>}
@@ -100,6 +101,10 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
     return filtered.length ? filtered : ['vast'];
   };
 
+  // Explicit Vast-only probe wins over Clore-only / lifecycle default Clore-only.
+  if (isEnvFlagTrue('GPU_VAST_ONLY')) {
+    return ['vast'];
+  }
   if (isCloreOnlyMode()) {
     if (!cloreAllowed) {
       logger('provider').warn(
@@ -113,9 +118,6 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
       return ['vast'];
     }
     return ['clore'];
-  }
-  if (isEnvFlagTrue('GPU_VAST_ONLY')) {
-    return ['vast'];
   }
   if (forcedPrimary === 'clore' || forcedPrimary === 'vast') {
     if (forcedPrimary === 'clore' && !cloreAllowed) {

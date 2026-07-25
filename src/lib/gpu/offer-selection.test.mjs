@@ -237,6 +237,7 @@ describe('provider-routing', () => {
     const prev = process.env.GPU_CLORE_ONLY;
     const prevWorker = process.env.GPUVIETNAM_LIFECYCLE_WORKER;
     const prevAllowVast = process.env.GPU_ALLOW_VAST;
+    const prevVastOnly = process.env.GPU_VAST_ONLY;
     try {
       process.env.GPU_CLORE_ONLY = 'true';
       assert.deepEqual(
@@ -261,6 +262,13 @@ describe('provider-routing', () => {
         resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
         ['clore'],
       );
+      // Explicit Vast-only probe beats Clore-only + lifecycle default.
+      process.env.GPU_CLORE_ONLY = 'true';
+      process.env.GPU_VAST_ONLY = 'true';
+      assert.deepEqual(
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
+        ['vast'],
+      );
     } finally {
       if (prev === undefined) delete process.env.GPU_CLORE_ONLY;
       else process.env.GPU_CLORE_ONLY = prev;
@@ -268,6 +276,8 @@ describe('provider-routing', () => {
       else process.env.GPUVIETNAM_LIFECYCLE_WORKER = prevWorker;
       if (prevAllowVast === undefined) delete process.env.GPU_ALLOW_VAST;
       else process.env.GPU_ALLOW_VAST = prevAllowVast;
+      if (prevVastOnly === undefined) delete process.env.GPU_VAST_ONLY;
+      else process.env.GPU_VAST_ONLY = prevVastOnly;
     }
   });
 
