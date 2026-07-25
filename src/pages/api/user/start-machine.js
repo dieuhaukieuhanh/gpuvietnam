@@ -412,6 +412,17 @@ async function startMachineHandler(req, res) {
 
     await repairUserBillingState(supabaseAdmin, user.id);
 
+    // Close billable sessions still "running" on already-destroyed machines
+    // (race during stop can leave a ghost session that blocks Mở máy).
+    try {
+      const { closeGhostRunningSessionsForUser } = await import(
+        '@/lib/gpu/session-ghost-close'
+      );
+      await closeGhostRunningSessionsForUser(supabaseAdmin, user.id);
+    } catch (ghostErr) {
+      console.warn('[user/start-machine] ghost session close skipped:', ghostErr);
+    }
+
     let existingMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
     if (existingMachine) {
       gpuService = getGpuServiceForMachine(existingMachine);
