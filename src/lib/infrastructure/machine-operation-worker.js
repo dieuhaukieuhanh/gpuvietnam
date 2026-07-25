@@ -153,6 +153,17 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
         correlationId: String(payload.correlationId ?? row.correlation_id ?? ''),
         provisionLabel: String(payload.provisionLabel ?? ''),
       });
+
+      // Belt-and-suspenders: never mark the durable op completed with no GPU.
+      const afterMachines = await listActiveMachinesForUser(
+        supabaseAdmin,
+        String(payload.userId ?? userId),
+      );
+      if (afterMachines.length === 0) {
+        throw new Error(
+          'user_start_provision finished without an active machine (rent failed or silent return)',
+        );
+      }
     } else if (isRuntimeAutoReplace) {
       const payload =
         row.payload && typeof row.payload === 'object'

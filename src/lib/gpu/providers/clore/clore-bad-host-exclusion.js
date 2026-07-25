@@ -1,6 +1,6 @@
 /**
- * Clore TTL bad-host exclusion (30 days) + permanent country block (UA/IR).
- * Shared DB table provider_bad_hosts.
+ * Clore TTL bad-host exclusion (default hours, not weeks) + permanent country
+ * block (UA/IR). Persist under tmp/clore-bad-hosts.json per process/host.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';

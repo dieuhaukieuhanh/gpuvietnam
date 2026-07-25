@@ -340,31 +340,34 @@ export const CLORE_PROVISION_GATE = {
 };
 
 /**
- * Clore bad-host exclusion — 30 days for any post-rent / gate failure.
- * Kill-switch / override: CLORE_BAD_HOST_TTL_DAYS (default 30).
+ * Clore bad-host exclusion. Override with CLORE_BAD_HOST_TTL_HOURS (default 6).
+ * http_endpoint 502/Proxy-Not-Found is often a flaky edge — a 30-day ban empties
+ * the offer pool (~1 host left) and Start fails with no GPU.
+ * Legacy: CLORE_BAD_HOST_TTL_DAYS still honored when HOURS is unset.
  */
-const CLORE_BAD_HOST_TTL_DAYS = Math.max(
-  1,
-  Number(process.env.CLORE_BAD_HOST_TTL_DAYS) > 0
-    ? Number(process.env.CLORE_BAD_HOST_TTL_DAYS)
-    : 30,
-);
-const CLORE_BAD_HOST_TTL_MS = CLORE_BAD_HOST_TTL_DAYS * 24 * 60 * 60 * 1000;
+const CLORE_BAD_HOST_TTL_HOURS = (() => {
+  const hoursEnv = Number(process.env.CLORE_BAD_HOST_TTL_HOURS);
+  if (Number.isFinite(hoursEnv) && hoursEnv > 0) return Math.max(1, hoursEnv);
+  const daysEnv = Number(process.env.CLORE_BAD_HOST_TTL_DAYS);
+  if (Number.isFinite(daysEnv) && daysEnv > 0) return Math.max(1, daysEnv * 24);
+  return 6;
+})();
+const CLORE_BAD_HOST_TTL_MS = CLORE_BAD_HOST_TTL_HOURS * 60 * 60 * 1000;
+const CLORE_HARD_HOST_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 export const CLORE_BAD_HOST = {
   badHostExclusionTtlMs: CLORE_BAD_HOST_TTL_MS,
   badHostExclusionFile: 'tmp/clore-bad-hosts.json',
-  /** All gate-fail categories share the 30-day Clore TTL. */
   badHostTtlByReasonMs: {
     ssh_exec: CLORE_BAD_HOST_TTL_MS,
     port: CLORE_BAD_HOST_TTL_MS,
     http_endpoint: CLORE_BAD_HOST_TTL_MS,
-    gpu_stats: CLORE_BAD_HOST_TTL_MS,
-    nvidia_smi: CLORE_BAD_HOST_TTL_MS,
-    cuda: CLORE_BAD_HOST_TTL_MS,
+    gpu_stats: CLORE_HARD_HOST_TTL_MS,
+    nvidia_smi: CLORE_HARD_HOST_TTL_MS,
+    cuda: CLORE_HARD_HOST_TTL_MS,
     comfy_smoke: CLORE_BAD_HOST_TTL_MS,
     comfy_workflow: CLORE_BAD_HOST_TTL_MS,
-    slow: CLORE_BAD_HOST_TTL_MS,
+    slow: 2 * 60 * 60 * 1000,
     default: CLORE_BAD_HOST_TTL_MS,
   },
 };
