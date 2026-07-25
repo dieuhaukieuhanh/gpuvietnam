@@ -46,7 +46,7 @@ export const PACKAGE_SPECS = {
 export const GPU_LINE_TO_PLAN = {
   rtx3090: 'starter',
   rtx4090_1x: 'pro',
-  /** Legacy dual-4090 machines — still bill/display as Studio. */
+  /** Retired rentable SKU — keep for historical machines/billing only. */
   rtx4090_2x: 'studio',
   rtx5090_1x: 'studio',
 };
@@ -130,9 +130,9 @@ export function resolveGpuLineFromPlan(planKeyOrName) {
   if (/\bstudio\b/.test(normalized) || /\brtx\s*5090\b/.test(normalized) || /\b5090\b/.test(normalized)) {
     return 'rtx5090_1x';
   }
-  // Legacy explicit dual-4090 (hard-migrate Studio no longer maps here via "studio")
+  // Legacy dual-4090 product retired — Studio successor is 5090.
   if (/\b2\s*x\s*rtx\s*4090\b/.test(normalized) || /\b4090\s*2\s*x\b/.test(normalized)) {
-    return 'rtx4090_2x';
+    return 'rtx5090_1x';
   }
   if (/\bpro\b/.test(normalized) || /\brtx\s*4090\b/.test(normalized)) return 'rtx4090_1x';
   console.warn('[resolveGpuLineFromPlan] unrecognized plan, no GPU line:', planKeyOrName);
@@ -182,10 +182,10 @@ export const PROVIDER_ROUTING = {
 };
 
 /**
- * Clore GPU lines only — 5090/Studio excluded (public HTTP proxy fails across hosts).
+ * Clore GPU lines only — 5090/Studio + retired dual-4090 excluded.
  * @type {ReadonlySet<string>}
  */
-export const CLORE_SUPPORTED_GPU_LINES = new Set(['rtx3090', 'rtx4090_1x', 'rtx4090_2x']);
+export const CLORE_SUPPORTED_GPU_LINES = new Set(['rtx3090', 'rtx4090_1x']);
 
 /**
  * @param {string | null | undefined} gpuLine
@@ -231,11 +231,11 @@ export const OFFER_SELECTION = {
  * and search uses gpu_frac=1.
  */
 export const VAST_OFFER_SANITY = {
-  /** Reject offers cheaper than this floor per GPU line. */
+  /** Reject offers cheaper than this floor per GPU line (USD/hr dph_total). */
   minDphTotalByLine: {
     rtx3090: 0.12,
-    rtx4090_1x: 0.2,
-    rtx4090_2x: 0.35,
+    /** Product: RTX 4090 floor ≥ $0.15 — reject disk-only ~1/10 asks. */
+    rtx4090_1x: 0.15,
     rtx5090_1x: 0.28,
   },
   /** Drop offers below median(cohort) * ratio (catches storage-only cheap listings). */
@@ -295,6 +295,7 @@ export const CLORE_PRICE_GUARD = {
  * Set `enabled: true` to restore band filtering.
  * Note: Clore still applies CLORE_PRICE_GUARD after ranking even when this is off.
  */
+/** Percentile band (P20–P60 style) — OFF; product uses absolute minDph floors instead. */
 export const VAST_PERCENTILE_BAND = {
   enabled: false,
   fullCohortMin: 8,
@@ -330,7 +331,6 @@ export const VAST_PROVISION_GATE = {
   expectedGpuNameByLine: {
     rtx3090: ['3090'],
     rtx4090_1x: ['4090'],
-    rtx4090_2x: ['4090'],
     rtx5090_1x: ['5090'],
   },
 };

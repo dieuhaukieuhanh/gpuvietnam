@@ -22,5 +22,8 @@ run_worker_first = true
 COOKIE_NAME = "gvn_comfy"
 # Next.js public host that serves /api/internal/comfy-proxy-resolve.
 ORIGIN_RESOLVE_URL = "https://gpuvietnam.com/api/internal/comfy-proxy-resolve"
+# Vast IP upstream hop (CF Workers cannot fetch literal IPs → error 1003).
+# Clore hostnames unchanged. Set "off" to disable.
+COMFY_IP_LITERAL_HOP_SUFFIX = "sslip.io"
 # Optional fallback if ASSETS empty: https://…/comfy-workspace
 # FE_STATIC_ORIGIN = ""

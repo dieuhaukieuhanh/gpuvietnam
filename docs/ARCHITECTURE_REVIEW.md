@@ -992,7 +992,7 @@ flowchart TD
 |---|---|---|
 | Workstation list | 6 entries static | `workstations.ts` |
 | GPU Comfy IDs | `[1, 2, 3]` | `workstation-env.js` |
-| Plan → GPU line | `starter→rtx3090`, `pro→rtx4090_1x`, `studio→rtx4090_2x` | `gpu-config.js` → `PLAN_TO_GPU` |
+| Plan → GPU line | `starter→rtx3090`, `pro→rtx4090_1x`, `studio→rtx5090_1x` (legacy `rtx4090_2x` retired) | `gpu-config.js` → `PLAN_TO_GPU` |
 | Default regions | Taiwan, Japan, Singapore | `gpu-config.js` |
 | VRAM minimum | 22 GB | `GPU_STRICT_FILTERS.minVramGb` |
 | Idle thresholds | 55 warn / 60 stop minutes | `auto-stop.js` |

@@ -19,3 +19,9 @@ export {
 } from './comfy-access-token.js';
 
 export { redactComfyUpstreamForClient } from './comfy-proxy-client-redact.js';
+
+export {
+  isIpv4Hostname,
+  rewriteIpLiteralUpstreamForFetch,
+  resolveComfyIpLiteralHopSuffix,
+} from './comfy-ip-hop.js';

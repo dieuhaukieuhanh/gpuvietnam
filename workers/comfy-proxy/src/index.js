@@ -22,6 +22,7 @@ import {
   offlineBootStub,
   jsonResponse,
 } from './workspace-shell.js';
+import { rewriteIpLiteralUpstreamForFetch } from './ip-hop.js';
 
 const COOKIE_DEFAULT = 'gvn_comfy';
 const CP_SYNC_PREFIX = '/gpuvietnam/cp/';
@@ -103,7 +104,7 @@ async function handle(request, env) {
     const staticRes = await serveWorkspaceStatic(request, env, url.pathname);
     if (staticRes) return staticRes;
     // Online fallback: proxy missing static from Runtime (rare).
-    if (online) return proxyToUpstream(request, resolved.upstream);
+    if (online) return proxyToUpstream(request, resolved.upstream, env);
     return new Response('Workspace FE assets not configured', { status: 503 });
   }
 
@@ -123,7 +124,7 @@ async function handle(request, env) {
   }
 
   // M4 online: prompt / object_info / extensions / history / view / upload / ws → Runtime
-  return proxyToUpstream(request, resolved.upstream);
+  return proxyToUpstream(request, resolved.upstream, env);
 }
 
 function offlineWsUpgradeHint() {
@@ -327,9 +328,15 @@ async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function proxyToUpstream(request, upstreamBase) {
+async function proxyToUpstream(request, upstreamBase, env) {
   const inbound = new URL(request.url);
-  const target = new URL(upstreamBase.replace(/\/$/, '') + inbound.pathname + inbound.search);
+  // Vast stores http://IP:port — CF Workers cannot fetch IP literals (1003).
+  // Clore hostnames pass through unchanged. Hop default: dashed-IP.sslip.io
+  const fetchBase = rewriteIpLiteralUpstreamForFetch(
+    upstreamBase,
+    env?.COMFY_IP_LITERAL_HOP_SUFFIX,
+  );
+  const target = new URL(fetchBase.replace(/\/$/, '') + inbound.pathname + inbound.search);
 
   // M4: WebSocket progress/preview — must pass the original Request so Workers
   // preserve the client↔Worker WebSocket pair while fetching the upstream.
@@ -339,8 +346,10 @@ async function proxyToUpstream(request, upstreamBase) {
 
   const headers = new Headers(request.headers);
   headers.delete('cookie');
+  // Never set Host manually — Workers forbid overriding Host for subrequests
+  // (can surface as CF 1003 with IP / exotic hop hostnames). Let fetch()
+  // derive Host from the target URL (sslip hop or Clore hostname).
   headers.delete('host');
-  headers.set('Host', target.host);
   headers.delete('cf-connecting-ip');
   headers.delete('cf-ray');
   headers.delete('cf-visitor');

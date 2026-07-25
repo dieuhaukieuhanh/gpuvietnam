@@ -75,6 +75,17 @@ describe('vast-offer-sanity prefilter', () => {
     const cheap = normalizeVastOffer(vastRaw({ dph_total: 0.05, dlperf: 40 }));
     assert.ok(cheap);
     assert.equal(evaluateVastOfferSanity(cheap, 'rtx3090').reason, 'below_min_dph');
+
+    const cheap4090 = normalizeVastOffer(
+      vastRaw({ gpu_name: 'RTX 4090', dph_total: 0.14, dlperf: 50 }),
+    );
+    assert.ok(cheap4090);
+    assert.equal(evaluateVastOfferSanity(cheap4090, 'rtx4090_1x').reason, 'below_min_dph');
+    const ok4090 = normalizeVastOffer(
+      vastRaw({ gpu_name: 'RTX 4090', dph_total: 0.15, dlperf: 50 }),
+    );
+    assert.ok(ok4090);
+    assert.equal(evaluateVastOfferSanity(ok4090, 'rtx4090_1x').ok, true);
   });
 
   it('rejects gpu_name mismatch', () => {

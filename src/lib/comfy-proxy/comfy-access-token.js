@@ -7,6 +7,7 @@ import {
   isComfyProxyEnabled,
   resolveComfyProxyBaseUrl,
 } from './comfy-proxy-config.js';
+import { rewriteIpLiteralUpstreamForFetch } from './comfy-ip-hop.js';
 
 /**
  * @param {string} rawToken
@@ -123,8 +124,12 @@ export async function issueComfyAccessToken(supabaseAdmin, input) {
       ? 'editor'
       : 'runtime';
 
-  const upstream =
+  const upstreamNormalized =
     mode === 'editor' ? null : normalizeUpstreamComfyUrl(input.upstreamUrl);
+  // Vast = http://IP:port — CF Workers cannot fetch IP literals (1003).
+  // Rewrite to DNS hop (sslip.io by default); Clore hostnames unchanged.
+  const upstream =
+    mode === 'editor' ? null : rewriteIpLiteralUpstreamForFetch(upstreamNormalized);
   if (mode === 'runtime' && !upstream) {
     throw new Error('Invalid upstream Comfy URL');
   }

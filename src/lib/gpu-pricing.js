@@ -138,9 +138,6 @@ export function formatCurrency(amount) {
 export function getGpuLabel(planKey) {
   const plan = getActivePlans()[planKey];
   if (!plan) return 'GPU đang cấp phát';
-  if (planKey === 'studio') {
-    return `${plan.gpu} — ${plan.vram} VRAM (2x24GB riêng biệt)`;
-  }
   return `${plan.gpu} — ${plan.vram} VRAM`;
 }
 

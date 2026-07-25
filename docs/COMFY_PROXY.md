@@ -2,6 +2,16 @@
 
 Hides Clore/Vast upstream hostnames behind `work.gpuvietnam.com`.
 
+### Clore vs Vast (Worker fetch)
+
+| | Clore | Vast |
+|---|---|---|
+| Upstream shape | `https://*.clorecloud.net` (hostname) | `http://IP:HostPort` |
+| CF Worker `fetch` | OK | **Fails with 1003** (no literal IP subrequests) |
+| Fix | none | rewrite IPv4 → `http://{dashed-ip}.sslip.io:{port}` at Worker (and mint) |
+
+Same brand URL for both; only the Worker→GPU hop differs. Override suffix with `COMFY_IP_LITERAL_HOP_SUFFIX` (Worker `[vars]` + app env); `off` disables.
+
 ## Feature flag (rollback)
 
 Default **OFF**. Enable only after Worker + DNS are live:

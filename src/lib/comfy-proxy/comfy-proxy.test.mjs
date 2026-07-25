@@ -12,6 +12,10 @@ import {
   hashComfyAccessToken,
 } from './comfy-access-token.js';
 import { redactComfyUpstreamForClient } from './comfy-proxy-client-redact.js';
+import {
+  isIpv4Hostname,
+  rewriteIpLiteralUpstreamForFetch,
+} from './comfy-ip-hop.js';
 
 describe('comfy-proxy config', () => {
   after(() => {
@@ -42,6 +46,32 @@ describe('comfy-proxy config', () => {
   it('resolveComfyProxyBaseUrl strips slash', () => {
     process.env.COMFY_PROXY_BASE_URL = 'https://work.example.com/';
     assert.equal(resolveComfyProxyBaseUrl(), 'https://work.example.com');
+  });
+});
+
+describe('rewriteIpLiteralUpstreamForFetch', () => {
+  it('rewrites Vast IPv4:port to sslip hop; leaves Clore hostname', () => {
+    assert.equal(
+      rewriteIpLiteralUpstreamForFetch('http://173.239.95.142:45522', {
+        hopSuffix: 'sslip.io',
+      }),
+      'http://173-239-95-142.sslip.io:45522',
+    );
+    assert.equal(
+      rewriteIpLiteralUpstreamForFetch('https://abc.us.clorecloud.net', {
+        hopSuffix: 'sslip.io',
+      }),
+      'https://abc.us.clorecloud.net',
+    );
+    assert.equal(isIpv4Hostname('173.239.95.142'), true);
+    assert.equal(isIpv4Hostname('abc.us.clorecloud.net'), false);
+  });
+
+  it('can disable hop', () => {
+    assert.equal(
+      rewriteIpLiteralUpstreamForFetch('http://1.2.3.4:8081', { hopSuffix: null }),
+      'http://1.2.3.4:8081',
+    );
   });
 });
 

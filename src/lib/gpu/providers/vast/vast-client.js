@@ -54,10 +54,6 @@ const GPU_SEARCH_FILTERS = {
     gpu_name: { in: ['RTX 4090'] },
     num_gpus: { eq: 1 },
   },
-  rtx4090_2x: {
-    gpu_name: { in: ['RTX 4090'] },
-    num_gpus: { eq: 2 },
-  },
   rtx5090_1x: {
     gpu_name: { in: ['RTX 5090'] },
     num_gpus: { eq: 1 },
@@ -123,8 +119,7 @@ function buildOfferSearchBody(gpuLine) {
 /**
  * @param {import('../../domain/gpu-instance').GPULine} gpuLine
  */
-function getNumGpusForLine(gpuLine) {
-  if (gpuLine === 'rtx4090_2x') return 2;
+function getNumGpusForLine(_gpuLine) {
   return 1;
 }
 

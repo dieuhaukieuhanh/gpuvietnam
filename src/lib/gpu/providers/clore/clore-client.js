@@ -172,11 +172,6 @@ export function classifyCloreServerForLine(server, gpuLine) {
     if (hostGpuCount !== 1 && server.partial_gpu_rental !== true) return null;
     return { numGpus: 1, gpuType: 'RTX 4090', hostGpuCount };
   }
-  if (gpuLine === 'rtx4090_2x') {
-    if (!/4090/.test(joined)) return null;
-    if (hostGpuCount < 2) return null;
-    return { numGpus: 2, gpuType: 'RTX 4090', hostGpuCount };
-  }
   if (gpuLine === 'rtx5090_1x') {
     if (!/5090/.test(joined)) return null;
     if (hostGpuCount !== 1 && server.partial_gpu_rental !== true) return null;

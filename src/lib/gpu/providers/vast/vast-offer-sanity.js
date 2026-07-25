@@ -11,7 +11,6 @@ import { applyVastPercentilePriceBand } from './vast-percentile-band.js';
 export const VAST_GPU_NAMES_BY_LINE = {
   rtx3090: ['RTX 3090'],
   rtx4090_1x: ['RTX 4090'],
-  rtx4090_2x: ['RTX 4090'],
   rtx5090_1x: ['RTX 5090', '5090'],
 };
 
@@ -84,8 +83,8 @@ export function readVastGpuPricePerHour(raw, fallbackTotal = 0) {
  * Expected discrete GPU count for a line (1x / 2x).
  * @param {string} gpuLine
  */
-export function expectedVastNumGpusForLine(gpuLine) {
-  return gpuLine === 'rtx4090_2x' ? 2 : 1;
+export function expectedVastNumGpusForLine(_gpuLine) {
+  return 1;
 }
 
 export function evaluateVastOfferSanity(offer, gpuLine) {
