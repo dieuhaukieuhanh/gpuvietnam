@@ -2,7 +2,7 @@
  * TTL bad-host exclusion list for Vast (machine_id / host_id).
  * In-memory + tmp file so the same dead host is not re-rented across starts.
  * Also feeds the shared Host Reputation System.
- * Permanently drops Ukraine / Iran offers (shared marketplace region block).
+ * Permanently drops Iran offers (shared marketplace region block). Ukraine allowed.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';

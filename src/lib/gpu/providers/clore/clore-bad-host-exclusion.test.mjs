@@ -20,7 +20,7 @@ describe('classifyCloreGateFailReason', () => {
 });
 
 describe('clore-bad-host-exclusion', () => {
-  it('remembers and excludes by 30-day TTL', () => {
+  it('remembers and excludes by default hours TTL', () => {
     resetCloreBadHostExclusionForTests();
     const now = Date.now();
     const entry = rememberCloreBadHost('clore-host:99', {
@@ -30,7 +30,9 @@ describe('clore-bad-host-exclusion', () => {
     });
     assert.ok(entry);
     const expectedTtl = CLORE_BAD_HOST.badHostExclusionTtlMs;
-    assert.ok(expectedTtl >= 29 * 24 * 60 * 60 * 1000);
+    // Default CLORE_BAD_HOST_TTL_HOURS=6 (not multi-week bans).
+    assert.ok(expectedTtl >= 60 * 60 * 1000);
+    assert.ok(expectedTtl <= 7 * 24 * 60 * 60 * 1000);
     assert.equal(entry.expiresAt - entry.excludedAt, expectedTtl);
     assert.equal(isCloreHostExcluded('clore-host:99', now + 1000), true);
     assert.equal(isCloreHostExcluded('clore-host:99|rtx3090', now + 1000), true);
@@ -39,11 +41,11 @@ describe('clore-bad-host-exclusion', () => {
   });
 });
 
-describe('clore permanent region block (UA / IR)', () => {
-  it('blocks Ukraine and Iran codes and names', () => {
-    assert.equal(isCloreRegionPermanentlyBlocked('UA'), true);
-    assert.equal(isCloreRegionPermanentlyBlocked('ua'), true);
-    assert.equal(isCloreRegionPermanentlyBlocked('Ukraine'), true);
+describe('clore permanent region block (IR only; UA allowed)', () => {
+  it('blocks Iran; allows Ukraine', () => {
+    assert.equal(isCloreRegionPermanentlyBlocked('UA'), false);
+    assert.equal(isCloreRegionPermanentlyBlocked('ua'), false);
+    assert.equal(isCloreRegionPermanentlyBlocked('Ukraine'), false);
     assert.equal(isCloreRegionPermanentlyBlocked('IR'), true);
     assert.equal(isCloreRegionPermanentlyBlocked('Iran'), true);
     assert.equal(isCloreRegionPermanentlyBlocked('US'), false);
@@ -74,12 +76,15 @@ describe('clore permanent region block (UA / IR)', () => {
     const { offers: kept, droppedBlockedRegion } = filterCloreOffersByBlockedRegions(
       /** @type {any} */ (offers),
     );
-    assert.equal(droppedBlockedRegion, 2);
-    assert.equal(kept.length, 1);
-    assert.equal(kept[0].offerId, 3);
+    assert.equal(droppedBlockedRegion, 1);
+    assert.equal(kept.length, 2);
+    assert.deepEqual(
+      kept.map((o) => o.offerId).sort(),
+      [1, 3],
+    );
   });
 
-  it('bad-host filter also drops blocked regions', () => {
+  it('bad-host filter also drops blocked regions (Iran), keeps Ukraine', () => {
     resetCloreBadHostExclusionForTests();
     const offers = [
       {
@@ -87,6 +92,12 @@ describe('clore permanent region block (UA / IR)', () => {
         providerId: 'clore',
         region: 'Ukraine',
         raw: { id: 88411, specs: { net: { cc: 'UA' } } },
+      },
+      {
+        offerId: 88412,
+        providerId: 'clore',
+        region: 'Iran',
+        raw: { id: 88412, specs: { net: { cc: 'IR' } } },
       },
       {
         offerId: 88028,
@@ -100,7 +111,10 @@ describe('clore permanent region block (UA / IR)', () => {
       'rtx3090',
     );
     assert.equal(droppedBlockedRegion, 1);
-    assert.equal(kept.length, 1);
-    assert.equal(kept[0].offerId, 88028);
+    assert.equal(kept.length, 2);
+    assert.deepEqual(
+      kept.map((o) => o.offerId).sort(),
+      [88028, 88411],
+    );
   });
 });

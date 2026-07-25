@@ -20,13 +20,13 @@ export function isMarketplaceRegionPermanentlyBlocked(regionOrCc) {
   if (!raw) return false;
   const upper = raw.toUpperCase();
   const lower = raw.toLowerCase();
-  const codes = MARKETPLACE_BLOCKED_REGIONS?.countryCodes ?? ['UA', 'IR'];
+  const codes = MARKETPLACE_BLOCKED_REGIONS?.countryCodes ?? ['IR'];
   for (const code of codes) {
     const c = String(code).toUpperCase();
     if (upper === c) return true;
     if (new RegExp(`(?:^|[,\\s])${c}(?:$|[,\\s])`).test(upper)) return true;
   }
-  const names = MARKETPLACE_BLOCKED_REGIONS?.regionNames ?? ['ukraine', 'iran'];
+  const names = MARKETPLACE_BLOCKED_REGIONS?.regionNames ?? ['iran'];
   for (const name of names) {
     const n = String(name).toLowerCase();
     if (!n) continue;

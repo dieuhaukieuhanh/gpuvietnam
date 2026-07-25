@@ -1,6 +1,6 @@
 /**
  * Clore TTL bad-host exclusion (default hours, not weeks) + permanent country
- * block (UA/IR). Persist under tmp/clore-bad-hosts.json per process/host.
+ * block (Iran / IR). Persist under tmp/clore-bad-hosts.json per process/host.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -222,7 +222,7 @@ export function isCloreHostExcluded(hostKey, now = Date.now()) {
 }
 
 /**
- * Drop Ukraine / Iran permanently (before rent / ranking).
+ * Drop Iran permanently (before rent / ranking). Ukraine is allowed.
  * @param {import('../../offer-selection.js').NormalizedOffer[]} offers
  */
 export function filterCloreOffersByBlockedRegions(offers) {

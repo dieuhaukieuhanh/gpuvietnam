@@ -65,7 +65,7 @@ describe('vast-bad-host-exclusion', () => {
     assert.equal(kept[0].offerId, 2);
   });
 
-  it('permanently drops Ukraine and Iran regions', () => {
+  it('permanently drops Iran; allows Ukraine', () => {
     const offers = [
       {
         offerId: 10,
@@ -110,9 +110,13 @@ describe('vast-bad-host-exclusion', () => {
     const { offers: kept, droppedBlockedRegion } = filterVastOffersByBadHostExclusion(
       /** @type {any} */ (offers),
     );
-    assert.equal(droppedBlockedRegion, 2);
-    assert.equal(kept.length, 1);
-    assert.equal(kept[0].offerId, 12);
+    // Iran blocked; Ukraine allowed.
+    assert.equal(droppedBlockedRegion, 1);
+    assert.equal(kept.length, 2);
+    assert.deepEqual(
+      kept.map((o) => o.offerId).sort(),
+      [10, 12],
+    );
   });
 
   it('expires entries', () => {

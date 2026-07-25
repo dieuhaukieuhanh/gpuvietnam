@@ -374,13 +374,12 @@ export const CLORE_BAD_HOST = {
 
 /**
  * Permanent country/region block for marketplace rentals (Clore + Vast).
- * Matched against ISO cc (UA/IR) and region / geolocation labels.
+ * Iran only (ISO IR). Ukraine (UA) is allowed.
  */
 export const CLORE_BLOCKED_REGIONS = {
-  countryCodes: /** @type {const} */ (['UA', 'IR']),
+  countryCodes: /** @type {const} */ (['IR']),
   /** Lowercase substrings / names */
   regionNames: /** @type {const} */ ([
-    'ukraine',
     'iran',
     'islamic republic of iran',
   ]),
