@@ -799,12 +799,13 @@ export class CloreClient {
     const { offers: reputationRanked, droppedBlacklisted, usedLeastBadFallback } =
       applyHostReputationToOffers(withKnownGood, resolveKey);
     const priceGuard = applyCloreRankedPriceGuard(reputationRanked);
-    if (priceGuard.dropped > 0) {
+    if (priceGuard.dropped > 0 || priceGuard.hardEmpty) {
       console.info('[clore/findRankedOffers] price guard', {
         dropped: priceGuard.dropped,
         kept: priceGuard.offers.length,
         cheapestDaily: priceGuard.cheapestDaily,
         capDaily: priceGuard.capDaily,
+        hardEmpty: priceGuard.hardEmpty,
       });
     }
     console.info('[clore/findRankedOffers] currency filter', {
@@ -831,6 +832,7 @@ export class CloreClient {
       priceGuardDropped: priceGuard.dropped,
       afterPriceGuard: priceGuard.offers.length,
       priceGuardCapDaily: priceGuard.capDaily,
+      priceGuardHardEmpty: priceGuard.hardEmpty,
     });
     return priceGuard.offers;
   }

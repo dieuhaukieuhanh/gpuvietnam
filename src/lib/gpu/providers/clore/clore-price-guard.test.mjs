@@ -25,34 +25,56 @@ describe('applyCloreRankedPriceGuard', () => {
       offer(4, 10),
       offer(5, 15),
     ];
-    const { offers, dropped, cheapestDaily, capDaily } = applyCloreRankedPriceGuard(ranked, {
-      maxMultipleOfCheapest: 2,
-      maxDailyUsd: 10,
-    });
+    const { offers, dropped, cheapestDaily, capDaily, hardEmpty } = applyCloreRankedPriceGuard(
+      ranked,
+      {
+        maxMultipleOfCheapest: 2,
+        maxDailyUsd: 10,
+      },
+    );
     assert.equal(cheapestDaily, 3.2);
     assert.equal(capDaily, 6.4); // min(3.2*2, 10)
     assert.equal(dropped, 2);
+    assert.equal(hardEmpty, false);
     assert.deepEqual(
       offers.map((o) => o.offerId),
       [1, 2, 3],
     );
   });
 
-  it('fail-opens when every candidate exceeds the cap', () => {
-    const ranked = [offer(9, 12), offer(10, 15)];
-    const { offers, dropped } = applyCloreRankedPriceGuard(ranked, {
-      maxMultipleOfCheapest: 1.1,
-      maxDailyUsd: 5,
+  it('hard-fails when every candidate exceeds absolute maxDailyUsd', () => {
+    const ranked = [offer(9, 10.5), offer(10, 15)];
+    const { offers, dropped, hardEmpty, capDaily } = applyCloreRankedPriceGuard(ranked, {
+      maxMultipleOfCheapest: 2,
+      maxDailyUsd: 10,
     });
-    // cheapest=12 → relative cap 13.2, absolute 5 → cap 5 → all dropped → fail-open
-    assert.equal(dropped, 0);
-    assert.equal(offers.length, 2);
+    assert.equal(hardEmpty, true);
+    assert.equal(capDaily, 10);
+    assert.equal(dropped, 2);
+    assert.equal(offers.length, 0);
+  });
+
+  it('fail-opens relative band only within absolute-safe hosts', () => {
+    // cheapest under absolute = 8 → relative 8.8; both 9 and 9.5 exceed relative
+    // but stay under absolute 10 → reopen absolute-safe set
+    const ranked = [offer(1, 8), offer(2, 9), offer(3, 12)];
+    const { offers, dropped, hardEmpty } = applyCloreRankedPriceGuard(ranked, {
+      maxMultipleOfCheapest: 1.1,
+      maxDailyUsd: 10,
+    });
+    assert.equal(hardEmpty, false);
+    assert.equal(dropped, 1); // 12 dropped by absolute
+    assert.deepEqual(
+      offers.map((o) => o.offerId).sort(),
+      [1, 2],
+    );
   });
 
   it('can be disabled', () => {
     const ranked = [offer(1, 3), offer(2, 15)];
-    const { offers, dropped } = applyCloreRankedPriceGuard(ranked, { enabled: false });
+    const { offers, dropped, hardEmpty } = applyCloreRankedPriceGuard(ranked, { enabled: false });
     assert.equal(dropped, 0);
     assert.equal(offers.length, 2);
+    assert.equal(hardEmpty, false);
   });
 });

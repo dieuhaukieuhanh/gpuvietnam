@@ -276,6 +276,8 @@ export const VAST_OFFER_SANITY = {
  *
  * Example: cheapest ranked = $3.2/day → drop anything above $3.2 * 2.0 = $6.4/day
  * (and anything above absolute maxDailyUsd).
+ * Absolute maxDailyUsd is hard: if nothing is ≤ cap, the candidate list is empty
+ * (start fails) — never fail-open onto $10+ hosts.
  */
 export const CLORE_PRICE_GUARD = {
   enabled: true,
