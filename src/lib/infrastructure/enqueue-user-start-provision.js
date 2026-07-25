@@ -8,10 +8,11 @@ import {
   MACHINE_OPERATION_STATE,
   PRIORITY_CLASS,
   isActiveQueueState,
+  isTerminalQueueState,
   userStartProvisionIdempotencyKey,
   userStartProvisionReleasedIdempotencyKey,
 } from './machine-operation-core.js';
-import { cancel, enqueue } from './machine-operation-queue.js';
+import { cancel, enqueue, findByIdempotencyKey } from './machine-operation-queue.js';
 
 const ACTIVE_OP_STATES = [
   MACHINE_OPERATION_STATE.PENDING,
@@ -115,11 +116,48 @@ export async function cancelActiveUserStartProvisions(
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
  * @param {UserStartProvisionEnqueueInput} input
  */
+/**
+ * Ops / force-cancel sometimes leave a terminal row still holding the open
+ * slot key — Start then "succeeds" as dedupe without renting a GPU.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {string} userId
+ */
+export async function releaseStuckOpenUserStartSlot(supabaseAdmin, userId) {
+  const openKey = userStartProvisionIdempotencyKey(userId);
+  const stuck = await findByIdempotencyKey(supabaseAdmin, openKey);
+  if (!stuck || !isUserStartProvisionLike(stuck) || !isTerminalQueueState(stuck)) {
+    return { released: false, operationId: null };
+  }
+  const id = String(stuck.id);
+  const { data, error } = await supabaseAdmin
+    .from('machine_operations')
+    .update({
+      idempotency_key: userStartProvisionReleasedIdempotencyKey(userId, id),
+      last_error:
+        stuck.last_error != null && String(stuck.last_error).trim()
+          ? String(stuck.last_error)
+          : 'released_stuck_open_start_slot',
+    })
+    .eq('id', id)
+    .eq('idempotency_key', openKey)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  return { released: Boolean(data?.id), operationId: data?.id ? String(data.id) : null };
+}
+
+function isUserStartProvisionLike(row) {
+  return String(row?.operation ?? '') === MACHINE_OPERATION.USER_START_PROVISION;
+}
+
 export async function enqueueUserStartProvision(supabaseAdmin, input) {
   const existing = await findActiveUserStartProvision(supabaseAdmin, input.userId);
   if (existing) {
     return { operation: existing, created: false, deduped: true };
   }
+
+  // Free open slot if a cancelled/failed start still owns the unique key.
+  await releaseStuckOpenUserStartSlot(supabaseAdmin, input.userId);
 
   const idempotencyKey = userStartProvisionIdempotencyKey(input.userId);
 
@@ -155,6 +193,34 @@ export async function enqueueUserStartProvision(supabaseAdmin, input) {
     throw new Error(
       'machine_operations unavailable — apply migration 0049 (p0a-user-start-provision-op.sql) before start-machine',
     );
+  }
+
+  // Deduped against a terminal row should never happen after release — treat as error signal.
+  if (
+    !result.created &&
+    result.operation &&
+    isTerminalQueueState(result.operation) &&
+    isUserStartProvisionLike(result.operation)
+  ) {
+    await releaseStuckOpenUserStartSlot(supabaseAdmin, input.userId);
+    const retry = await enqueue(supabaseAdmin, {
+      operation: MACHINE_OPERATION.USER_START_PROVISION,
+      userId: input.userId,
+      idempotencyKey,
+      correlationId: input.correlationId,
+      priority: PRIORITY_CLASS.PROVISION,
+      machineId: null,
+      gpuSessionId: null,
+      provider: input.provider ?? null,
+      payload,
+      retryPolicy: 'user_start_provision',
+    });
+    if (retry.skipped) {
+      throw new Error(
+        'machine_operations unavailable — apply migration 0049 (p0a-user-start-provision-op.sql) before start-machine',
+      );
+    }
+    return { ...retry, deduped: !retry.created };
   }
 
   return { ...result, deduped: !result.created };

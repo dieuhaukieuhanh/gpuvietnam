@@ -10,6 +10,7 @@ import {
   MACHINE_COMMAND,
   runMachineTransition,
 } from '@/lib/gpu';
+import { GPUProviderError } from '@/lib/gpu/gpu-errors';
 import { getGpuLabel } from '@/lib/gpu-pricing';
 import {
   insertMachineRecord,
@@ -186,7 +187,11 @@ export async function completeUserStartProvision(supabaseAdmin, params) {
           },
           'Provider returned no instance id; label recovery failed',
         );
-        return;
+        // Must throw — silent return marked the durable op "completed" with no GPU.
+        throw new GPUProviderError(
+          'Không thuê được máy GPU (không có instance id). Thử mở lại.',
+          { operation: 'user.startProvision', retryable: true },
+        );
       }
     }
 
