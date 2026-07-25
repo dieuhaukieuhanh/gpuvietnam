@@ -25,6 +25,10 @@ import {
   activateSessionRow,
   ACTIVATE_OUTCOME,
 } from './session-activate.js';
+import {
+  noteIfSes1Blocked,
+  withOtherRunningSessionCount,
+} from './session-ses1-count.js';
 import { isProjectionTrafficReady } from '../scb-read-path.js';
 import { isEndpointResolved } from '../endpoint-utils.js';
 import {
@@ -311,17 +315,17 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     subscriptionStatus: bootstrap.subscription?.status ?? null,
     inventoryId: bootstrap.inventoryId ?? null,
   });
-  const context = {
+  // SessionContext without SES-1 count — load count only after reuse fails (below).
+  const contextBase = {
     subscriptionActive: bootstrap.subscription?.status === 'active',
     providerRunningVerified: true,
     machineExists: true,
-    otherRunningSessionCount: 0,
     now: verifiedAt,
   };
-  scbObs('context built', {
+  scbObs('contextBase built', {
     machineId: machine.id,
-    subscriptionActive: context.subscriptionActive,
-    now: context.now,
+    subscriptionActive: contextBase.subscriptionActive,
+    now: contextBase.now,
   });
 
   let pendingRow = null;
@@ -474,6 +478,17 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
     pendingRowPresent: Boolean(pendingRow),
   });
 
+  // RC6: reuse failed — load running count once for create + activate.
+  const { context, otherRunningSessionCount } = await withOtherRunningSessionCount(
+    supabaseAdmin,
+    userId,
+    contextBase,
+  );
+  scbObs('context SES-1 count loaded', {
+    machineId: machine.id,
+    otherRunningSessionCount,
+  });
+
   if (!pendingRow) {
     const pendingResult = createPendingSession(
       {
@@ -484,6 +499,13 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
       },
       context,
     );
+    noteIfSes1Blocked('CREATE_PENDING', pendingResult, {
+      path: 'openBillableSession',
+      userId,
+      machineId: machine.id,
+      sessionId,
+      otherRunningSessionCount,
+    });
     scbObs('after createPendingSession', {
       machineId: machine.id,
       sessionId,
@@ -564,6 +586,13 @@ export async function openBillableSession(supabaseAdmin, userId, instanceId, gpu
   const activateResult = activateRunningSession(sessionRecord, context, {
     started_at: verifiedAt,
     verified_running_at: verifiedAt,
+  });
+  noteIfSes1Blocked('ACTIVATE_RUNNING', activateResult, {
+    path: 'openBillableSession',
+    userId,
+    machineId: machine.id,
+    sessionId,
+    otherRunningSessionCount,
   });
   scbObs('after activateRunningSession', {
     machineId: machine.id,
@@ -743,11 +772,15 @@ export async function createProvisioningPendingSession(supabaseAdmin, input) {
     }
   }
 
-  const context = {
-    subscriptionActive: subscription?.status === 'active',
-    otherRunningSessionCount: 0,
-    now,
-  };
+  // RC6: no reuse path here — load SES-1 count before Domain create.
+  const { context, otherRunningSessionCount } = await withOtherRunningSessionCount(
+    supabaseAdmin,
+    userId,
+    {
+      subscriptionActive: subscription?.status === 'active',
+      now,
+    },
+  );
 
   const sessionId = randomUUID();
   const pendingResult = createPendingSession(
@@ -759,6 +792,13 @@ export async function createProvisioningPendingSession(supabaseAdmin, input) {
     },
     context,
   );
+  noteIfSes1Blocked('CREATE_PENDING', pendingResult, {
+    path: 'createProvisioningPendingSession',
+    userId,
+    machineId: machine.id,
+    sessionId,
+    otherRunningSessionCount,
+  });
 
   if (pendingResult.state === 'ERROR') {
     return {
