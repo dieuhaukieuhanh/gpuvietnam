@@ -777,6 +777,17 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   await markMachineDestroyed(supabaseAdmin, machine);
   await markSubscriptionOffline(supabaseAdmin, userId);
 
+  // Sweep: a late openBillableSession during stop can leave a second running
+  // session on the destroyed machine and block the next Start.
+  try {
+    const { closeGhostRunningSessionsForUser } = await import('./gpu/session-ghost-close.js');
+    await closeGhostRunningSessionsForUser(supabaseAdmin, userId, {
+      machineId: String(machine.id),
+    });
+  } catch (ghostErr) {
+    console.warn('[destroy-pipeline] ghost session sweep failed:', ghostErr);
+  }
+
   try {
     if (typeof deps.revokeBackupTokensForMachine === 'function') {
       await deps.revokeBackupTokensForMachine(supabaseAdmin, String(machine.id));
