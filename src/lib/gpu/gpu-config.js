@@ -271,11 +271,27 @@ export const VAST_OFFER_SANITY = {
 };
 
 /**
+ * Clore post-rank price guard — stop the candidate walk from reaching outlier
+ * expensive hosts when cheaper high-uptime offers exist but fail the gate.
+ *
+ * Example: cheapest ranked = $3.2/day → drop anything above $3.2 * 2.0 = $6.4/day
+ * (and anything above absolute maxDailyUsd).
+ */
+export const CLORE_PRICE_GUARD = {
+  enabled: true,
+  /** Max multiple of the cheapest ranked candidate (by $/h). */
+  maxMultipleOfCheapest: 2.0,
+  /** Absolute ceiling for 1x line daily USD (host on_demand). 0 = no absolute cap. */
+  maxDailyUsd: 8,
+};
+
+/**
  * Vast L1 — do not bottom-fish price within uptime cohort.
  * Starter: drop cheapest bottom fraction. Pro/Studio: keep P40–P70 (widen when cohort thin).
  *
  * Temporarily disabled for all plans — post-rent gate (CUDA / Comfy) is the quality SoT.
  * Set `enabled: true` to restore band filtering.
+ * Note: Clore still applies CLORE_PRICE_GUARD after ranking even when this is off.
  */
 export const VAST_PERCENTILE_BAND = {
   enabled: false,

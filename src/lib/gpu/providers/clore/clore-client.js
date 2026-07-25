@@ -25,6 +25,7 @@ import {
   isCloreHostExcluded,
   rememberCloreBadHost,
 } from './clore-bad-host-exclusion.js';
+import { applyCloreRankedPriceGuard } from './clore-price-guard.js';
 import { hostKeyIsExcluded } from '../../exclude-host-keys.js';
 import {
   runCloreProvisionGate,
@@ -796,6 +797,15 @@ export class CloreClient {
             gpuLine,
           ),
       );
+    const priceGuard = applyCloreRankedPriceGuard(reputationRanked);
+    if (priceGuard.dropped > 0) {
+      console.info('[clore/findRankedOffers] price guard', {
+        dropped: priceGuard.dropped,
+        kept: priceGuard.offers.length,
+        cheapestDaily: priceGuard.cheapestDaily,
+        capDaily: priceGuard.capDaily,
+      });
+    }
     console.info('[clore/findRankedOffers] currency filter', {
       currency,
       gpuLine,
@@ -816,8 +826,11 @@ export class CloreClient {
       afterHostReputation: reputationRanked.length,
       droppedBlacklisted,
       usedLeastBadFallback,
+      priceGuardDropped: priceGuard.dropped,
+      afterPriceGuard: priceGuard.offers.length,
+      priceGuardCapDaily: priceGuard.capDaily,
     });
-    return reputationRanked;
+    return priceGuard.offers;
   }
 
   /**
