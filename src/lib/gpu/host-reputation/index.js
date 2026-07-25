@@ -20,6 +20,7 @@ import {
   applyHostSuccess,
   createNeutralHostRecord,
   isHostBlacklisted,
+  isKnownGoodHost,
 } from './host-reputation-score.js';
 import {
   getHostReputationRecord,
@@ -43,7 +44,12 @@ export {
   normalizeGpuLine,
 } from './host-reputation-keys.js';
 export { getHostReputationMetrics } from './host-reputation-metrics.js';
-export { isHostBlacklisted, resolveLatencyBonus, applyTimeRecovery } from './host-reputation-score.js';
+export {
+  isHostBlacklisted,
+  isKnownGoodHost,
+  resolveLatencyBonus,
+  applyTimeRecovery,
+} from './host-reputation-score.js';
 export { resetHostReputationStoreForTests } from './host-reputation-store.js';
 export { resetHostReputationMetrics } from './host-reputation-metrics.js';
 
@@ -249,6 +255,107 @@ export function rememberHostSuccess(hostKey, meta = {}) {
 }
 
 /**
+ * Pull previously-READY hosts from the wider marketplace pool into the shortlist.
+ * Price/uptime truncation can drop known-good hosts before reputation ranking runs;
+ * this puts them back so the walk tries them first.
+ *
+ * @template {{ offerId?: unknown }} T
+ * @param {T[]} ranked Shortlist from price/uptime selection
+ * @param {T[]} pool Broader filtered pool (pre-truncation)
+ * @param {(offer: T) => string | null} resolveHostKey
+ * @param {{ requestId?: string|null; now?: number; maxPins?: number }} [options]
+ * @returns {{ offers: T[]; pinned: number }}
+ */
+export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey, options = {}) {
+  loadHostReputationStore();
+  const now = options.now ?? Date.now();
+  if (HOST_REPUTATION.knownGoodPinEnabled === false) {
+    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
+  }
+
+  const maxPins = Math.max(
+    0,
+    Math.floor(
+      Number(options.maxPins) > 0
+        ? Number(options.maxPins)
+        : HOST_REPUTATION.knownGoodMaxPins || 3,
+    ),
+  );
+  if (maxPins <= 0) {
+    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
+  }
+
+  /** @type {Set<string>} */
+  const rankedKeys = new Set();
+  for (const offer of ranked ?? []) {
+    const key = resolveHostKey(offer);
+    if (key) rankedKeys.add(key);
+  }
+
+  /** @type {Array<{ offer: T; hostKey: string; successCount: number; score: number; readyMs: number }>} */
+  const pinCandidates = [];
+  for (const offer of pool ?? []) {
+    const hostKey = resolveHostKey(offer);
+    if (!hostKey || rankedKeys.has(hostKey)) continue;
+    const record = getHostReputationRecord(hostKey, now);
+    if (!record || isHostBlacklisted(record, now) || !isKnownGoodHost(record)) continue;
+    pinCandidates.push({
+      offer,
+      hostKey,
+      successCount: Number(record.successCount || 0),
+      score: Number(record.reputationScore || HOST_REPUTATION.neutralScore),
+      readyMs:
+        record.lastReadyLatencyMs != null && Number.isFinite(Number(record.lastReadyLatencyMs))
+          ? Number(record.lastReadyLatencyMs)
+          : Number.POSITIVE_INFINITY,
+    });
+  }
+
+  pinCandidates.sort((a, b) => {
+    if (b.successCount !== a.successCount) return b.successCount - a.successCount;
+    if (a.readyMs !== b.readyMs) return a.readyMs - b.readyMs;
+    return b.score - a.score;
+  });
+
+  const pins = pinCandidates.slice(0, maxPins);
+  if (!pins.length) {
+    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
+  }
+
+  /** @type {Set<string>} */
+  const pinKeys = new Set(pins.map((row) => row.hostKey));
+  const rest = (ranked ?? []).filter((offer) => {
+    const key = resolveHostKey(offer);
+    return !key || !pinKeys.has(key);
+  });
+
+  for (const row of pins) {
+    const parsed = parseHostKey(row.hostKey);
+    logHostReputationEvent(
+      'HOST_SELECTED',
+      {
+        requestId: options.requestId,
+        provider: parsed?.provider,
+        hostId: parsed?.hostId,
+        gpuLine: parsed?.gpuLine,
+        reason: 'known_good_pin',
+        oldScore: row.score,
+        newScore: row.score,
+        offerId: row.offer.offerId,
+        successCount: row.successCount,
+        readyLatencyMs: Number.isFinite(row.readyMs) ? row.readyMs : null,
+      },
+      'Pinned previously-READY host into rent candidates',
+    );
+  }
+
+  return {
+    offers: [...pins.map((row) => row.offer), ...rest],
+    pinned: pins.length,
+  };
+}
+
+/**
  * Filter + re-rank normalized/ranked offers by reputation.
  *
  * @template {{ offerId?: unknown; raw?: Record<string, unknown>; region?: string; gpuType?: string; pricePerHour?: number; pingMs?: number; uptimePercent?: number; offer?: { raw?: Record<string, unknown>; region?: string; gpuType?: string } }} T
@@ -262,7 +369,7 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
   const now = options.now ?? Date.now();
   const allowFallback = options.allowLeastBadFallback !== false;
 
-  /** @type {Array<{ offer: T; hostKey: string|null; score: number; blacklisted: boolean; blacklistUntil: number }>} */
+  /** @type {Array<{ offer: T; hostKey: string|null; score: number; blacklisted: boolean; blacklistUntil: number; knownGood: boolean; successCount: number; readyMs: number }>} */
   const annotated = [];
   let droppedBlacklisted = 0;
 
@@ -299,6 +406,12 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
       score: record?.reputationScore ?? HOST_REPUTATION.neutralScore,
       blacklisted,
       blacklistUntil: Number(record?.blacklistUntil || 0),
+      knownGood: isKnownGoodHost(record),
+      successCount: Number(record?.successCount || 0),
+      readyMs:
+        record?.lastReadyLatencyMs != null && Number.isFinite(Number(record.lastReadyLatencyMs))
+          ? Number(record.lastReadyLatencyMs)
+          : Number.POSITIVE_INFINITY,
     });
   }
 
@@ -326,6 +439,12 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
   }
 
   usable.sort((a, b) => {
+    // Previously-READY hosts first — shortens walk when the marketplace still lists them.
+    if (a.knownGood !== b.knownGood) return a.knownGood ? -1 : 1;
+    if (a.knownGood && b.knownGood) {
+      if (b.successCount !== a.successCount) return b.successCount - a.successCount;
+      if (a.readyMs !== b.readyMs) return a.readyMs - b.readyMs;
+    }
     if (b.score !== a.score) return b.score - a.score;
     const pingA = Number(a.offer.pingMs ?? a.offer.offer?.pingMs ?? 9999);
     const pingB = Number(b.offer.pingMs ?? b.offer.offer?.pingMs ?? 9999);
@@ -349,10 +468,15 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
         hostId: parsed?.hostId,
         gpuType: row.offer.gpuType ?? row.offer.offer?.gpuType,
         gpuLine: parsed?.gpuLine,
-        reason: usedLeastBadFallback ? 'least_bad_fallback' : 'ranked',
+        reason: usedLeastBadFallback
+          ? 'least_bad_fallback'
+          : row.knownGood
+            ? 'known_good_ranked'
+            : 'ranked',
         oldScore: row.score,
         newScore: row.score,
         offerId: row.offer.offerId,
+        successCount: row.successCount,
       },
       'Host selected for provision candidate list',
     );

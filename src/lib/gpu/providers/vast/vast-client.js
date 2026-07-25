@@ -25,6 +25,7 @@ import {
 } from '../../provision-journal.js';
 import {
   applyHostReputationToOffers,
+  mergeKnownGoodOffersIntoCandidates,
   rememberHostFailure,
 } from '../../host-reputation/index.js';
 import {
@@ -258,16 +259,19 @@ export function findRankedGPUOffers(gpuType, plan, offers = [], limit = 10) {
     throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
   }
 
-  const { offers: reputationRanked } = applyHostReputationToOffers(
-    selected,
-    (offer) =>
-      resolveVastHostKey(
-        offer.raw && typeof offer.raw === 'object'
-          ? /** @type {Record<string, unknown>} */ (offer.raw)
-          : null,
-        gpuLine,
-      ),
-  );
+  const resolveKey = (offer) =>
+    resolveVastHostKey(
+      offer.raw && typeof offer.raw === 'object'
+        ? /** @type {Record<string, unknown>} */ (offer.raw)
+        : null,
+      gpuLine,
+    );
+  const { offers: withKnownGood, pinned: knownGoodPinned } =
+    mergeKnownGoodOffersIntoCandidates(selected, saneOffers, resolveKey);
+  if (knownGoodPinned > 0) {
+    console.info('[vast/findRankedGPUOffers] known-good pins', { pinned: knownGoodPinned });
+  }
+  const { offers: reputationRanked } = applyHostReputationToOffers(withKnownGood, resolveKey);
   if (!reputationRanked.length) {
     throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
   }

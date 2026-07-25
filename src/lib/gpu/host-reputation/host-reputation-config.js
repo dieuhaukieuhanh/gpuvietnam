@@ -40,6 +40,16 @@ export const HOST_REPUTATION = {
   storeFile: process.env.HOST_REP_STORE_FILE || 'tmp/host-reputation.json',
   /** Drop records older than this with no activity. */
   pruneAfterMs: envMs('HOST_REP_PRUNE_AFTER_MS', 14 * 24 * 60 * 60 * 1000),
+  /**
+   * Prefer hosts that previously reached READY when building the rent walk.
+   * Pinning pulls them back into the candidate list even if price/uptime
+   * truncation would have dropped them from the shortlist.
+   */
+  knownGoodPinEnabled: String(process.env.HOST_REP_KNOWN_GOOD_PIN ?? 'true')
+    .trim()
+    .toLowerCase() !== 'false',
+  knownGoodMinSuccessCount: envNum('HOST_REP_KNOWN_GOOD_MIN_SUCCESS', 1),
+  knownGoodMaxPins: envNum('HOST_REP_KNOWN_GOOD_MAX_PINS', 3),
 };
 
 /** Failure category → base score penalty (positive number subtracted). */

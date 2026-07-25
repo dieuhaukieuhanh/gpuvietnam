@@ -94,9 +94,9 @@ describe('isBadGatewayResponse', () => {
 });
 
 describe('HTTP_CUSTOMER_PATH_FAIL_FAST defaults', () => {
-  it('uses 90s Proxy Not Found and 180s 502 budgets', () => {
-    assert.equal(HTTP_CUSTOMER_PATH_FAIL_FAST.proxyNotFoundFailMs, 90_000);
-    assert.equal(HTTP_CUSTOMER_PATH_FAIL_FAST.badGatewayFailMs, 180_000);
+  it('uses 45s Proxy Not Found and 90s 502 budgets', () => {
+    assert.equal(HTTP_CUSTOMER_PATH_FAIL_FAST.proxyNotFoundFailMs, 45_000);
+    assert.equal(HTTP_CUSTOMER_PATH_FAIL_FAST.badGatewayFailMs, 90_000);
   });
 });
 

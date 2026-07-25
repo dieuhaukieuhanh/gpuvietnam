@@ -20,15 +20,18 @@ import {
 import { HOST_REPUTATION } from './host-reputation-config.js';
 import {
   applyHostReputationToOffers,
+  mergeKnownGoodOffersIntoCandidates,
   rememberHostFailure,
   rememberHostSuccess,
   resetHostReputationStoreForTests,
   resetHostReputationMetrics,
   getHostReputationMetrics,
+  isKnownGoodHost,
   resolveCloreHostKey,
   resolveVastHostKey,
   buildHostReputationKey,
 } from './index.js';
+import { getHostReputationRecord } from './host-reputation-store.js';
 
 describe('host-reputation classify', () => {
   it('maps known failure categories', () => {
@@ -224,5 +227,62 @@ describe('host-reputation selection', () => {
     );
     assert.equal(r4090.offers.length, 0);
     assert.equal(r3090.offers.length, 1);
+  });
+
+  it('marks READY hosts as known-good', () => {
+    rememberHostSuccess('clore-host:pin|rtx4090_1x', {
+      gpuLine: 'rtx4090_1x',
+      readyLatencyMs: 45_000,
+    });
+    const record = getHostReputationRecord('clore-host:pin|rtx4090_1x');
+    assert.equal(isKnownGoodHost(record), true);
+    assert.equal(isKnownGoodHost(null), false);
+  });
+
+  it('pins known-good hosts dropped by shortlist truncation', () => {
+    rememberHostSuccess('clore-host:known|rtx4090_1x', {
+      gpuLine: 'rtx4090_1x',
+      readyLatencyMs: 40_000,
+    });
+    const ranked = [
+      { offerId: 'cheap', pingMs: 20, uptimePercent: 99, pricePerHour: 0.2 },
+      { offerId: 'mid', pingMs: 25, uptimePercent: 98, pricePerHour: 0.25 },
+    ];
+    const pool = [
+      ...ranked,
+      { offerId: 'known', pingMs: 80, uptimePercent: 97, pricePerHour: 0.35 },
+    ];
+    const resolve = (o) => 'clore-host:' + o.offerId + '|rtx4090_1x';
+    const merged = mergeKnownGoodOffersIntoCandidates(ranked, pool, resolve);
+    assert.equal(merged.pinned, 1);
+    assert.equal(merged.offers[0].offerId, 'known');
+    assert.equal(merged.offers.length, 3);
+
+    const result = applyHostReputationToOffers(merged.offers, resolve);
+    assert.equal(result.offers[0].offerId, 'known');
+  });
+
+  it('does not pin blacklisted known-good hosts', () => {
+    rememberHostSuccess('clore-host:wasgood|rtx4090_1x', {
+      gpuLine: 'rtx4090_1x',
+      readyLatencyMs: 30_000,
+    });
+    rememberHostFailure('clore-host:wasgood|rtx4090_1x', {
+      category: HOST_FAILURE_CATEGORY.HEALTH_FAILURE,
+      reason: 'comfy dead',
+      gpuLine: 'rtx4090_1x',
+    });
+    const ranked = [{ offerId: 'other', pingMs: 20, uptimePercent: 99, pricePerHour: 0.2 }];
+    const pool = [
+      ...ranked,
+      { offerId: 'wasgood', pingMs: 30, uptimePercent: 98, pricePerHour: 0.3 },
+    ];
+    const merged = mergeKnownGoodOffersIntoCandidates(
+      ranked,
+      pool,
+      (o) => 'clore-host:' + o.offerId + '|rtx4090_1x',
+    );
+    assert.equal(merged.pinned, 0);
+    assert.equal(merged.offers[0].offerId, 'other');
   });
 });

@@ -212,3 +212,13 @@ export function isHostBlacklisted(record, now = Date.now()) {
   const until = Number(record.blacklistUntil || 0);
   return until > now;
 }
+
+/**
+ * Host previously reached customer-usable READY at least N times.
+ * @param {HostReputationRecord | null | undefined} record
+ */
+export function isKnownGoodHost(record) {
+  if (!record) return false;
+  const min = Math.max(1, Number(HOST_REPUTATION.knownGoodMinSuccessCount) || 1);
+  return Number(record.successCount || 0) >= min;
+}

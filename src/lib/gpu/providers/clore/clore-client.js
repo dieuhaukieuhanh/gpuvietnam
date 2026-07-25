@@ -16,6 +16,7 @@ import {
 } from '../../offer-selection.js';
 import {
   applyHostReputationToOffers,
+  mergeKnownGoodOffersIntoCandidates,
   rememberHostFailure,
   resolveCloreHostKey,
 } from '../../host-reputation/index.js';
@@ -785,18 +786,18 @@ export class CloreClient {
           maxCandidates,
           ...(minUptimePercent != null ? { minUptimePercent } : {}),
         });
-    const { offers: reputationRanked, droppedBlacklisted, usedLeastBadFallback } =
-      applyHostReputationToOffers(
-        ranked,
-        (offer) =>
-          resolveCloreHostKey(
-            offer.raw && typeof offer.raw === 'object'
-              ? /** @type {Record<string, unknown>} */ (offer.raw)
-              : null,
-            offer.offerId,
-            gpuLine,
-          ),
+    const resolveKey = (offer) =>
+      resolveCloreHostKey(
+        offer.raw && typeof offer.raw === 'object'
+          ? /** @type {Record<string, unknown>} */ (offer.raw)
+          : null,
+        offer.offerId,
+        gpuLine,
       );
+    const { offers: withKnownGood, pinned: knownGoodPinned } =
+      mergeKnownGoodOffersIntoCandidates(ranked, afterExclusion, resolveKey);
+    const { offers: reputationRanked, droppedBlacklisted, usedLeastBadFallback } =
+      applyHostReputationToOffers(withKnownGood, resolveKey);
     const priceGuard = applyCloreRankedPriceGuard(reputationRanked);
     if (priceGuard.dropped > 0) {
       console.info('[clore/findRankedOffers] price guard', {
@@ -823,6 +824,7 @@ export class CloreClient {
       droppedExcludedHost,
       afterPercentileExclusion: afterExclusion.length,
       ranked: ranked.length,
+      knownGoodPinned,
       afterHostReputation: reputationRanked.length,
       droppedBlacklisted,
       usedLeastBadFallback,

@@ -141,11 +141,12 @@ export function isBadGatewayResponse(status, text = '') {
 
 /**
  * Default fail-fast budgets for sustained edge errors before walking the next host.
- * Proxy Not Found rarely recovers; 502 often means Comfy still booting (needs longer).
+ * Proxy Not Found rarely recovers; sustained 502 usually means a dead/miswired host
+ * rather than a slow Comfy boot (real boots return JSON once the edge is wired).
  */
 export const HTTP_CUSTOMER_PATH_FAIL_FAST = Object.freeze({
-  proxyNotFoundFailMs: 90_000,
-  badGatewayFailMs: 180_000,
+  proxyNotFoundFailMs: 45_000,
+  badGatewayFailMs: 90_000,
 });
 
 /**
