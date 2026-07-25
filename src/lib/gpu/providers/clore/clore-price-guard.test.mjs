@@ -54,19 +54,19 @@ describe('applyCloreRankedPriceGuard', () => {
     assert.equal(offers.length, 0);
   });
 
-  it('fail-opens relative band only within absolute-safe hosts', () => {
-    // cheapest under absolute = 8 → relative 8.8; both 9 and 9.5 exceed relative
-    // but stay under absolute 10 → reopen absolute-safe set
-    const ranked = [offer(1, 8), offer(2, 9), offer(3, 12)];
-    const { offers, dropped, hardEmpty } = applyCloreRankedPriceGuard(ranked, {
-      maxMultipleOfCheapest: 1.1,
+  it('never reintroduces hosts above absolute cap after relative filtering', () => {
+    // cheapest=$3.2 → relative $6.4; $9 under absolute $10 but over relative; $12 over absolute
+    const ranked = [offer(1, 3.2), offer(2, 9), offer(3, 12)];
+    const { offers, dropped, hardEmpty, capDaily } = applyCloreRankedPriceGuard(ranked, {
+      maxMultipleOfCheapest: 2,
       maxDailyUsd: 10,
     });
     assert.equal(hardEmpty, false);
-    assert.equal(dropped, 1); // 12 dropped by absolute
+    assert.equal(capDaily, 6.4);
+    assert.equal(dropped, 2);
     assert.deepEqual(
-      offers.map((o) => o.offerId).sort(),
-      [1, 2],
+      offers.map((o) => o.offerId),
+      [1],
     );
   });
 
