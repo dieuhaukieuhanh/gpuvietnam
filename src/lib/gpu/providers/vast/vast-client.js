@@ -515,8 +515,9 @@ export class VastClient {
           return this.rentOffer(best, offerId, rentBody, params.gpuLine);
         },
         cancelOrphan: async (_best, offerId, error) => {
-          // rentOffer already destroys on post-rent gate failure; this catches
-          // lost-response / partial-create cases before walking to the next host.
+          // Clore lesson: never walk to the next host while any instance for this
+          // start label may still be live. Vast v1 rows often omit/mismatch
+          // ask_contract_id vs marketplace offer id — do NOT filter by ask.
           const knownId =
             error &&
             typeof error === 'object' &&
@@ -524,25 +525,29 @@ export class VastClient {
             error.providerInstanceId != null
               ? String(error.providerInstanceId).trim()
               : '';
-          if (knownId) {
-            console.warn(
-              `[vast/createInstance] Cancel orphan instance ${knownId} for offer ${offerId} before next candidate`,
-            );
-            await this.destroyInstance(knownId);
+          /** @type {Set<string>} */
+          const toDestroy = new Set();
+          if (knownId) toDestroy.add(knownId);
+
+          const label = String(rentBody.label ?? '').trim();
+          if (label) {
+            const rows = await this.listInstancesByLabel(label);
+            for (const row of rows) {
+              const id = row?.id ?? row?.new_contract;
+              if (id != null) toDestroy.add(String(id));
+            }
+          }
+
+          if (!toDestroy.size) {
+            // No live instance found — safe to walk (rent never created / already gone).
             return;
           }
-          const label = String(rentBody.label ?? '').trim();
-          if (!label) return;
-          const rows = await this.listInstancesByLabel(label);
-          for (const row of rows) {
-            const id = row?.id ?? row?.new_contract;
-            if (id == null) continue;
-            const ask = row?.ask_contract_id ?? row?.ask_id ?? row?.offer_id;
-            if (ask != null && String(ask) !== String(offerId)) continue;
+
+          for (const id of toDestroy) {
             console.warn(
               `[vast/createInstance] Cancel orphan instance ${id} for offer ${offerId} before next candidate`,
             );
-            await this.destroyInstance(String(id));
+            await this.destroyInstance(id);
           }
         },
         afterFailure: async ({ candidate: best, offerId, error, triedCount }) => {
@@ -730,12 +735,14 @@ export class VastClient {
           gpuLine: gpuLine != null ? String(gpuLine) : null,
         });
       }
+      let destroyFailed = null;
       try {
         await this.destroyInstance(instanceId);
       } catch (destroyError) {
+        destroyFailed = destroyError instanceof Error ? destroyError : new Error(String(destroyError));
         console.warn(
           '[vast/createInstance] destroy bad host failed:',
-          destroyError instanceof Error ? destroyError.message : destroyError,
+          destroyFailed.message,
         );
       }
       const gateError = new GPUProviderError(
@@ -743,6 +750,15 @@ export class VastClient {
         { retryable: true },
       );
       /** @type {any} */ (gateError).providerInstanceId = instanceId;
+      // If destroy failed, surface it so walkRentCandidates aborts (no second rent).
+      if (destroyFailed) {
+        /** @type {any} */ (gateError).destroyFailed = true;
+        /** @type {any} */ (gateError).cause = destroyFailed;
+        throw new GPUProviderError(
+          `Vast gate failed and destroy orphan ${instanceId} failed: ${destroyFailed.message}`,
+          { retryable: false, cause: gateError },
+        );
+      }
       throw gateError;
     }
 
@@ -795,9 +811,10 @@ export class VastClient {
 
   /** @param {string} instanceId */
   async destroyInstance(instanceId) {
-    // Vast deprecated GET/DELETE /api/v0/instances/ (HTTP 410) — use v1.
+    // List/get moved to v1 (v0 GET /instances/ → 410), but DELETE destroy still
+    // works on v0 and v1 DELETE currently returns 404 for the same id.
     return this.request('DELETE', `/instances/${instanceId}/`, undefined, {
-      baseUrl: VAST_V1_API_BASE,
+      baseUrl: VAST_API_BASE,
     });
   }
 
