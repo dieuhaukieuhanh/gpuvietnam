@@ -795,7 +795,10 @@ export class VastClient {
 
   /** @param {string} instanceId */
   async destroyInstance(instanceId) {
-    return this.request('DELETE', `/instances/${instanceId}/`);
+    // Vast deprecated GET/DELETE /api/v0/instances/ (HTTP 410) — use v1.
+    return this.request('DELETE', `/instances/${instanceId}/`, undefined, {
+      baseUrl: VAST_V1_API_BASE,
+    });
   }
 
   /**
@@ -862,16 +865,39 @@ export class VastClient {
 
   /** @param {string} instanceId */
   async getInstance(instanceId) {
-    const payload = await this.request('GET', `/instances/${instanceId}/`);
+    // Vast deprecated GET /api/v0/instances/{id}/ (HTTP 410). Prefer v1 list filter,
+    // then fall back to v1 single-id path if the list shape is empty.
+    let nestedInstance = await this.listInstanceV1(instanceId);
+    if (!nestedInstance) {
+      try {
+        const direct = await this.request('GET', `/instances/${instanceId}/`, undefined, {
+          baseUrl: VAST_V1_API_BASE,
+        });
+        nestedInstance = Array.isArray(direct?.instances)
+          ? direct.instances[0]
+          : direct?.instances && typeof direct.instances === 'object'
+            ? direct.instances
+            : direct && typeof direct === 'object'
+              ? direct
+              : null;
+      } catch (error) {
+        console.warn(
+          '[vast/getInstance] v1 direct fetch failed:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    /** @type {Record<string, unknown>} */
+    const payload = nestedInstance
+      ? { instances: [nestedInstance], ...nestedInstance }
+      : { instances: [] };
 
     console.info('====================================');
-    console.info('[vast/getInstance] GET /instances/{id}/ response');
+    console.info('[vast/getInstance] GET /api/v1/instances (by id) response');
     console.info('instanceId:', instanceId);
     console.info('full response:', JSON.stringify(payload, null, 2));
 
-    const nestedInstance = Array.isArray(payload?.instances)
-      ? payload.instances[0]
-      : payload?.instances;
     const fieldSources = [
       { label: 'root', record: payload },
       { label: 'instances', record: nestedInstance },
