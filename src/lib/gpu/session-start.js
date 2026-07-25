@@ -760,8 +760,12 @@ export async function createProvisioningPendingSession(supabaseAdmin, input) {
     context,
   );
 
-  if (!pendingResult.ok) {
-    return { skipped: true, reason: pendingResult.message ?? 'create_pending_failed' };
+  if (pendingResult.state === 'ERROR') {
+    return {
+      skipped: true,
+      reason: pendingResult.message ?? 'create_pending_failed',
+      code: pendingResult.code ?? null,
+    };
   }
 
   const { error: insertError } = await supabaseAdmin.from('gpu_sessions').insert({
