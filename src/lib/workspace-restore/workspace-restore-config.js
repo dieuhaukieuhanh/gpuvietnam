@@ -1,10 +1,10 @@
 /**
  * Smart Restore Level 1 — config.
- * Restore: workflows + settings + outputs only (no models / custom nodes).
+ * Restore: workflows + settings + outputs + custom_nodes (no models).
  */
 
 /** R2 prefixes included in Level 1 workspace continuity. */
-export const WORKSPACE_RESTORE_PREFIXES = Object.freeze(['workflows', 'outputs', 'settings']);
+export const WORKSPACE_RESTORE_PREFIXES = Object.freeze(['workflows', 'outputs', 'settings', 'custom_nodes']);
 
 /**
  * Below this total size (bytes) of Level-1 prefixes → auto restore without asking.
@@ -28,6 +28,7 @@ export const WORKSPACE_RESTORE_DEST = Object.freeze({
   workflows: '/app/ComfyUI/user/default/workflows',
   outputs: '/app/ComfyUI/output',
   settings: '/app/ComfyUI/user/default',
+  custom_nodes: '/app/ComfyUI/custom_nodes',
 });
 
 export const WORKSPACE_RESTORE_TICK = Object.freeze({

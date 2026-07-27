@@ -72,5 +72,6 @@ export function backupKeyCategory(relativeKey) {
   if (prefix === 'workflows') return 'workflow';
   if (prefix === 'models') return 'model';
   if (prefix === 'settings') return 'settings';
+  if (prefix === 'custom_nodes') return 'custom_node';
   return 'output';
 }

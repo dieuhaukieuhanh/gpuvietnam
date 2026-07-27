@@ -12,6 +12,13 @@ if [[ "${GPUVIETNAM_SKIP_MODEL_DOWNLOAD:-0}" != "1" ]] && [[ -x /app/download-mo
   /app/download-models.sh || echo "[GPUVietnam] Warning: some models could not be downloaded"
 fi
 
+# Pre-start custom_nodes restore — pull persisted custom nodes from R2
+# before ComfyUI starts so they are available on first boot.
+if [[ "${GPUVIETNAM_SKIP_PRE_RESTORE:-0}" != "1" ]] && [[ -x /app/restore-environment.sh ]]; then
+  echo "[GPUVietnam] Pre-start restore: checking for persisted custom_nodes..."
+  /app/restore-environment.sh || echo "[GPUVietnam] Warning: pre-start restore completed with warnings"
+fi
+
 # Periodic backup (presigned R2 via app token — no R2 secrets in container).
 # Disable with GPUVIETNAM_PERIODIC_BACKUP=0.
 if [[ "${GPUVIETNAM_PERIODIC_BACKUP:-1}" == "1" ]] && [[ -x /app/periodic-backup.sh ]]; then

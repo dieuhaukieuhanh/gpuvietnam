@@ -8,6 +8,7 @@ export const ALLOWED_BACKUP_PREFIXES = Object.freeze([
   'workflows',
   'models',
   'settings',
+  'custom_nodes',
 ]);
 
 /**

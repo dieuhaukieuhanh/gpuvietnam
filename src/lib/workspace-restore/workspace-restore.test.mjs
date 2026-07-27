@@ -7,8 +7,8 @@ import {
 } from './workspace-restore-config.js';
 
 describe('workspace-restore-config', () => {
-  it('Level-1 prefixes exclude models and custom nodes', () => {
-    assert.deepEqual([...WORKSPACE_RESTORE_PREFIXES], ['workflows', 'outputs', 'settings']);
+  it('Level-1 prefixes exclude models only (custom_nodes now included for persistence)', () => {
+    assert.deepEqual([...WORKSPACE_RESTORE_PREFIXES], ['workflows', 'outputs', 'settings', 'custom_nodes']);
     assert.ok(!WORKSPACE_RESTORE_PREFIXES.includes('models'));
   });
 

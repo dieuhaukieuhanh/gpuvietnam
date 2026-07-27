@@ -17,12 +17,14 @@ STATE_DIR="${COMFYUI_DIR}/user/default/.gpuvietnam-backup-state"
 OUTPUTS_DIR="${COMFYUI_DIR}/output"
 WORKFLOWS_DIR="${COMFYUI_DIR}/user/default/workflows"
 MODELS_DIR="${COMFYUI_DIR}/models"
+CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes"
 SETTINGS_FILE="${COMFYUI_DIR}/user/default/comfy.settings.json"
 SETTINGS_DIR="${COMFYUI_DIR}/user/default/.gpuvietnam-settings-upload"
 
 OUTPUTS_INTERVAL="${GPUVIETNAM_BACKUP_OUTPUTS_INTERVAL:-300}"
 WORKFLOWS_INTERVAL="${GPUVIETNAM_BACKUP_WORKFLOWS_INTERVAL:-900}"
 MODELS_INTERVAL="${GPUVIETNAM_BACKUP_MODELS_INTERVAL:-300}"
+CUSTOM_NODES_INTERVAL="${GPUVIETNAM_BACKUP_CUSTOM_NODES_INTERVAL:-1800}"
 TICK_SECONDS=30
 
 log() { echo "${LOG_TAG} $*"; }
@@ -74,6 +76,7 @@ LAST_OUTPUTS=0
 LAST_WORKFLOWS=0
 LAST_MODELS=0
 LAST_SETTINGS=0
+LAST_CUSTOM_NODES=0
 SETTINGS_INTERVAL="${GPUVIETNAM_BACKUP_SETTINGS_INTERVAL:-900}"
 
 upload_prefix() {
@@ -296,6 +299,11 @@ run_flush_once() {
   else
     log "Flush once: skip models (quota)"
   fi
+  if [[ -d "${CUSTOM_NODES_DIR}" ]]; then
+    upload_prefix "custom_nodes" "${CUSTOM_NODES_DIR}" "full" || fail=1
+  else
+    log "Flush once: skip custom_nodes (no directory)"
+  fi
   if [[ "$fail" -eq 0 ]]; then
     log "Flush once completed OK"
     return 0
@@ -343,6 +351,13 @@ while true; do
     if (( NOW - LAST_MODELS >= MODELS_INTERVAL )); then
       LAST_MODELS="$NOW"
       upload_prefix "models" "${MODELS_DIR}" "models_incremental" || true
+    fi
+  fi
+
+  if [[ -d "${CUSTOM_NODES_DIR}" ]]; then
+    if (( NOW - LAST_CUSTOM_NODES >= CUSTOM_NODES_INTERVAL )); then
+      LAST_CUSTOM_NODES="$NOW"
+      upload_prefix "custom_nodes" "${CUSTOM_NODES_DIR}" "full" || true
     fi
   fi
 

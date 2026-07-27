@@ -27,7 +27,7 @@ import { isAutoBackupEnabledForUser } from '@/lib/backup-auto-policy.js';
  * Backup layers (C9):
  * - Periodic (in-container): crash protection while running — individual files via presign.
  * - Stop-backup (this module): final SSH archive checkpoint + backup_logs before destroy.
- * Both write under users/{userId}/(outputs|workflows|models)/; stop then reconciles R2 → storage_files.
+ * Both write under users/{userId}/(outputs|workflows|models|custom_nodes)/; stop then reconciles R2 → storage_files.
  */
 
 /** @type {Array<{ name: string; sourcePath: string; destPrefix: string; category: string; incremental?: boolean }>} */
@@ -57,6 +57,12 @@ const BACKUP_TARGETS = [
     destPrefix: 'models',
     category: 'model',
     incremental: true,
+  },
+  {
+    name: 'custom_nodes',
+    sourcePath: '/app/ComfyUI/custom_nodes',
+    destPrefix: 'custom_nodes',
+    category: 'custom_node',
   },
 ];
 
@@ -118,7 +124,9 @@ async function indexBackupArchivesInStorageFiles(supabaseAdmin, userId, archives
           ? 'model'
           : folder === 'settings'
             ? 'settings'
-            : 'output';
+            : folder === 'custom_nodes'
+              ? 'custom_node'
+              : 'output';
     return {
       user_id: userId,
       file_name: archiveName,

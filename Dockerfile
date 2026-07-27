@@ -59,10 +59,11 @@ COPY workflows/ /app/ComfyUI/workflows-stock/
 
 COPY scripts/download-models.sh /app/download-models.sh
 COPY scripts/setup-workstation.sh /app/setup-workstation.sh
+COPY scripts/restore-environment.sh /app/restore-environment.sh
 COPY scripts/start.sh /app/start.sh
 COPY scripts/periodic-backup.sh /app/periodic-backup.sh
-RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/start.sh /app/periodic-backup.sh \
-    && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/periodic-backup.sh
+RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/restore-environment.sh /app/start.sh /app/periodic-backup.sh \
+    && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/restore-environment.sh /app/periodic-backup.sh
 
 EXPOSE 8080
 
