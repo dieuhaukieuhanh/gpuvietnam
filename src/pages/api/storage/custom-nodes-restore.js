@@ -5,12 +5,13 @@ import { listUserBackupR2Objects } from '@/lib/backup-reconcile';
 import { WORKSPACE_RESTORE_PREFIXES } from '@/lib/workspace-restore/workspace-restore-config.js';
 
 /**
- * Pre-start restore API for container-side custom_nodes recovery.
+ * Pre-start restore API for container-side workspace recovery.
  * GET /api/storage/custom-nodes-restore
  * Authorization: Bearer <GPUVIETNAM_BACKUP_TOKEN>
  *
- * Returns presigned download URLs for the user's custom_nodes backup objects
- * so the container can restore them before ComfyUI starts.
+ * Returns presigned download URLs for the user's workspace backup objects
+ * (custom_nodes, workflows, outputs, settings) so the container can restore
+ * them before ComfyUI starts.
  */
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -36,36 +37,36 @@ export default async function handler(req, res) {
 
     const userId = verified.userId;
 
-    // ──────── List custom_nodes objects for this user ────────
+    // ──────── List workspace objects for this user ────────
     let objects = [];
     try {
       objects = await listUserBackupR2Objects(userId, { maxKeys: 5000 });
     } catch (listErr) {
       console.warn(
-        '[custom-nodes-restore] listUserBackupR2Objects failed:',
+        '[workspace-restore] listUserBackupR2Objects failed:',
         listErr instanceof Error ? listErr.message : listErr,
       );
-      // Return empty — container will continue without custom nodes
+      // Return empty — container will continue without workspace restore
       return res.status(200).json({
         success: true,
         userId,
         objects: [],
-        message: 'No custom_nodes backup found (R2 list failed).',
+        message: 'No workspace backup found (R2 list failed).',
       });
     }
 
-    // Filter to custom_nodes prefix only
-    const customNodesObjects = objects.filter((o) => {
+    // Filter to supported workspace prefixes only
+    const workspaceObjects = objects.filter((o) => {
       const prefix = String(o.relativeKey).split('/')[0];
-      return prefix === 'custom_nodes' && WORKSPACE_RESTORE_PREFIXES.includes(prefix);
+      return WORKSPACE_RESTORE_PREFIXES.includes(prefix);
     });
 
-    if (customNodesObjects.length === 0) {
+    if (workspaceObjects.length === 0) {
       return res.status(200).json({
         success: true,
         userId,
         objects: [],
-        message: 'No custom_nodes backup found.',
+        message: 'No workspace backup found.',
       });
     }
 
@@ -75,7 +76,7 @@ export default async function handler(req, res) {
     /** @type {Array<{ relativeKey: string; error: string }>} */
     const errors = [];
 
-    for (const obj of customNodesObjects) {
+    for (const obj of workspaceObjects) {
       try {
         const { downloadUrl } = await createPresignedDownloadUrl(obj.r2Key, {
           expiresIn: 600, // 10 minutes — enough for container download
@@ -101,13 +102,13 @@ export default async function handler(req, res) {
       errors: errors.length > 0 ? errors : undefined,
       message:
         downloads.length > 0
-          ? `Found ${downloads.length} custom_nodes backup objects.`
-          : 'Could not generate download URLs for custom_nodes.',
+          ? `Found ${downloads.length} workspace backup objects.`
+          : 'Could not generate download URLs for workspace backup.',
     });
   } catch (err) {
-    console.error('[custom-nodes-restore]', err);
+    console.error('[workspace-restore]', err);
     return res.status(500).json({
-      error: err instanceof Error ? err.message : 'Không lấy được dữ liệu custom_nodes restore.',
+      error: err instanceof Error ? err.message : 'Không lấy được dữ liệu workspace restore.',
     });
   }
 }

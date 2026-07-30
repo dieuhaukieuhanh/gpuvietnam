@@ -14,11 +14,12 @@ EnvironmentFile=-/etc/gpuvietnam/lifecycle.env
 Environment=HOME=/opt/gpuvietnam/tmp
 Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
 Environment=TMPDIR=/tmp
-# Temporary Vast-only probe (disk-only / marketplace soak). Flip back to Clore-only after:
-#   Environment=GPU_CLORE_ONLY=true
-#   (and remove GPU_VAST_ONLY / GPU_ALLOW_VAST)
-Environment=GPU_ALLOW_VAST=true
+# ──────── Provider: Vast-only ────────
 Environment=GPU_VAST_ONLY=true
+# ──────── Image: v3.3 (belt-and-suspenders) ────────
+Environment=GPUVIETNAM_COMFYUI_IMAGE_V3=dieuhaukieuhanh/gpuvietnam-comfyui:v3.3
+# ──────── Public API URL (cho container gọi boot-event) ────────
+Environment=GPUVIETNAM_PUBLIC_API_URL=https://gpuvietnam.com
 # --experimental-strip-types: worker graph may import .ts helpers (e.g. @/lib/routes)
 ExecStart=/usr/bin/node --experimental-strip-types --import ./scripts/register-src-alias.mjs scripts/lifecycle-worker.mjs
 Restart=always
@@ -30,7 +31,6 @@ TimeoutStopSec=30
 #   tmp/           → host-reputation.json, clore-bad-hosts.json, vast-bad-hosts.json,
 #                    provision-progress.json (cwd-relative)
 #   PrivateTmp     → OS /tmp (no npm install at runtime; no Node package cache needed)
-# Do NOT add broader ReadWritePaths unless a new code path writes elsewhere.
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/opt/gpuvietnam/logs /opt/gpuvietnam/tmp

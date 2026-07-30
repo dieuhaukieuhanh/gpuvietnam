@@ -21,7 +21,7 @@ import {
 import { GPU_IMAGE_REPO } from '../gpu/gpu-config.js';
 
 /** Official Image tag family for A1 offline catalog (profile v3). */
-export const OFFICIAL_IMAGE_V3 = `${GPU_IMAGE_REPO}:v3.2`;
+export const OFFICIAL_IMAGE_V3 = `${GPU_IMAGE_REPO}:v3.3`;
 
 export const FE_PACKAGE_PIN = '1.45.21';
 export const COMFYUI_RUNTIME_PIN = '0.28.0';
@@ -232,7 +232,7 @@ export function buildSupportedNodeManifest(params) {
         'Offline catalog supports only core Comfy modules + packs pinned in image/official-nodes.lock for profile v3. Nodes outside this allowlist are not supported offline.',
       placeholder:
         captureStatus === CAPTURE_STATUS_PLACEHOLDER
-          ? 'Artifact is a placeholder until object_info is captured from Official Image :v3.2. Do not treat as full Official Pack support.'
+          ? 'Artifact is a placeholder until object_info is captured from Official Image :v3.3. Do not treat as full Official Pack support.'
           : null,
     },
   };

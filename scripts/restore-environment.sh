@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Pre-start custom_nodes restore — downloads persisted custom nodes from R2
-# before ComfyUI starts, so they are loaded on first boot.
+# Pre-start workspace restore — downloads persisted workspace files from R2
+# (custom_nodes, workflows, outputs, settings) before ComfyUI starts,
+# so they are loaded on first boot.
 #
 # Env (already in container):
 #   GPUVIETNAM_BACKUP_TOKEN      machine-scoped backup token (required)
@@ -47,6 +48,15 @@ fi
 if [[ -z "${API_BASE}" ]]; then
   warn "No API base URL configured — skipping pre-start custom_nodes restore"
   exit 0
+fi
+
+# ──────── Runtime boot event: pre_restore_started ────────
+if [[ -n "${API_BASE:-}" ]] && command -v curl >/dev/null 2>&1; then
+  curl -sS --max-time 10 \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"stage":"pre_restore_started","idempotency_key":"pre_restore_started"}' \
+    "${API_BASE}/api/runtime/boot-event" >/dev/null 2>&1 || true
 fi
 
 RESTORE_URL="${API_BASE}${RESTORE_API_PATH}"
@@ -98,7 +108,7 @@ RESTORE_COUNT="${RESTORE_COUNT:-0}"
 RESTORE_COUNT=$(( RESTORE_COUNT + 0 ))  # force integer
 
 if [[ "${RESTORE_COUNT}" -eq 0 ]]; then
-  log "No custom_nodes backup found for user=${USER_ID} — fresh start"
+  log "No workspace backup found for user=${USER_ID} — fresh start"
   echo "status=no_backup" >> "${RESTORE_LOG}" 2>/dev/null || true
   echo "objects_count=0" >> "${RESTORE_LOG}" 2>/dev/null || true
   exit 0
@@ -113,10 +123,19 @@ mkdir -p "${TEMP_DIR}"
 RESTORED=0
 FAILED=0
 
-python3 - "${RESTORE_RESPONSE}" "${CUSTOM_NODES_DIR}" "${TEMP_DIR}" "${LOG_TAG}" <<'PY'
+RESTORE_STDOUT_TMP="/tmp/gpuvietnam-restore-stdout-$$"
+python3 - "${RESTORE_RESPONSE}" "${COMFYUI_DIR}" "${TEMP_DIR}" "${LOG_TAG}" <<'PY' | tee "${RESTORE_STDOUT_TMP}"
 import json, os, subprocess, sys
 
-response_json, dest_dir, temp_dir, log_tag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+response_json, comfyui_dir, temp_dir, log_tag = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
+# Prefix → relative subdirectory under COMFYUI_DIR
+PREFIX_DEST = {
+    'custom_nodes': 'custom_nodes',
+    'workflows':    'user/default/workflows',
+    'outputs':      'output',
+    'settings':     'user/default',
+}
 
 def log(msg):
     print(f"{log_tag} {msg}", flush=True)
@@ -154,6 +173,15 @@ for obj in objects:
         warn(f"Rejected unsafe relativeKey: {relative_key}")
         continue
 
+    # Resolve destination directory from prefix
+    prefix = relative_key.split('/')[0] if '/' in relative_key else ''
+    subdir = PREFIX_DEST.get(prefix)
+    if not subdir:
+        failed += 1
+        warn(f"Unknown prefix in relativeKey: {relative_key}")
+        continue
+    dest_dir = os.path.join(comfyui_dir, subdir)
+
     # Determine if this is a tar.gz archive (stop-backup) or individual file (periodic)
     is_archive = relative_key.endswith('.tar.gz')
     temp_file = os.path.join(temp_dir, os.path.basename(relative_key).replace('__', '_'))
@@ -174,7 +202,7 @@ for obj in objects:
     # Extract or copy
     try:
         if is_archive:
-            # tar.gz stop-backup archive — extract to custom_nodes/
+            # tar.gz stop-backup archive — extract into dest_dir
             result = subprocess.run(
                 ['tar', '-xzf', temp_file, '-C', dest_dir],
                 capture_output=True, text=True, timeout=60
@@ -183,12 +211,12 @@ for obj in objects:
                 raise RuntimeError(result.stderr.strip() or f'tar exit {result.returncode}')
             log(f"Extracted {relative_key} -> {dest_dir}")
         else:
-            # Individual file — determine destination path
-            # relativeKey format: custom_nodes/<node_dir>/<filename...>
-            # Strip "custom_nodes/" prefix to get relative path within custom_nodes
+            # Individual file — strip prefix to get relative path within dest_dir
             rel_path = relative_key
-            if rel_path.startswith('custom_nodes/'):
-                rel_path = rel_path[len('custom_nodes/'):]
+            for pfx in PREFIX_DEST:
+                if rel_path.startswith(pfx + '/'):
+                    rel_path = rel_path[len(pfx) + 1:]
+                    break
             if not rel_path:
                 failed += 1
                 warn(f"Empty path after stripping prefix: {relative_key}")
@@ -198,9 +226,9 @@ for obj in objects:
             dest_path = os.path.join(dest_dir, rel_path)
             dest_parent = os.path.dirname(dest_path)
 
-            # Safety: ensure dest_path is within dest_dir
+            # Safety: ensure dest_path is within comfyui_dir
             real_dest = os.path.realpath(os.path.abspath(dest_path))
-            real_root = os.path.realpath(os.path.abspath(dest_dir))
+            real_root = os.path.realpath(os.path.abspath(comfyui_dir))
             if not real_dest.startswith(real_root + os.sep) and real_dest != real_root:
                 failed += 1
                 warn(f"Rejected path outside dest: {relative_key} -> {dest_path}")
@@ -224,7 +252,7 @@ except Exception:
     pass
 
 # Write summary
-summary_path = os.path.join(os.path.dirname(dest_dir), 'user', 'default', '.gpuvietnam-pre-restore.log')
+summary_path = os.path.join(comfyui_dir, 'user', 'default', '.gpuvietnam-pre-restore.log')
 try:
     os.makedirs(os.path.dirname(summary_path), exist_ok=True)
     with open(summary_path, 'a') as f:
@@ -241,7 +269,14 @@ if failed > 0:
     sys.exit(2 if restored == 0 else 0)
 PY
 
-RESTORE_EXIT_CODE=$?
+RESTORE_EXIT_CODE=${PIPESTATUS[0]}
+
+# Extract actual restored/failed counts from Python summary line
+RESTORED=$(sed -n 's/.*Restore complete: restored=\([0-9]*\).*/\1/p' "${RESTORE_STDOUT_TMP}")
+FAILED=$(sed -n 's/.*Restore complete: failed=\([0-9]*\).*/\1/p' "${RESTORE_STDOUT_TMP}")
+RESTORED="${RESTORED:-0}"
+FAILED="${FAILED:-0}"
+rm -f "${RESTORE_STDOUT_TMP}"
 
 # ──────── Final log ────────
 if [[ "${RESTORE_EXIT_CODE}" -eq 2 ]]; then
@@ -254,5 +289,15 @@ fi
 rm -rf "${TEMP_DIR}" 2>/dev/null || true
 
 # Never block ComfyUI — exit 0 always
-log "Pre-start restore phase complete"
+log "Pre-start workspace restore phase complete"
+
+# ──────── Runtime boot event: pre_restore_complete ────────
+if [[ -n "${API_BASE:-}" ]] && command -v curl >/dev/null 2>&1; then
+  curl -sS --max-time 10 \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"stage\":\"pre_restore_complete\",\"idempotency_key\":\"pre_restore_complete\",\"payload\":{\"restored\":${RESTORED:-0},\"failed\":${FAILED:-0},\"objectsCount\":${RESTORE_COUNT:-0}}}" \
+    "${API_BASE}/api/runtime/boot-event" >/dev/null 2>&1 || true
+fi
+
 exit 0

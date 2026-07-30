@@ -839,42 +839,51 @@ async function startMachineHandler(req, res) {
     let workstationContainerEnv = buildWorkstationContainerEnv(envName);
     try {
       const presignUrl = resolvePresignUploadApiUrl();
-      const autoBackupOn = await isAutoBackupEnabledForUser(
-        supabaseAdmin,
-        user.id,
-        planKey,
-      );
-      if (presignUrl && autoBackupOn) {
+      if (!presignUrl) {
+        console.warn(
+          '[user/start-machine] GPUVIETNAM_PUBLIC_API_URL / NEXT_PUBLIC_APP_URL missing — skip backup token env',
+        );
+      } else {
+        // Always issue a backup token so the container can send boot events
+        // (pre_restore_started, pre_restore_complete, comfy_started) and access
+        // the restore API. Periodic backup + presign upload are gated behind
+        // auto-backup policy separately.
         const issued = await issueMachineBackupToken(supabaseAdmin, {
           userId: user.id,
           subscriptionId: subscription.id,
         });
         backupTokenId = issued.id;
-        let skipModels = false;
-        try {
-          const q = await getBackupQuotaStatus(supabaseAdmin, user.id);
-          skipModels = Boolean(q.skipModels);
-        } catch {
-          /* ignore */
-        }
-        workstationContainerEnv = buildWorkstationContainerEnv(envName, {
-          userId: user.id,
-          backupToken: issued.token,
-          presignUrl,
-          skipModels,
-          flushSecret: createBackupFlushSecret(),
+
+        const autoBackupOn = await isAutoBackupEnabledForUser(
+          supabaseAdmin,
+          user.id,
           planKey,
-          intervalsByPlan: await loadBackupIntervalsByPlan(supabaseAdmin),
-        });
-      } else if (!presignUrl) {
-        console.warn(
-          '[user/start-machine] GPUVIETNAM_PUBLIC_API_URL / NEXT_PUBLIC_APP_URL missing — skip backup token env',
         );
-      } else {
-        console.info(
-          '[user/start-machine] skip backup token: auto backup disabled',
-          { userId: user.id, planKey },
-        );
+
+        if (autoBackupOn) {
+          let skipModels = false;
+          try {
+            const q = await getBackupQuotaStatus(supabaseAdmin, user.id);
+            skipModels = Boolean(q.skipModels);
+          } catch {
+            /* ignore */
+          }
+          workstationContainerEnv = buildWorkstationContainerEnv(envName, {
+            userId: user.id,
+            backupToken: issued.token,
+            presignUrl,
+            skipModels,
+            flushSecret: createBackupFlushSecret(),
+            planKey,
+            intervalsByPlan: await loadBackupIntervalsByPlan(supabaseAdmin),
+          });
+        } else {
+          // Boot events + restore API only — no periodic backup (no presign URL).
+          workstationContainerEnv = buildWorkstationContainerEnv(envName, {
+            userId: user.id,
+            backupToken: issued.token,
+          });
+        }
       }
     } catch (tokenErr) {
       console.warn(
