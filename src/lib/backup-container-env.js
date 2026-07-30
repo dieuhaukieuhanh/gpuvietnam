@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getBackupIntervalsForPlan } from './backup-auto-policy.js';
+import { resolvePublicApiBaseUrl } from './machine-backup-token.js';
 
 /**
  * Random secret for stop-time HTTP flush (Authorization: Bearer …).
@@ -67,6 +68,11 @@ export function injectBackupContainerEnv(env, options = {}) {
   if (options.flushSecret) {
     out.GPUVIETNAM_BACKUP_FLUSH_SECRET = String(options.flushSecret);
   }
+
+  const publicApi = resolvePublicApiBaseUrl();
+  // Fallback: container must be able to reach the app to send boot events.
+  // Vercel prod may not always set GPUVIETNAM_PUBLIC_API_URL explicitly.
+  out.GPUVIETNAM_PUBLIC_API_URL = publicApi || 'https://gpuvietnam.com';
 
   return out;
 }
