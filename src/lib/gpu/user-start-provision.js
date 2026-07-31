@@ -366,6 +366,21 @@ export async function completeUserStartProvision(supabaseAdmin, params) {
           err: restoreErr,
         });
       }
+
+      // Record comfy_started boot event (server-side, not from container).
+      try {
+        const { insertBootEvent } = await import('@/lib/runtime-boot-event-server.js');
+        await insertBootEvent(supabaseAdmin, {
+          machineId: syncedMachine?.id ?? machine?.id ?? null,
+          gpuSessionId: syncedMachine?.gpu_session_id ?? machine?.gpu_session_id ?? null,
+          stage: 'comfy_started',
+          idempotencyKey: 'comfy_started',
+        });
+      } catch (bootEventErr) {
+        log.warn('comfy_started boot event failed', {
+          err: bootEventErr,
+        });
+      }
     }
 
     lease?.release('provision_success');

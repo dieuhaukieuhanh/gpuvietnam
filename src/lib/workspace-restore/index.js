@@ -4,6 +4,7 @@ import { WORKSPACE_RESTORE_TICK } from './workspace-restore-config.js';
 import { setProvisionProgress, PROVISION_STAGE } from '../provision-progress/index.js';
 import { isAutoBackupEnabledForUser } from '../backup-auto-policy.js';
 import { isR2Configured } from '../r2-client.js';
+import { insertBootEvent } from '../runtime-boot-event-server.js';
 
 /**
  * After Comfy is ready: classify and either auto-restore, prompt, or skip.
@@ -70,7 +71,33 @@ export async function maybeSmartRestoreAfterReady(supabaseAdmin, params) {
 
     // mode === 'auto'
     await setTick(WORKSPACE_RESTORE_TICK.RESTORING, 'Đang khôi phục Workspace...');
+
+    // Record pre_restore_started boot event
+    const machineId = typeof machine.id === 'string' ? machine.id : null;
+    if (machineId) {
+      await insertBootEvent(supabaseAdmin, {
+        machineId,
+        stage: 'pre_restore_started',
+        idempotencyKey: 'pre_restore_started',
+      });
+    }
+
     const result = await restoreWorkspaceLevel1(supabaseAdmin, userId, machine);
+
+    // Record pre_restore_complete boot event
+    if (machineId) {
+      await insertBootEvent(supabaseAdmin, {
+        machineId,
+        stage: 'pre_restore_complete',
+        idempotencyKey: 'pre_restore_complete',
+        payload: {
+          restored: result.restored ?? 0,
+          failed: result.failed ?? 0,
+          total: result.total ?? 0,
+        },
+      });
+    }
+
     const failedAll = result.restored === 0 && result.total > 0 && result.errors?.length;
     if (failedAll) {
       await setTick(
