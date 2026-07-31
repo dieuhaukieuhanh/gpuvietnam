@@ -258,7 +258,7 @@ export default function DashboardOverview({
   onMachineSessionView,
   onBillingSessionView,
 }: DashboardOverviewProps) {
-  const { session } = useAuth();
+  const { session, refreshSession } = useAuth();
   const { isMobile, isTablet } = useIsMobile();
   const { displayPlan, usablePlans, loading: plansLoading, reload: reloadPlans } = useUserPlans(
     session?.access_token,
@@ -947,8 +947,16 @@ export default function DashboardOverview({
 
   const startMachine = useCallback(
     async (plan: ActivePlan) => {
-      const token = session?.access_token;
-      if (!token || !subscription) return;
+      let token = session?.access_token;
+      if (!token) {
+        await refreshSession();
+        token = session?.access_token;
+      }
+      if (!token) {
+        setToast('Phiên đăng nhập hết hạn. Vui lòng F5 refresh trang rồi thử lại.');
+        return;
+      }
+      if (!subscription) return;
       if (machineSessionView?.actions.canStart === false) return;
 
       startMachineAbortRef.current?.abort();
@@ -1159,8 +1167,15 @@ export default function DashboardOverview({
   ]);
 
   const cancelBoot = useCallback(async () => {
-    const token = session?.access_token;
-    if (!token) return;
+    let token = session?.access_token;
+    if (!token) {
+      await refreshSession();
+      token = session?.access_token;
+    }
+    if (!token) {
+      setToast('Phiên đăng nhập hết hạn. Vui lòng F5 refresh trang rồi thử lại.');
+      return;
+    }
 
     // Always abort in-flight Start fetch, then call cancel API so server/queue/UI stay aligned.
     if (startMachineAbortRef.current) {
@@ -1219,6 +1234,7 @@ export default function DashboardOverview({
     session?.access_token,
     subscription?.env_name,
     effectiveEnvName,
+    refreshSession,
     onRefresh,
     reloadPlans,
     refreshMetrics,
@@ -1227,10 +1243,19 @@ export default function DashboardOverview({
   ]);
 
   const stopMachine = useCallback(async (options?: { forceStop?: boolean; waitForBackup?: boolean }) => {
-    const token = session?.access_token;
+    // Refresh session before critical action — token may have expired during long session.
+    let token = session?.access_token;
+    if (!token) {
+      await refreshSession();
+      // After refresh, access_token should be available if still logged in.
+      token = session?.access_token;
+    }
     const canStop =
       machineSessionView?.actions.canStop !== false || Boolean(billingView?.billingStarted);
-    if (!token || !canStop) return;
+    if (!token || !canStop) {
+      if (!token) setToast('Phiên đăng nhập hết hạn. Vui lòng F5 refresh trang rồi thử lại.');
+      return;
+    }
 
     const forceStop = Boolean(options?.forceStop);
     const waitForBackup = Boolean(options?.waitForBackup);
