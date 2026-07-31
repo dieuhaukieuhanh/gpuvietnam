@@ -574,15 +574,11 @@ export default function DashboardOverview({
       // Auto-replace completed: show reconnect toast + refresh Comfy URL.
       if (prev === 'disconnected' || prev === 'error') {
         setToast('✅ GPU đã khôi phục xong — vào phòng làm việc để tiếp tục.');
-        // Refresh the editor URL so the button is ready with new upstream.
+        // Clear cached URLs so next openComfyUI/openEditorWorkspace fetches fresh ones.
         editorEnterUrlRef.current = null;
         setEditorEnterUrl(null);
         comfyEnterUrlRef.current = null;
         setComfyEnterUrl(null);
-        if (session?.access_token) {
-          void resolveComfyEnterUrl({ silent: true, mode: 'editor' });
-          void resolveComfyEnterUrl({ silent: true, mode: 'runtime' });
-        }
       }
     }
     if (prev === 'stopping' && next === 'idle') {
@@ -591,7 +587,8 @@ export default function DashboardOverview({
       notifyUserPlansChanged();
     }
     prevViewPhaseRef.current = next;
-  }, [machineSessionView?.phase, onRefresh, reloadPlans, session?.access_token, resolveComfyEnterUrl]);
+  }, [machineSessionView?.phase, onRefresh, reloadPlans, session?.access_token]);
+  // resolveComfyEnterUrl intentionally omitted — defined later in file
 
   useEffect(() => {
     if (!session?.access_token) return undefined;
