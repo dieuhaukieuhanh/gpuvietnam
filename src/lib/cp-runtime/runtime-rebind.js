@@ -7,6 +7,7 @@ import {
   issueComfyAccessToken,
   normalizeUpstreamComfyUrl,
   revokeComfyAccessTokensForMachine,
+  updateComfyAccessTokenUpstream,
 } from '../comfy-proxy/comfy-access-token.js';
 import { isComfyProxyEnabled } from '../comfy-proxy/comfy-proxy-config.js';
 import { encodeComfyCpBootstrapHash } from './comfy-graph-document.js';
@@ -95,7 +96,34 @@ export async function rebindComfyProxyToRuntime(supabaseAdmin, input) {
     };
   }
 
-  await revokeComfyAccessTokensForMachine(supabaseAdmin, machineId);
+  // P1 auto-replace: update upstream on existing tokens instead of revoke+issue.
+  // Keeps the same workUrl so the customer's ComfyUI tab reconnects transparently.
+  const isAutoReplace = Boolean(input.previousUpstreamUrl);
+  if (isAutoReplace) {
+    const updated = await updateComfyAccessTokenUpstream(supabaseAdmin, {
+      userId,
+      machineId,
+      newUpstreamUrl: plan.nextUpstreamUrl,
+    });
+
+    if (updated.updated > 0) {
+      return {
+        plan,
+        workUrl: null, // old workUrl still works — upstream updated in-place
+        token: null,
+        expiresAt: null,
+        revoked: false,
+        mode: 'proxy_update_upstream',
+        updatedTokens: updated.updated,
+      };
+    }
+    // Fall through — no active tokens to update, issue new one.
+  }
+
+  // Initial bind or fallback: revoke old (if any) + issue new token.
+  if (!isAutoReplace) {
+    await revokeComfyAccessTokensForMachine(supabaseAdmin, machineId);
+  }
 
   const issued = await issueComfyAccessToken(supabaseAdmin, {
     userId,
@@ -136,8 +164,8 @@ export async function rebindComfyProxyToRuntime(supabaseAdmin, input) {
     workUrl,
     token: issued.token,
     expiresAt: issued.expiresAt,
-    revoked: true,
-    mode: 'proxy_rebind',
+    revoked: !isAutoReplace,
+    mode: isAutoReplace ? 'proxy_fallback_issue' : 'proxy_rebind',
     cpSync: { workflowId, revision, apiBase: apiBase || null, syncPath: '/gpuvietnam/cp/sync' },
   };
 }

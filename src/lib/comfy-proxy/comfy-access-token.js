@@ -289,3 +289,48 @@ export async function revokeComfyAccessTokensForUser(supabaseAdmin, userId) {
 
   return { revoked: Array.isArray(data) ? data.length : 0 };
 }
+
+/**
+ * P1 auto-replace: update upstream_url on active tokens instead of revoking.
+ * Keeps the same workUrl so the customer's ComfyUI tab reconnects transparently.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
+ * @param {{ userId: string; machineId: string; newUpstreamUrl: string }} input
+ */
+export async function updateComfyAccessTokenUpstream(supabaseAdmin, input) {
+  const userId = String(input.userId ?? '').trim();
+  const machineId = String(input.machineId ?? '').trim();
+  const newUpstream = String(input.newUpstreamUrl ?? '').trim();
+  if (!userId || !machineId || !newUpstream) return { updated: 0, reason: 'missing fields' };
+
+  const upstream = normalizeUpstreamComfyUrl(newUpstream);
+  const fetchable = rewriteIpLiteralUpstreamForFetch(upstream);
+  if (!fetchable) return { updated: 0, reason: 'invalid upstream' };
+
+  const { data: rows, error: selErr } = await supabaseAdmin
+    .from('comfy_access_tokens')
+    .select('token_hash, mode')
+    .eq('user_id', userId)
+    .is('revoked_at', null);
+  if (selErr) return { updated: 0, reason: selErr.message };
+
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from('comfy_access_tokens')
+    .update({ upstream_url: fetchable, machine_id: machineId, updated_at: now })
+    .eq('user_id', userId)
+    .is('revoked_at', null);
+
+  for (const row of rows ?? []) {
+    if (!row?.token_hash) continue;
+    try {
+      await mirrorTokenToCloudflareKv(String(row.token_hash), {
+        upstream: fetchable, userId, machineId,
+        exp: Math.floor(Date.now() / 1000) + DEFAULT_COMFY_ACCESS_TTL_SECONDS,
+        mode: String(row.mode ?? 'runtime'),
+      }, DEFAULT_COMFY_ACCESS_TTL_SECONDS);
+    } catch (kvErr) {
+      console.warn('[comfy-proxy] updateUpstream KV mirror failed:', kvErr instanceof Error ? kvErr.message : kvErr);
+    }
+  }
+  return { updated: rows?.length ?? 0 };
+}
