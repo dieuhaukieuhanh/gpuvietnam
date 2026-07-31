@@ -326,7 +326,7 @@ export const VAST_PROVISION_GATE = {
   portTimeoutMs: 45_000,
   gpuCudaTimeoutMs: 90_000,
   comfyWorkflowTimeoutMs: 120_000,
-  comfyColdStartExtraMs: 90_000,
+  comfyColdStartExtraMs: 300_000,
   /** nvidia-smi / system_stats expected name substrings by gpu line */
   expectedGpuNameByLine: {
     rtx3090: ['3090'],
