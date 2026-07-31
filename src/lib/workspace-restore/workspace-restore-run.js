@@ -70,7 +70,11 @@ export async function restoreFromR2Files(supabaseAdmin, userId, machine) {
 
   const sshTarget = await resolveBackupSshTarget(machine);
   if (!sshTarget) {
-    throw new Error('Không kết nối được SSH tới máy đang chạy.');
+    // Container-side restore (restore-environment.sh via HTTP API) handles
+    // restore before ComfyUI starts. SSH-less providers like Vast skip this
+    // second server-side pass gracefully — workspace is already restored.
+    console.info('[workspace-restore] SSH not available — container-side restore already ran');
+    return { restored: 0, total: 0, errors: [], method: 'r2_files_skipped_no_ssh' };
   }
 
   const objects = await listUserBackupR2Objects(userId, { maxKeys: 5000 });
