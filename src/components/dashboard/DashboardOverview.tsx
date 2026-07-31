@@ -288,10 +288,13 @@ export default function DashboardOverview({
   const [toast, setToast] = useState('');
   const [showComfyMobileModal, setShowComfyMobileModal] = useState(false);
   const [comfyEnterUrl, setComfyEnterUrl] = useState<string | null>(null);
+  const [editorEnterUrl, setEditorEnterUrl] = useState<string | null>(null);
   const [isOpeningComfy, setIsOpeningComfy] = useState(false);
+  const [isOpeningEditor, setIsOpeningEditor] = useState(false);
   const startMachineAbortRef = useRef<AbortController | null>(null);
   const cardHoursRemainingLiveRef = useRef<number | null>(null);
   const comfyEnterUrlRef = useRef<string | null>(null);
+  const editorEnterUrlRef = useRef<string | null>(null);
 
   const openComfyInNewTab = useCallback((url: string) => {
     // Real <a target=_blank> navigation — not window.open (popup policies).
@@ -752,11 +755,18 @@ export default function DashboardOverview({
   cardHoursRemainingLiveRef.current = cardHoursRemainingLive;
 
   const resolveComfyEnterUrl = useCallback(
-    async (opts?: { silent?: boolean }): Promise<string | null> => {
+    async (opts?: {
+      silent?: boolean;
+      mode?: 'editor' | 'runtime';
+    }): Promise<string | null> => {
       const silent = opts?.silent === true;
-      if (comfyEnterUrlRef.current) return comfyEnterUrlRef.current;
+      const mode = opts?.mode === 'editor' ? 'editor' : 'runtime';
 
-      if (!isComfyWorkspaceReady(machineMetricsRef.current)) {
+      if (mode === 'editor' && editorEnterUrlRef.current) return editorEnterUrlRef.current;
+      if (mode === 'runtime' && comfyEnterUrlRef.current) return comfyEnterUrlRef.current;
+
+      // Runtime open still waits for projection readiness; editor mode does not need GPU.
+      if (mode === 'runtime' && !isComfyWorkspaceReady(machineMetricsRef.current)) {
         await refreshMetrics();
       }
 
@@ -766,35 +776,63 @@ export default function DashboardOverview({
         try {
           const res = await fetch('/api/session/comfy-access', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(mode === 'editor' ? { mode: 'editor' } : {}),
           });
           const data = (await res.json()) as {
             workUrl?: string;
             error?: string;
             code?: string;
+            mode?: string;
+            runtimeOnline?: boolean;
           };
           if (res.ok && typeof data.workUrl === 'string' && data.workUrl) {
-            comfyEnterUrlRef.current = data.workUrl;
-            setComfyEnterUrl(data.workUrl);
+            if (mode === 'editor') {
+              editorEnterUrlRef.current = data.workUrl;
+              setEditorEnterUrl(data.workUrl);
+            } else {
+              comfyEnterUrlRef.current = data.workUrl;
+              setComfyEnterUrl(data.workUrl);
+            }
             return data.workUrl;
           }
           if (!silent) {
-            setToast(data.error ?? 'Không lấy được link phòng làm việc.');
+            setToast(
+              data.error ??
+                (mode === 'editor'
+                  ? 'Không mở được Workspace offline.'
+                  : 'Không lấy được link phòng làm việc.'),
+            );
           }
           return null;
         } catch {
-          if (!silent) setToast('Không lấy được link phòng làm việc.');
+          if (!silent) {
+            setToast(
+              mode === 'editor'
+                ? 'Không mở được Workspace offline.'
+                : 'Không lấy được link phòng làm việc.',
+            );
+          }
           return null;
         }
       }
 
-      if (!silent) setToast('ComfyUI đang khởi động — thử lại sau vài giây.');
+      if (!silent) {
+        setToast(
+          mode === 'editor'
+            ? 'Đăng nhập để mở Workspace.'
+            : 'ComfyUI đang khởi động — thử lại sau vài giây.',
+        );
+      }
       return null;
     },
     [refreshMetrics, session?.access_token],
   );
 
-  // Prefetch so the launch control can be a real <a href> (one click, no popup).
+  // Prefetch runtime workUrl so the launch control can be a real <a href>.
   useEffect(() => {
     const running =
       machineSessionView?.phase === 'running' &&
@@ -806,7 +844,7 @@ export default function DashboardOverview({
     }
     if (!session?.access_token) return;
     if (comfyEnterUrlRef.current) return;
-    void resolveComfyEnterUrl({ silent: true });
+    void resolveComfyEnterUrl({ silent: true, mode: 'runtime' });
   }, [
     machineSessionView?.phase,
     machineSessionView?.actions.canOpenComfy,
@@ -814,6 +852,26 @@ export default function DashboardOverview({
     resolveComfyEnterUrl,
     machineMetrics?.workReady,
     machineMetrics?.comfyUrl,
+  ]);
+
+  // P1: prefetch offline editor workUrl while GPU is still opening/provisioning.
+  useEffect(() => {
+    const openingEditor =
+      machineSessionView?.phase === 'opening' &&
+      machineSessionView?.actions.canOpenEditor === true;
+    if (!openingEditor) {
+      editorEnterUrlRef.current = null;
+      setEditorEnterUrl(null);
+      return;
+    }
+    if (!session?.access_token) return;
+    if (editorEnterUrlRef.current) return;
+    void resolveComfyEnterUrl({ silent: true, mode: 'editor' });
+  }, [
+    machineSessionView?.phase,
+    machineSessionView?.actions.canOpenEditor,
+    session?.access_token,
+    resolveComfyEnterUrl,
   ]);
 
   const openComfyUI = useCallback(async () => {
@@ -835,7 +893,7 @@ export default function DashboardOverview({
 
     setIsOpeningComfy(true);
     try {
-      const url = await resolveComfyEnterUrl();
+      const url = await resolveComfyEnterUrl({ mode: 'runtime' });
       if (!url) return;
       openComfyInNewTab(url);
     } finally {
@@ -849,6 +907,28 @@ export default function DashboardOverview({
     resolveComfyEnterUrl,
   ]);
 
+  const openEditorWorkspace = useCallback(async () => {
+    if (!machineSessionView?.actions.canOpenEditor) return;
+
+    if (editorEnterUrlRef.current) {
+      openComfyInNewTab(editorEnterUrlRef.current);
+      return;
+    }
+
+    setIsOpeningEditor(true);
+    try {
+      const url = await resolveComfyEnterUrl({ mode: 'editor' });
+      if (!url) return;
+      openComfyInNewTab(url);
+    } finally {
+      setIsOpeningEditor(false);
+    }
+  }, [
+    machineSessionView?.actions.canOpenEditor,
+    openComfyInNewTab,
+    resolveComfyEnterUrl,
+  ]);
+
   const confirmOpenComfyOnMobile = useCallback(async () => {
     setShowComfyMobileModal(false);
     if (comfyEnterUrlRef.current) {
@@ -857,7 +937,7 @@ export default function DashboardOverview({
     }
     setIsOpeningComfy(true);
     try {
-      const url = await resolveComfyEnterUrl();
+      const url = await resolveComfyEnterUrl({ mode: 'runtime' });
       if (!url) return;
       openComfyInNewTab(url);
     } finally {
@@ -1173,6 +1253,7 @@ export default function DashboardOverview({
           canCancel: false,
           canStop: true,
           canOpenComfy: Boolean(machineSessionView?.actions?.canOpenComfy),
+          canOpenEditor: false,
         },
         message,
         domainEvent: null,
@@ -2237,26 +2318,46 @@ export default function DashboardOverview({
           <div className="dashboard-server-actions-slot">
           {serverCardPhase !== 'loading' && (
           <div className="btn-group-server">
-            {serverCardPhase === 'opening' && canCancelBoot && (
+            {serverCardPhase === 'opening' && (
               <>
-                <button type="button" className="btn btn-success btn-lg" disabled>
-                  {isCancellingBoot ? 'Đang hủy...' : 'GPU đang khởi động...'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-lg"
-                  disabled={isCancellingBoot}
-                  onClick={() => void cancelBoot()}
-                >
-                  Hủy khởi tạo
-                </button>
+                {machineSessionView?.actions.canOpenEditor &&
+                  (editorEnterUrl ? (
+                    <a
+                      className="btn btn-success btn-lg"
+                      href={editorEnterUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Mở Workspace để chuẩn bị workflow ngay — GPU đang khởi động"
+                    >
+                      🚀 Vào phòng làm việc
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-success btn-lg"
+                      disabled={isOpeningEditor}
+                      title="Mở Workspace để chuẩn bị workflow ngay — GPU đang khởi động"
+                      onClick={() => void openEditorWorkspace()}
+                    >
+                      {isOpeningEditor ? '⏳ Đang mở Workspace...' : '🚀 Vào phòng làm việc'}
+                    </button>
+                  ))}
+                <p className="dashboard-server-hint" style={{ marginTop: 8, fontSize: 13 }}>
+                  GPU đang khởi động — bạn có thể setup workflow ngay bây giờ.
+                  Khi GPU sẵn sàng, chỉ việc bấm Generate.
+                </p>
+                {canCancelBoot && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={isCancellingBoot}
+                    onClick={() => void cancelBoot()}
+                    style={{ marginTop: 4 }}
+                  >
+                    Hủy khởi tạo
+                  </button>
+                )}
               </>
-            )}
-
-            {serverCardPhase === 'opening' && !canCancelBoot && (
-              <button type="button" className="btn btn-success btn-lg" disabled>
-                GPU đang khởi động...
-              </button>
             )}
 
             {serverCardPhase === 'stopping' && (
