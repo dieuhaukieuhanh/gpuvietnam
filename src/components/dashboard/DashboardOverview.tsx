@@ -571,6 +571,19 @@ export default function DashboardOverview({
     const next = machineSessionView?.phase;
     if (prev !== 'running' && next === 'running') {
       void refreshMetricsRef.current();
+      // Auto-replace completed: show reconnect toast + refresh Comfy URL.
+      if (prev === 'disconnected' || prev === 'error') {
+        setToast('✅ GPU đã khôi phục xong — vào phòng làm việc để tiếp tục.');
+        // Refresh the editor URL so the button is ready with new upstream.
+        editorEnterUrlRef.current = null;
+        setEditorEnterUrl(null);
+        comfyEnterUrlRef.current = null;
+        setComfyEnterUrl(null);
+        if (session?.access_token) {
+          void resolveComfyEnterUrl({ silent: true, mode: 'editor' });
+          void resolveComfyEnterUrl({ silent: true, mode: 'runtime' });
+        }
+      }
     }
     if (prev === 'stopping' && next === 'idle') {
       void onRefresh({ silent: true });
@@ -578,7 +591,7 @@ export default function DashboardOverview({
       notifyUserPlansChanged();
     }
     prevViewPhaseRef.current = next;
-  }, [machineSessionView?.phase, onRefresh, reloadPlans]);
+  }, [machineSessionView?.phase, onRefresh, reloadPlans, session?.access_token, resolveComfyEnterUrl]);
 
   useEffect(() => {
     if (!session?.access_token) return undefined;
