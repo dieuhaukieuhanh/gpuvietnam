@@ -71,8 +71,7 @@ export async function classifyUserWorkspace(userId) {
   if (fileCount === 0 || totalBytes === 0) {
     return { mode: 'empty', totalBytes: 0, fileCount: 0, byPrefix, thresholdBytes };
   }
-  if (totalBytes <= thresholdBytes) {
-    return { mode: 'auto', totalBytes, fileCount, byPrefix, thresholdBytes };
-  }
-  return { mode: 'choice', totalBytes, fileCount, byPrefix, thresholdBytes };
+  // Always auto-restore — video creators need heavy custom nodes (Wan2.1,
+  // Hunyuan, AnimateDiff) restored without manual choice on every boot.
+  return { mode: 'auto', totalBytes, fileCount, byPrefix, thresholdBytes };
 }
