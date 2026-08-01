@@ -89,9 +89,9 @@
 | **Auth & DB** | Supabase Auth + Postgres + Storage |
 | **SMS OTP** | Speedsms.vn (`src/lib/speedsms.js`); dev thiếu token → OTP hiện trên `/verify-otp` |
 | **Backup storage** | Cloudflare R2 qua `@aws-sdk/client-s3` |
-| **GPU backend** | Clore + Vast adapters (`src/lib/gpu/providers/…`); routing mặc định Vast→Clore; **P0-A VPS:** `GPU_CLORE_ONLY=true` |
+| **GPU backend** | Vast adapter (`src/lib/gpu/providers/vast/…`); **P0-A VPS:** `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true` |
 | **Lifecycle worker** | VPS systemd → `scripts/lifecycle-worker.mjs` (claim `machine_operations`) |
-| **ComfyUI image** | Docker Hub `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (prod Starter/Pro); port **8080** |
+| **ComfyUI image** | Docker Hub `:v3.4` (Starter/Pro) + `:v4.1` (Studio/5090); port **8080** |
 | **Export Excel** | `xlsx` (admin customers) |
 
 **Quy ước UI:** CSS gốc từ HTML inject qua `<style dangerouslySetInnerHTML>`; script tương tác qua `src/lib/scripts/*.ts` + `new Function()` trong `useEffect`. Font: Inter + Space Grotesk. Màu: `#0A0A0F`, accent `#4F8EF7`.
@@ -134,7 +134,7 @@ gpuvietnam/
 POST /api/user/start-machine
   → enqueue user_start_provision (machine_operations)
   → VPS lifecycle-worker claim / execute
-  → provider routing (P0-A: Clore-only) → rent → gate → machines row
+  → provider routing (P0-A: Vast-only) → rent → gate → machines row
 ```
 
 Dashboard / billing UI **không** gọi Clore/Vast API trực tiếp. Dual-run (nếu có) qua API CP riêng, không qua `start-machine`.

@@ -43,7 +43,7 @@
 | **`/api/machines/status` infra-only** | ✅ Bỏ `billingView`/billing fields khỏi response; billing từ `/api/dashboard/me` |
 | **Dashboard optimistic UX** | ✅ Optimistic start/stop, boot progress bar, stop confirmation modal, giờ 2 decimal |
 | **Wallet tab merge** | ✅ Gộp Ví + Gia hạn tự động + modal nâng cấp bộ nhớ vào `/dashboard/wallet` |
-| Image prod ComfyUI | ✅ `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (Starter/Pro); không overwrite `:v3` trừ khi promote có chủ đích |
+| Image prod ComfyUI | ✅ `:v3.4` (Starter/Pro) + `:v4.1` (Studio); `:v3.5` đang build với filmmaker scripts; không overwrite tag cũ |
 | Wire `start-machine` → enqueue + worker | ✅ API trả `operationId`; không còn `void completeUserStartProvision` trên serverless |
 
 > **Go-Live / P0-A (cập nhật 2026-07-24):** VPS worker **active** + `GPU_CLORE_ONLY=true` đã verify trong `/proc/.../environ`. Smoke đêm 23–24/07: Start durable OK; lỗi chính = (1) CLORE_ONLY chưa vào process sớm → Vast+Clore song song / Vast disk-only; (2) candidate walk hủy host Clore khi HTTP **502** lúc pull image → đổi máy liên tục rồi hết order. **Tạm dừng** sau khi chốt Clore-only trên VPS — lần Start sạch tiếp theo = tiếp tục P0-A acceptance.
@@ -53,10 +53,10 @@
 
 ## Bước tiếp theo
 
-> **Ngay:** P0-A acceptance trên Production + VPS (Clore-only đã chốt) — Start một lần → op `completed` → Comfy vào được → Stop sạch → (tuỳ chọn) restart worker / orphan check.  
-> **Sau P0-A PASS:** P0-B T11 billing → P0-C alerts → P0-D E2E khách.  
-> **Không làm ngay:** Dual Run product, warm pool, đổi GPU không reload trang.  
-> **Tech debt liên quan:** deploy harden Vast disk-only lên VPS; cân nhiễu gate 502 vs thời gian pull image Clore.
+> **Ngay:** P0-B T11 billing E2E → P0-C alerts → P0-D E2E khách.  
+> **Đã làm xong:** P0-A ✅, auto-replace GPU (không cần F5), editor khi boot, session continuity, filmmaker mode.  
+> **Không làm ngay:** Dual Run product, warm pool.  
+> **Tech debt:** Vast disk-only host vẫn có thể lọt qua filter → cần harden thêm post-rent gate.
 
 ## Filmmaker Mode ✅
 
@@ -85,17 +85,17 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 
 **Hạ tầng GPU (Vast.ai):**
 - Thuê instance **theo giờ thực tế** khi máy KH bật — **không chịu chi phí idle** như pool GPU cố định.
-- Image triển khai: **`dieuhaukieuhanh/gpuvietnam-comfyui:v1`** trên **Docker Hub** (trước đây: GHCR).
+- Image triển khai: **`dieuhaukieuhanh/gpuvietnam-comfyui:v3.4`** (Starter/Pro) + **`:v4.1`** (Studio/5090) trên **Docker Hub**.
 - Admin tab **Hạ tầng** (`infrastructure-providers.js`) — bảng giá/market mock cho Admin; **provisioning runtime** đi qua `src/lib/gpu/` (GPUService), không gọi Vast trực tiếp từ UI/API KH.
 
 **Cột mốc Docker (hoàn thành / đang làm lại):**
 
 | Cột mốc | Trạng thái |
 |---------|------------|
-| Build Docker Image | ✅ (đang build lại `--no-cache`) |
+| Build Docker Image | ✅ `:v3.4`, `:v4.1` đã push; `:v3.5`, `:v4.2` đang build |
 | Chạy ComfyUI local (`http://localhost:8080`) | ✅ |
 | Push GHCR (legacy) | ✅ (đã chuyển sang Docker Hub) |
-| Push **Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v1` | ⏳ sau build |
+| Push **Docker Hub** | ✅ `:v3.4` (Starter/Pro) + `:v4.1` (Studio) |
 | Đặt Public trên registry | ✅ (Docker Hub) |
 
 **Thay đổi Dockerfile mới (2026-06):**
@@ -122,8 +122,9 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 
 | File | Mục đích |
 |------|----------|
-| `Dockerfile` | Image **CUDA 12.0** + ComfyUI + Manager + PyTorch cu118 + pin frontend |
-| `docker-compose.yml` | Chạy local với GPU; image `dieuhaukieuhanh/gpuvietnam-comfyui:v1` |
+| `Dockerfile.v3` | Image v3.x **CUDA 12.0** + PyTorch cu118 (Starter/Pro: 3090/4090) |
+| `Dockerfile` | Image v4.x **CUDA 12.8** + PyTorch cu128 + ffmpeg (Studio: 5090) |
+| `docker-compose.yml` | Chạy local với GPU |
 | `.dockerignore` | Loại trừ `node_modules`, `.next`, `.env`, Supabase, docs |
 | `scripts/start.sh` | `setup-workstation.sh` → `download-models.sh` → ComfyUI `:8080` |
 | `scripts/setup-workstation.sh` | Copy workflow từ `workflows-stock/` theo `GPUVIETNAM_WORKSTATION` |
@@ -142,26 +143,31 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 - [x] **Push GHCR** (legacy) — đã chuyển sang Docker Hub
 - [x] **`setup-workstation.sh`** — 3 môi trường ComfyUI với bộ workflow riêng
 - [x] Dockerfile: PyTorch timeout/retry, pin `comfyui-frontend-package`, retry git clone
-- [ ] **Push Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v1` (chờ build xong)
+- [x] **Push Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v3.4` + `:v4.1`
+- [x] **ffmpeg** tích hợp vào v3.4 cho video support
+- [x] **Filmmaker scripts** — filmmaker-resume.py, frame-quality-check.py
+- [x] **Frame Saver + Frame Skip custom nodes** (ComfyUI extension)
 
 **Docker Hub:**
 
 ```bash
 # Tag & push (sau khi build xong)
-docker tag gpuvietnam-comfyui:v1 dieuhaukieuhanh/gpuvietnam-comfyui:v1
-docker push dieuhaukieuhanh/gpuvietnam-comfyui:v1
+docker push dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
+docker push dieuhaukieuhanh/gpuvietnam-comfyui:v4.1
 
 # Pull trên Vast / máy khác
-docker pull dieuhaukieuhanh/gpuvietnam-comfyui:v1
+docker pull dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
 docker run --gpus all -p 8080:8080 \
   -e GPUVIETNAM_WORKSTATION=commerce-product \
-  dieuhaukieuhanh/gpuvietnam-comfyui:v1
+  dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
 ```
 
 > GHCR (`ghcr.io/dieuhaukieuhanh/gpuvietnam-comfyui`) — **legacy**, không dùng cho deploy mới.
+> Tag mới nhất: `:v3.4` (Starter/Pro), `:v4.1` (Studio/5090). Đang build `:v3.5` + `:v4.2` với filmmaker scripts.
 
 **Còn lại (tích hợp Docker):**
-- [ ] Hoàn tất build `--no-cache` hiện tại + push Docker Hub
+- [x] Hoàn tất build + push Docker Hub (`:v3.4`, `:v4.1`)
+- [ ] Build + push `:v3.5` + `:v4.2` (đang build, thêm filmmaker scripts)
 - [ ] Test workflow từng môi trường sau push (Character / Commerce / Video AI)
 - [ ] Chạy `download-models.sh` trên instance Vast (SDXL, RealVisXL, Real-ESRGAN)
 
@@ -256,7 +262,7 @@ WebApp (API routes — start-machine ✅, workflow run chưa wire)
 - `submitWorkflow()` · `getJobStatus()` · `downloadOutputs()` · `uploadWorkflow()`
 - `healthCheck()`
 
-**GPULine:** `rtx3090` (Starter) · `rtx4090_1x` (Pro) · `rtx4090_2x` (Studio)
+**GPULine:** `rtx3090` (Starter) · `rtx4090_1x` (Pro) · `rtx5090_1x` (Studio)
 
 **File chính:**
 
@@ -289,7 +295,7 @@ await gpu.healthCheck(instance.id);
 - [x] `server_status`: `provisioning` → `online` sau ComfyUI healthy (`machines/status`)
 - [x] Đổi môi trường → workflow riêng (`change-environment` + SSH / `setup-workstation.sh`)
 - [x] Billing: chỉ trừ giờ khi ComfyUI running; đóng session mồ côi
-- [ ] Test end-to-end trên Vast sau push image mới
+- [x] Test end-to-end trên Vast (Phase F.2 7/7 PASS)
 - [ ] Thêm provider khác: implement `GPUProvider` mới (chưa làm RunPod/multi-cloud)
 
 **Hardcode Vast còn lại (chấp nhận được):**
