@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
     git \
     wget \
     curl \
-    ffmpeg \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -63,6 +62,8 @@ COPY scripts/start.sh /app/start.sh
 COPY scripts/periodic-backup.sh /app/periodic-backup.sh
 RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/restore-environment.sh /app/start.sh /app/periodic-backup.sh \
     && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/restore-environment.sh /app/periodic-backup.sh
+
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8080
 

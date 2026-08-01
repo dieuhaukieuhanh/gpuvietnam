@@ -64,7 +64,7 @@ export const GPU_LINE_TO_PLAN = {
 export const GPU_IMAGE_REPO = 'dieuhaukieuhanh/gpuvietnam-comfyui';
 
 export const GPU_IMAGE_V3 =
-  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.3`;
+  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.4`;
 
 export const GPU_IMAGE_V4 =
   (process.env.GPUVIETNAM_COMFYUI_IMAGE_V4 ?? '').trim() ||
