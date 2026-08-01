@@ -62,8 +62,9 @@ COPY scripts/setup-workstation.sh /app/setup-workstation.sh
 COPY scripts/restore-environment.sh /app/restore-environment.sh
 COPY scripts/start.sh /app/start.sh
 COPY scripts/periodic-backup.sh /app/periodic-backup.sh
-RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/restore-environment.sh /app/start.sh /app/periodic-backup.sh \
-    && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/restore-environment.sh /app/periodic-backup.sh
+COPY scripts/filmmaker-resume.py /app/filmmaker-resume.py
+RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/restore-environment.sh /app/start.sh /app/periodic-backup.sh /app/filmmaker-resume.py \
+    && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/restore-environment.sh /app/periodic-backup.sh /app/filmmaker-resume.py
 
 EXPOSE 8080
 
