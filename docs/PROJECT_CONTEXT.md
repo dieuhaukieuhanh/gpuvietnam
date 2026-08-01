@@ -66,7 +66,7 @@
 | **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
 | **Dashboard UX — optimistic start/stop, boot progress, stop confirm, editor khi boot** | ✅ |
 | **Wallet tab merge** | ✅ |
-| ComfyUI image prod | ✅ `:v3.4` (Starter/Pro) + `:v4.1` (Studio); `:v3.5` + `:v4.2` đang build với filmmaker scripts |
+| ComfyUI image prod | ✅ `:v3.5` (Starter/Pro, VPS active) + `:v4.2` (Studio/5090) — đầy đủ ffmpeg + filmmaker scripts |
 | **Filmmaker Mode** | ✅ Frame Saver + Auto-Skip + Auto-Resume + Realtime Quality Check (InsightFace) |
 | Môi trường làm việc → workflow riêng | ✅ (boot + SSH runtime) |
 | ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
@@ -91,7 +91,7 @@
 | **Backup storage** | Cloudflare R2 qua `@aws-sdk/client-s3` |
 | **GPU backend** | Vast adapter (`src/lib/gpu/providers/vast/…`); **P0-A VPS:** `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true` |
 | **Lifecycle worker** | VPS systemd → `scripts/lifecycle-worker.mjs` (claim `machine_operations`) |
-| **ComfyUI image** | Docker Hub `:v3.4` (Starter/Pro) + `:v4.1` (Studio/5090); port **8080** |
+| **ComfyUI image** | Docker Hub `:v3.5` (Starter/Pro) + `:v4.2` (Studio/5090); port **8080** |
 | **Export Excel** | `xlsx` (admin customers) |
 
 **Quy ước UI:** CSS gốc từ HTML inject qua `<style dangerouslySetInnerHTML>`; script tương tác qua `src/lib/scripts/*.ts` + `new Function()` trong `useEffect`. Font: Inter + Space Grotesk. Màu: `#0A0A0F`, accent `#4F8EF7`.
@@ -536,7 +536,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 
 | Gói | GPU | Giá/giờ lẻ (VNĐ) | Combo1 (100+10h) | Combo2 (200+30h) |
 |-----|-----|------------------|------------------|------------------|
-| Starter | RTX 3090 | 9.900 | 990.000 | 1.980.000 |
+| Starter | RTX 3090 | 15.000 | 1.500.000 | 3.000.000 |
 | Pro | RTX 4090 | 20.000 | 2.000.000 | 4.000.000 |
 | Studio | RTX 5090 | 35.000 | 3.500.000 | 7.000.000 |
 

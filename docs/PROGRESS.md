@@ -7,7 +7,7 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.4` (Starter/Pro) + `:v4.1` (Studio); port **8080**; providers **Vast** (primary, P0-A VPS: **Vast-only**)
+- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.5` (Starter/Pro) + `:v4.2` (Studio); port **8080**; providers **Vast** (primary, P0-A VPS: **Vast-only**)
 - **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
 
 ## Thay đổi gần đây (2026-08)
@@ -24,8 +24,8 @@
 | **Editor khi đang boot** | ✅ "🚀 Vào phòng làm việc" thành nút chính trong lúc GPU khởi động |
 | **Token auto-refresh** | ✅ Tự refresh session trước stop/cancel/start — không còn silent fail khi token hết hạn |
 | **ComfyUI transparent reconnect** | ✅ Update upstream_url giữ nguyên workUrl khi auto-replace — tab không cần F5 |
-| **Image v3.4 (Starter/Pro)** | ✅ ffmpeg + filmmaker scripts + frame-quality-check |
-| **Image v4.1 (Studio/5090)** | ✅ Đầy đủ tính năng như v3.x |
+| **Image v3.5 (Starter/Pro)** | ✅ Đã build & push — ffmpeg + filmmaker scripts + frame-quality-check; VPS active |
+| **Image v4.2 (Studio/5090)** | ✅ Đã build & push — đầy đủ tính năng; code default đã là v4.2 |
 
 ## Thay đổi gần đây (2026-07)
 
@@ -92,10 +92,10 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 
 | Cột mốc | Trạng thái |
 |---------|------------|
-| Build Docker Image | ✅ `:v3.4`, `:v4.1` đã push; `:v3.5`, `:v4.2` đang build |
+| Build Docker Image | ✅ `:v3.5` + `:v4.2` đã build & push |
 | Chạy ComfyUI local (`http://localhost:8080`) | ✅ |
 | Push GHCR (legacy) | ✅ (đã chuyển sang Docker Hub) |
-| Push **Docker Hub** | ✅ `:v3.4` (Starter/Pro) + `:v4.1` (Studio) |
+| Push **Docker Hub** | ✅ `:v3.5` (Starter/Pro) + `:v4.2` (Studio/5090) |
 | Đặt Public trên registry | ✅ (Docker Hub) |
 
 **Thay đổi Dockerfile mới (2026-06):**
@@ -143,8 +143,8 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 - [x] **Push GHCR** (legacy) — đã chuyển sang Docker Hub
 - [x] **`setup-workstation.sh`** — 3 môi trường ComfyUI với bộ workflow riêng
 - [x] Dockerfile: PyTorch timeout/retry, pin `comfyui-frontend-package`, retry git clone
-- [x] **Push Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v3.4` + `:v4.1`
-- [x] **ffmpeg** tích hợp vào v3.4 cho video support
+- [x] **Push Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v3.5` + `:v4.2`
+- [x] **ffmpeg** tích hợp vào v3.5 cho video support
 - [x] **Filmmaker scripts** — filmmaker-resume.py, frame-quality-check.py
 - [x] **Frame Saver + Frame Skip custom nodes** (ComfyUI extension)
 
@@ -152,22 +152,22 @@ Môi trường AI Art sẵn sàng cho GPUVietnam — chạy ComfyUI trên GPU NV
 
 ```bash
 # Tag & push (sau khi build xong)
-docker push dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
-docker push dieuhaukieuhanh/gpuvietnam-comfyui:v4.1
+docker push dieuhaukieuhanh/gpuvietnam-comfyui:v3.5
+docker push dieuhaukieuhanh/gpuvietnam-comfyui:v4.2
 
 # Pull trên Vast / máy khác
-docker pull dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
+docker pull dieuhaukieuhanh/gpuvietnam-comfyui:v3.5
 docker run --gpus all -p 8080:8080 \
   -e GPUVIETNAM_WORKSTATION=commerce-product \
   dieuhaukieuhanh/gpuvietnam-comfyui:v3.4
 ```
 
 > GHCR (`ghcr.io/dieuhaukieuhanh/gpuvietnam-comfyui`) — **legacy**, không dùng cho deploy mới.
-> Tag mới nhất: `:v3.4` (Starter/Pro), `:v4.1` (Studio/5090). Đang build `:v3.5` + `:v4.2` với filmmaker scripts.
+> Tag mới nhất: `:v3.5` (Starter/Pro), `:v4.2` (Studio/5090). Đầy đủ ffmpeg + filmmaker scripts.
 
 **Còn lại (tích hợp Docker):**
-- [x] Hoàn tất build + push Docker Hub (`:v3.4`, `:v4.1`)
-- [ ] Build + push `:v3.5` + `:v4.2` (đang build, thêm filmmaker scripts)
+- [x] Hoàn tất build + push Docker Hub (`:v3.5`, `:v4.2`)
+- [x] Build `:v3.5` + `:v4.2` với filmmaker scripts
 - [ ] Test workflow từng môi trường sau push (Character / Commerce / Video AI)
 - [ ] Chạy `download-models.sh` trên instance Vast (SDXL, RealVisXL, Real-ESRGAN)
 
@@ -658,9 +658,9 @@ Bảng `notifications` dùng chung với các tính năng khác — không nằm
 
 | GPU (gói) | Giá vốn Vast | Giá bán KH | Biên gộp ~ |
 |-----------|--------------|------------|------------|
-| RTX 3090 (Starter) | 5.500 | **9.900** | ~44% |
-| RTX 4090 1x (Pro) | 11.000 | **22.000** | ~50% |
-| RTX 4090 2x (Studio) | 21.000 | **40.000** | ~48% |
+| RTX 3090 (Starter) | 5.500 | **15.000** | ~63% |
+| RTX 4090 1x (Pro) | 11.000 | **20.000** | ~45% |
+| RTX 5090 1x (Studio) | 21.000 | **35.000** | ~40% |
 
 **Combo (mua gói lần đầu / tái tục cùng billing):**
 
@@ -674,9 +674,9 @@ Bảng `notifications` dùng chung với các tính năng khác — không nằm
 
 | Gói | Theo giờ | Combo1 (100h) | Combo2 (200h) |
 |-----|----------|---------------|---------------|
-| Starter (3090) | 9.900 | 990.000 | 1.980.000 |
-| Pro (4090 1x) | 22.000 | 2.200.000 | 4.400.000 |
-| Studio (4090 2x) | 40.000 | 4.000.000 | 8.000.000 |
+| Starter (3090) | 15.000 | 1.500.000 | 3.000.000 |
+| Pro (4090 1x) | 20.000 | 2.000.000 | 4.000.000 |
+| Studio (5090 1x) | 35.000 | 3.500.000 | 7.000.000 |
 
 **Thưởng giờ khi tái tục** (`computeRenewQuote` — `user-plan-inventory.js`):
 
@@ -692,7 +692,7 @@ Tổng giờ tái tục = `baseHours + comboBonus (10/30) + renewBonus (3% nếu
 - **Bảng giá:** `HomePricingSection.tsx` — trang chủ `#pricing`, `/bang-gia`
 - Sửa giá trên Admin **Edit giá** hoặc `gpu-pricing-defaults.js` → checkout, dashboard, auto-renew đồng bộ
 
-> **Lưu ý DB:** Nếu đã lưu `gpu_pricing_config` cũ (18k/30k/50k), cập nhật qua Admin **Edit giá** hoặc PUT API để khớp bảng trên.
+> **Lưu ý DB:** Nếu đã lưu `gpu_pricing_config` cũ (15k/20k/35k), cập nhật qua Admin **Edit giá** hoặc PUT API để khớp bảng trên.
 
 ### Thanh toán gói từ `/bang-gia` ✅
 
