@@ -61,6 +61,8 @@ COPY scripts/restore-environment.sh /app/restore-environment.sh
 COPY scripts/start.sh /app/start.sh
 COPY scripts/periodic-backup.sh /app/periodic-backup.sh
 COPY scripts/filmmaker-resume.py /app/filmmaker-resume.py
+COPY scripts/frame-quality-check.py /app/frame-quality-check.py
+COPY scripts/frame-quality-requirements.txt /app/frame-quality-requirements.txt
 RUN sed -i 's/\r$//' /app/download-models.sh /app/setup-workstation.sh /app/restore-environment.sh /app/start.sh /app/periodic-backup.sh /app/filmmaker-resume.py \
     && chmod +x /app/setup-workstation.sh /app/start.sh /app/download-models.sh /app/restore-environment.sh /app/periodic-backup.sh /app/filmmaker-resume.py
 
