@@ -7,20 +7,35 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (Docker Hub); port **8080**; providers **Clore + Vast** (P0-A VPS: **Clore-only**)
+- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.4` (Starter/Pro) + `:v4.1` (Studio); port **8080**; providers **Vast** (primary, P0-A VPS: **Vast-only**)
 - **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
+
+## Thay đổi gần đây (2026-08)
+
+| Hạng mục | Trạng thái |
+|----------|------------|
+| **P0-A Acceptance Smoke (Phase F.2)** | ✅ **7/7 PASS** — Start → Comfy → Runtime Boot Events (pre_restore_started, pre_restore_complete, comfy_started) |
+| **Session Continuity (Backup → Destroy → Start → Restore)** | ✅ E2E verified; workspace auto-restore không giới hạn 200MB; transparent ComfyUI reconnect trên auto-replace |
+| **Vast-only routing** | ✅ VPS worker chốt `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true`; fix `isCloreOnlyMode` chặn Vast |
+| **R2 Backup/Restore** | ✅ Đã cấu hình R2 trên VPS; backup token luôn được issue (không còn gated behind auto-backup) |
+| **GPUVIETNAM_PUBLIC_API_URL fallback** | ✅ Fallback cứng `https://gpuvietnam.com` nếu env không set |
+| **Gate timeout** | ✅ `comfyColdStartExtraMs` 90s → 300s cho host Vast chậm pull image |
+| **Server-side boot events** | ✅ Worker ghi thẳng `runtime_boot_events` (không phụ thuộc container outbound network) |
+| **Editor khi đang boot** | ✅ "🚀 Vào phòng làm việc" thành nút chính trong lúc GPU khởi động |
+| **Token auto-refresh** | ✅ Tự refresh session trước stop/cancel/start — không còn silent fail khi token hết hạn |
+| **ComfyUI transparent reconnect** | ✅ Update upstream_url giữ nguyên workUrl khi auto-replace — tab không cần F5 |
+| **Image v3.4 (Starter/Pro)** | ✅ ffmpeg + filmmaker scripts + frame-quality-check |
+| **Image v4.1 (Studio/5090)** | ✅ Đầy đủ tính năng như v3.x |
 
 ## Thay đổi gần đây (2026-07)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
 | **Architecture v2.0 CP / Runtime** | ✅ Freeze + ADR-005; Continuity A→B (Clore) đã chứng minh — Gate2 *PASS WITH CONSTRAINTS* |
-| **P0-A Durable start (lifecycle worker)** | 🟡 Code + migration 0049 + unit tests + VPS systemd **đã lên**; **chưa đóng** acceptance smoke (Start → Comfy → `completed`) |
-| **VPS lifecycle worker** | ✅ Host `gv-lifecycle-worker-*`; unit `gpuvietnam-lifecycle-worker`; **chốt `GPU_CLORE_ONLY=true` trên systemd + environ process** (2026-07-24) |
+| **P0-A Durable start (lifecycle worker)** | ✅ Đã đóng acceptance smoke — Start → Comfy → `completed` PASS |
+| **VPS lifecycle worker** | ✅ Host `gv-lifecycle-worker-*`; unit `gpuvietnam-lifecycle-worker`; **chốt Vast-only** (2026-08-01) |
 | **Clore provider + bad-host / orphan / gate** | ✅ Adapter + reconcile; Continuity prod E2E trước đó PASS |
-| **Vast disk-only / storage billing** | 🟡 Harden local (`isVastDiskOnlyBilling`, `gpuCost=0`, `gpu_frac=1`); **chưa deploy** lên VPS (`1f700cd`); đêm smoke vẫn thấy Vast disk-only khi CLORE_ONLY chưa vào process |
-| **Single-start / cancel / dual-run max 2** | ✅ Trong `1f700cd` (+ docs LIFECYCLE_WORKER) |
-| **Go-Live order** | 🔴 P0-A smoke → P0-B billing T11 → P0-C alerts → P0-D E2E khách; Dual Run / warm pool **sau** |
+| **Go-Live order** | 🟡 P0-A ✅ → P0-B billing T11 → P0-C alerts → P0-D E2E khách; Dual Run / warm pool **sau** |
 | **Auto-stop theo gói đang dùng** | ✅ Remaining/out-of-credit chỉ tính Starter/Pro/Studio đang chạy; hết giờ gói đó → tắt dù còn giờ gói khác |
 | **Cảnh báo 30 phút trước tắt (hết giờ)** | ✅ `credit_warning_sent` + notification `credit_warning`; UI `lowCreditWarning` = 30 phút |
 | **SCB 4.0 đóng băng** | ✅ Tag `scb-4.0` (commit `bbed8da`); ADR-004 ghi nhận 3 ngoại lệ product-layer |
@@ -42,6 +57,27 @@
 > **Sau P0-A PASS:** P0-B T11 billing → P0-C alerts → P0-D E2E khách.  
 > **Không làm ngay:** Dual Run product, warm pool, đổi GPU không reload trang.  
 > **Tech debt liên quan:** deploy harden Vast disk-only lên VPS; cân nhiễu gate 502 vs thời gian pull image Clore.
+
+## Filmmaker Mode ✅
+
+Dành cho KH làm phim (render 5000+ frame, 10-24 tiếng):
+
+| Step | File | Chức năng |
+|------|------|-----------|
+| **1** | `comfyui-extensions/gpuvietnam_cp_sync/nodes.py` | `GpuvietnamFrameSaver` — save ảnh + upload R2 từng frame. `GpuvietnamFrameSkip` — check frame đã có trên R2 → skip |
+| **2** | `scripts/filmmaker-resume.py` | Auto-skip frame đã render, resume từ checkpoint, **realtime quality check + auto-repair** |
+| **3** | `scripts/start.sh` | Auto-detect job dang dở khi container boot → tự chạy filmmaker-resume |
+| **4** | `scripts/frame-quality-check.py` | 3 tầng soi lỗi: MediaPipe Face+Hands + InsightFace Identity + SSIM temporal. Chạy trên GPU hoặc VPS CPU |
+
+**Kiến trúc C — Realtime quality check trên GPU:**
+```
+for frame 1..5000:
+  1. Render frame (ComfyUI, 20s)
+  2. Quality check (GPU, 0.3s): MediaPipe + InsightFace
+  3. PASS → upload R2 → next frame
+     FAIL → seed+1 → render lại (max 3 lần)
+```
+→ **0 frame lỗi lên R2. KH render 24h, sáng dậy 5000 frame sạch.**
 
 ## Docker Image (ComfyUI) ✅
 

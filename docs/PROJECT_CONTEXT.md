@@ -59,21 +59,24 @@
 | Ví Nạp Trước, mua gói, tái tục, trial 3h | ✅ |
 | GPUService + Vast + **Clore** adapters | ✅ |
 | **CP/Runtime Architecture v2.0** | ✅ Frozen (ADR-005); Continuity A→B chứng minh trên Clore |
-| **P0-A durable Start** (enqueue + VPS worker) | 🟡 Code/VPS lên; **chưa** acceptance smoke PASS |
-| **VPS lifecycle worker + `GPU_CLORE_ONLY`** | ✅ Chốt 2026-07-24 (systemd + environ verified) |
+| **P0-A durable Start** (enqueue + VPS worker) | ✅ **Phase F.2: 7/7 PASS** (boot events, v3.4, R2 restore) |
+| **VPS lifecycle worker + Vast-only** | ✅ Chốt 2026-08-01 (systemd `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true`) |
+| **Session Continuity** (Backup → Destroy → Start → Restore) | ✅ E2E verified; auto-restore không giới hạn 200MB |
 | Billing theo phiên (combo giờ + hourly ví) | ✅ logic; P0-B T11 E2E **chưa** ký |
 | **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
-| **Dashboard UX — optimistic start/stop, boot progress, stop confirm** | ✅ |
+| **Dashboard UX — optimistic start/stop, boot progress, stop confirm, editor khi boot** | ✅ |
 | **Wallet tab merge** | ✅ |
-| ComfyUI image prod | ✅ `dieuhaukieuhanh/gpuvietnam-comfyui:v3` (không overwrite `:v3` tùy tiện) |
+| ComfyUI image prod | ✅ `:v3.4` (Starter/Pro) + `:v4.1` (Studio); `:v3.5` + `:v4.2` đang build với filmmaker scripts |
+| **Filmmaker Mode** | ✅ Frame Saver + Auto-Skip + Auto-Resume + Realtime Quality Check (InsightFace) |
 | Môi trường làm việc → workflow riêng | ✅ (boot + SSH runtime) |
+| ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
+| Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
 | Dashboard "Chạy workflow" trên GPU | ❌ stub / CP Job path đang mở rộng |
 | Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
 | VNPay/PayOS tự động | ❌ dùng chuyển khoản + admin duyệt |
 
-> **Go-Live (owner order):** P0-A → P0-B billing → P0-C alerts → P0-D E2E khách.  
-> **Tạm dừng (2026-07-24):** sau khi chốt Clore-only trên VPS; tiếp theo = Start sạch P0-A acceptance.  
+> **Go-Live (owner order):** P0-A ✅ → P0-B billing T11 → P0-C alerts → P0-D E2E khách.  
 > Chi tiết: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md), [`docs/PROGRESS.md`](PROGRESS.md).
 
 ---
