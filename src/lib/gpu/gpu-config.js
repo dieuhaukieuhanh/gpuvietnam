@@ -70,7 +70,7 @@ export const GPU_IMAGE_V4 =
   (process.env.GPUVIETNAM_COMFYUI_IMAGE_V4 ?? '').trim() ||
   (process.env.DEFAULT_GPU_IMAGE ?? '').trim() ||
   (process.env.GPUVIETNAM_COMFYUI_IMAGE ?? '').trim() ||
-  `${GPU_IMAGE_REPO}:v4.1`;
+  `${GPU_IMAGE_REPO}:v4.2`;
 
 /**
  * Resolve ComfyUI image for a GPU line.
