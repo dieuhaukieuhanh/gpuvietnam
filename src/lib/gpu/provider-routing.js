@@ -153,8 +153,8 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
     }
     return filterOrder([forcedPrimary, failoverProvider(forcedPrimary)]);
   }
-  // Default: Vast primary, Clore failover, Salad backup (last resort).
-  return filterOrder(['vast', 'clore', 'salad']);
+  // Default: Salad primary (cheapest, largest supply), Vast failover, Clore backup.
+  return filterOrder(['salad', 'vast', 'clore']);
 }
 
 /**

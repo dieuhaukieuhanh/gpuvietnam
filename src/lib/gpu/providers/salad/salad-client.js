@@ -355,9 +355,11 @@ export class SaladClient {
         image: params.image,
         command: [],           // use image default CMD
         resources: {
+          cpu: 8,
+          memory: 32768,     // 32 GB RAM — max for consumer nodes
           gpu_classes: [params.gpuClassUuid],
-          storage_amount: params.diskSize ?? 53_687_091_200, // 50 GiB (Salad max)
-          shm_size: 1024,     // 1 GB shared memory for CUDA/PyTorch
+          storage_amount: 53_687_091_200, // 50 GiB (Salad max)
+          shm_size: 2048,    // 2 GB shared memory
         },
         priority: this.priority,
         environment_variables: env,
@@ -523,7 +525,11 @@ export class SaladClient {
     }
 
     const gpuLine = params.gpuLine || 'rtx3090';
-    const image = params.image ?? resolveGpuImage(gpuLine);
+    // Salad uses slim images (consumer nodes can't extract 20GB full images).
+    const saladImage =
+      (process.env.SALAD_GPU_IMAGE ?? '').trim() ||
+      resolveGpuImage(gpuLine);  // use v3.6/v4.3 — same as Vast/Clore
+    const image = params.image ?? saladImage;
     const port = params.port ?? DEFAULT_GPU_PORT;
 
     // 2. Resolve GPU class UUID

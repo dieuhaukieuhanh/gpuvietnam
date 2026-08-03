@@ -177,8 +177,8 @@ export const NO_AVAILABLE_WORKSTATION_MESSAGE = 'No Available Workstation';
  * Journal evidence: Clore often rents + http_pub but public HTTP proxy fails.
  */
 export const PROVIDER_ROUTING = {
-  sequence: /** @type {const} */ (['vast', 'vast', 'vast', 'clore', 'salad']),
-  providers: /** @type {const} */ (['vast', 'clore', 'salad']),
+  sequence: /** @type {const} */ (['salad', 'salad', 'salad', 'vast', 'clore']),
+  providers: /** @type {const} */ (['salad', 'vast', 'clore']),
 };
 
 /**
