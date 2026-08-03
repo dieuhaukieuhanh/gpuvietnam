@@ -44,20 +44,21 @@
 | **Mô hình kinh doanh** | Resell GPU marketplace + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
 | **Đối tượng chính** | Freelancer AI Art (~60%), sinh viên/người mới (~25%), agency nhỏ (~15%) |
 | **Điểm khác biệt (mục tiêu)** | Workspace/workflow không phụ thuộc một GPU; failover compute; thanh toán VN |
-| **Backend GPU thực tế** | **Clore + Vast** (adapter); Go-Live/P0-A **ưu tiên Clore** (`GPU_CLORE_ONLY=true` trên VPS worker). Thuê theo giờ khi KH bật máy |
+| **Backend GPU thực tế** | **Vast + Clore + Salad** (adapter); routing Vast → Clore → Salad (Salad = backup); Go-Live/P0-A **Vast-only** (`GPU_VAST_ONLY=true` trên VPS worker). Thuê theo giờ khi KH bật máy |
 | **Control Plane** | `gpuvietnam.com` (Vercel Next) — session, billing, enqueue start |
 | **Lifecycle worker** | VPS Linux always-on (`gpuvietnam-lifecycle-worker`) — claim/execute `user_start_provision` |
 
 ---
 
-## 2. Trạng thái triển khai (2026-07)
+## 2. Trạng thái triển khai (2026-08)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
 | Next.js app (marketing + auth + checkout + dashboard + admin) | ✅ Production (`gpuvietnam.com`) |
-| Supabase Auth + migrations (kể cả P0-A 0049) | ✅ |
+| **Auth Hardening (P0+P1+P2)** | ✅ **2026-08-02** — Rate limit, JWT middleware, secure cookie/headers, anti-enumeration, OTP lock, password strength, audit log, sign-out all |
+| Supabase Auth + migrations (kể cả P0-A 0049 + auth-audit-log 0052) | ✅ |
 | Ví Nạp Trước, mua gói, tái tục, trial 3h | ✅ |
-| GPUService + Vast + **Clore** adapters | ✅ |
+| GPUService + Vast + Clore + **Salad** (backup) adapters | ✅ |
 | **CP/Runtime Architecture v2.0** | ✅ Frozen (ADR-005); Continuity A→B chứng minh trên Clore |
 | **P0-A durable Start** (enqueue + VPS worker) | ✅ **Phase F.2: 7/7 PASS** (boot events, v3.4, R2 restore) |
 | **VPS lifecycle worker + Vast-only** | ✅ Chốt 2026-08-01 (systemd `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true`) |
@@ -117,7 +118,7 @@ gpuvietnam/
 │   │   ├── gpu-sessions.js
 │   │   └── scripts/        # JS gốc từ HTML
 │   ├── hooks/              # useDashboard, useUserPlans…
-│   └── middleware.ts       # Bảo vệ /dashboard/* (cookie gpuvietnam-auth)
+│   └── middleware.ts       # Bảo vệ /dashboard/* (JWT verify HS256 với SUPABASE_JWT_SECRET)
 ├── supabase/               # 32 file SQL (chạy thủ công, không có migrations CLI)
 ├── scripts/                # Shell: start.sh, setup-workstation.sh, download-models.sh
 ├── workflows/              # 5 workflow JSON stock
@@ -363,10 +364,24 @@ POST /api/user/change-environment
 | Đăng ký | `POST /api/register` → `auth.admin.createUser` + upsert `public.users` + SMS OTP |
 | Xác thực SĐT | `POST /api/otp/verify` → `otp_verifications` + `phone_verified=true` |
 | Đăng nhập | `POST /api/auth/login` → Supabase password grant + sync role |
-| Session | JWT Supabase + cookie `gpuvietnam-auth=1` (middleware dashboard) |
+| Session | JWT Supabase + cookie `gpuvietnam-auth` + `gpuvietnam-token` (middleware verify JWT bằng Web Crypto API) |
 | Admin | `public.users.role = 'admin'` hoặc email trong `ADMIN_EMAILS` |
 
 **Không dùng** trigger `on_auth_user_created` — profile sync trong API register (`supabase/fix-trigger.sql`).
+
+### Hardening (2026-08-02)
+
+| Lớp bảo vệ | Cơ chế |
+|------------|--------|
+| **Rate limit** | Register 5/IP/15min · Login 10/IP/15min · OTP send 3/phone/5min + 10/IP/hr + 60s cooldown · OTP verify 5/phone/5min + lock 15 phút |
+| **Middleware** | Verify JWT HS256 signature với `SUPABASE_JWT_SECRET` (không chỉ check cookie `gpuvietnam-auth=1`) |
+| **Cookie** | `Secure` flag khi HTTPS; token trong `gpuvietnam-token` |
+| **Headers** | HSTS · CSP · X-Frame-Options: DENY · X-Content-Type-Options: nosniff |
+| **Anti-enumeration** | Login trả về cùng 1 error message |
+| **OTP** | Single-use · Brute-force lock · Cooldown resend · TTL 5 phút |
+| **Password** | Strength client+server (min 8, uppercase, digit) · Confirm password · TTL 1h auto-generated password · Session invalidation on change |
+| **Audit** | `auth_audit_log` — register, login, OTP, password change, signout all |
+| **Sign-out all** | `POST /api/auth/signout-all` — `signOut(userId, 'global')` + nút UserMenu |
 
 ---
 
@@ -480,6 +495,7 @@ docker push dieuhaukieuhanh/gpuvietnam-comfyui:v1
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWT_SECRET=              # Lấy từ Dashboard → Settings → API → JWT Secret (middleware verify token)
 
 # Vast.ai (bắt buộc khi spawn GPU)
 VAST_AI_KEY=                    # hoặc VAST_API_KEY
@@ -583,6 +599,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 
 | Hạng mục | Chi tiết |
 |----------|----------|
+| **Auth Hardening P0+P1+P2 (2026-08-02)** | Rate limit 5 endpoints + OTP lock/cooldown/single-use; Middleware JWT verify; Secure cookie + HSTS/CSP/X-Frame/nosniff; Anti-enumeration login; Fix `phone_verified` reset; Password strength client+server + confirm password; Session invalidation on password change; `pending_login_password` TTL; Audit log `auth_audit_log` (migration 0052); Sign-out all devices |
 | **P0-A + VPS worker (2026-07)** | `start-machine` enqueue durable; VPS `gpuvietnam-lifecycle-worker`; docs `LIFECYCLE_WORKER.md` / `GO_LIVE_READINESS_AUDIT.md` |
 | **Clore-only chốt trên VPS (2026-07-24)** | `Environment=GPU_CLORE_ONLY=true` trên systemd + verify `/proc/.../environ`; tạm dừng trước Start sạch acceptance |
 | **Smoke note (2026-07-23)** | Khi CLORE_ONLY chưa vào process: dual Vast+Clore, Vast disk-only (`gpuCost=0`); Clore 502 walk đổi host liên tục → hết order. Không phải “Clore API chết”. |
@@ -636,4 +653,4 @@ Không Dual Run / warm pool trừ khi owner mở.
 
 ---
 
-*Tài liệu cập nhật: 2026-07-24 — P0-A VPS + Clore-only chốt; Continuity/ADR-005; SCB 4.0 (`scb-4.0`). Chi tiết tiến độ: `docs/PROGRESS.md`.*
+*Tài liệu cập nhật: 2026-08-02 — Auth Hardening P0+P1+P2; P0-A VPS + Vast-only; Continuity/ADR-005; SCB 4.0 (`scb-4.0`). Chi tiết tiến độ: `docs/PROGRESS.md`.*

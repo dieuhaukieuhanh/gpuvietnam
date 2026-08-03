@@ -7,14 +7,20 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.5` (Starter/Pro) + `:v4.2` (Studio); port **8080**; providers **Vast** (primary, P0-A VPS: **Vast-only**)
+- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.6` (Starter/Pro) + `:v4.3` (Studio); port **8080**; providers **Vast** (primary) + **Clore** (secondary) + **Salad** (backup); P0-A VPS: **Vast-only**
 - **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
 
 ## Thay đổi gần đây (2026-08)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
-| **P0-A Acceptance Smoke (Phase F.2)** | ✅ **7/7 PASS** — Start → Comfy → Runtime Boot Events (pre_restore_started, pre_restore_complete, comfy_started) |
+| **SaladCloud GPU Provider (backup)** | ✅ SaladClient REST API + ProviderAdapter + ProvisionGate — 38 tests pass; routing: Vast → Clore → Salad (last resort) |
+| **Image IPv6 dual-stack** | ✅ `v3.6` / `v4.3` — `COMFYUI_LISTEN` env var (default `::`, Vast override `0.0.0.0`) |
+| **Auth Hardening — Phase 1 (P0)** | ✅ **13/13** — Rate limit, JWT middleware, Secure cookie, security headers, anti-enumeration, fix phone_verified reset, OTP lock + cooldown + single-use |
+| **Auth Hardening — Phase 2 (P1)** | ✅ **4/5** — Password strength (client + server), confirm password, session invalidation on password change, pending_password TTL 1h |
+| **Auth Hardening — Phase 3 (P2)** | ✅ **2/4** — Audit log (`auth_audit_log`), sign-out all devices |
+| **Storage Plans — Phân biệt theo gói GPU** | ✅ SSD: Starter 30GB / Pro 50GB / Studio 100GB — Backup: Starter 50GB / Pro 100GB / Studio 200GB |
+| **P0-A Acceptance Smoke (Phase F.2)** | ✅ **7/7 PASS** — Start → Comfy → Runtime Boot Events |
 | **Session Continuity (Backup → Destroy → Start → Restore)** | ✅ E2E verified; workspace auto-restore không giới hạn 200MB; transparent ComfyUI reconnect trên auto-replace |
 | **Vast-only routing** | ✅ VPS worker chốt `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true`; fix `isCloreOnlyMode` chặn Vast |
 | **R2 Backup/Restore** | ✅ Đã cấu hình R2 trên VPS; backup token luôn được issue (không còn gated behind auto-backup) |
@@ -24,8 +30,8 @@
 | **Editor khi đang boot** | ✅ "🚀 Vào phòng làm việc" thành nút chính trong lúc GPU khởi động |
 | **Token auto-refresh** | ✅ Tự refresh session trước stop/cancel/start — không còn silent fail khi token hết hạn |
 | **ComfyUI transparent reconnect** | ✅ Update upstream_url giữ nguyên workUrl khi auto-replace — tab không cần F5 |
-| **Image v3.5 (Starter/Pro)** | ✅ Đã build & push — ffmpeg + filmmaker scripts + frame-quality-check; VPS active |
-| **Image v4.2 (Studio/5090)** | ✅ Đã build & push — đầy đủ tính năng; code default đã là v4.2 |
+| **Image v3.6 (Starter/Pro)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; ffmpeg + filmmaker scripts + frame-quality-check; VPS active |
+| **Image v4.3 (Studio/5090)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; đầy đủ tính năng; code default đã là v4.3 |
 
 ## Thay đổi gần đây (2026-07)
 
@@ -354,13 +360,14 @@ VAST_SSH_PRIVATE_KEY_PATH=C:/Users/Lenovo/.ssh/id_rsa
 | `supabase/gpu-sessions.sql` | Bảng `gpu_sessions` — lịch sử phiên GPU |
 | `supabase/seed-gpu-sessions.sql` | 7 phiên mẫu cho user đầu tiên |
 | `supabase/support-sessions.sql` | Bảng `support_sessions` — phiên hỗ trợ từ xa Admin xem màn hình KH |
+| `supabase/auth-audit-log.sql` | **Mới (P2):** Bảng `auth_audit_log` — ghi nhận sự kiện xác thực |
 | `supabase/admin-approve-payment.sql` | Mẫu SQL duyệt CK thủ công |
 
 **Gán admin:** chạy `supabase/set-admin-role.sql` (email `admin@gpuvietnam.com`) hoặc `update public.users set role = 'admin' where email = '...';`
 
 **Redirect admin:** Tài khoản `role = admin` sau đăng nhập → `/admin` (API login trả `redirect`). Menu header Admin riêng (không Dashboard/Cài đặt/Bộ nhớ KH). Lib: `post-login-redirect.ts`, `user-role.js` (`syncUserRoleOnLogin`, `ADMIN_EMAILS`), `GET /api/auth/me`.
 
-## Luồng Auth ✅
+## Luồng Auth ✅ (Hardened 2026-08-02)
 
 ```
 /register → POST /api/register → /verify-otp → POST /api/otp/verify → session
@@ -369,12 +376,26 @@ VAST_SSH_PRIVATE_KEY_PATH=C:/Users/Lenovo/.ssh/id_rsa
 /dat-lai-mat-khau → đặt mật khẩu mới (link từ email)
 ```
 
+### Hardening (2026-08-02)
+
+| Lớp bảo vệ | Cơ chế |
+|------------|--------|
+| **Rate limit** | Register: 5/IP/15min · Login: 10/IP/15min · OTP send: 3/phone/5min + 10/IP/hr + 60s cooldown · OTP verify: 5/phone/5min + lock 15 phút sau 5 lần sai |
+| **Middleware JWT** | Verify HS256 signature bằng Web Crypto API với `SUPABASE_JWT_SECRET` — không còn chỉ check cookie `gpuvietnam-auth=1` |
+| **Cookie** | `Secure` flag khi HTTPS; cookie `gpuvietnam-token` chứa access_token để middleware verify |
+| **Security headers** | HSTS, CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy |
+| **Anti-enumeration** | Login trả về cùng error message cho mọi trường hợp sai credentials |
+| **OTP protection** | Lock sau 5 lần sai (15 phút) · Single-use (query `verified=false`) · Cooldown resend 60s · TTL 5 phút |
+| **Password** | Strength validation (min 8, uppercase + digit) cả client + server · Confirm password · TTL 1h cho auto-generated password · Invalidate sessions khi đổi password |
+| **Audit log** | Bảng `auth_audit_log` ghi register, login success/fail, OTP verify/send, password change, signout all |
+| **Sign-out all** | `POST /api/auth/signout-all` — `signOut(userId, 'global')` + nút trong UserMenu |
+
 - **UI Login / Register:** layout 2 cột full-viewport (`AuthPageShell.tsx`) — hero trái (desktop), form trắng phải; mobile chỉ form, không scroll trừ màn h `<500px` cao
-- `AuthContext` + cookie `gpuvietnam-auth`
-- Middleware bảo vệ `/dashboard`, `/dashboard/*`
+- `AuthContext` + cookie `gpuvietnam-auth` + `gpuvietnam-token`
+- Middleware bảo vệ `/dashboard`, `/dashboard/*` — verify JWT thật (không chỉ check cookie)
 - Reset password: cấu hình Supabase **Redirect URL** `.../dat-lai-mat-khau`; email mặc định từ `noreply@mail.app.supabase.io` — muốn hiển thị **GPUVietnam** cần **Custom SMTP** + domain riêng
 
-**File chính:** `AuthPageShell.tsx`, `auth-pages.styles.ts`, `LoginPage.tsx`, `RegisterPage.tsx`, `AuthContext.tsx`, `src/middleware.ts`, `src/pages/api/register.js`, `src/pages/api/otp/*`, `src/pages/api/auth/forgot-password.js`
+**File chính:** `AuthPageShell.tsx`, `auth-pages.styles.ts`, `LoginPage.tsx`, `RegisterPage.tsx`, `AuthContext.tsx`, `src/middleware.ts`, `src/pages/api/register.js`, `src/pages/api/otp/*`, `src/pages/api/auth/*`, `src/lib/rate-limit.js`, `src/lib/audit-log.js`, `supabase/auth-audit-log.sql`
 
 ## Luồng Checkout & Thanh toán ✅
 
@@ -878,8 +899,9 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | GET | `/api/auth/me` | Role user đang đăng nhập (`admin` / `user`) |
 | POST | `/api/auth/login` | Email/SĐT + password (+ trả `role`) |
 | POST | `/api/auth/forgot-password` | Gửi email reset |
-| POST | `/api/otp/send` | Gửi lại OTP |
-| POST | `/api/otp/verify` | Verify + session |
+| POST | `/api/otp/send` | Gửi lại OTP (rate limit + cooldown) |
+| POST | `/api/otp/verify` | Verify + session (rate limit + brute-force lock) |
+| POST | `/api/auth/signout-all` | **Mới:** Đăng xuất tất cả thiết bị |
 | POST | `/api/payment/confirm` | Ghi `pending_payment` (CK gói GPU) |
 | POST | `/api/payment/pay-wallet` | Mua gói GPU bằng Ví — kích hoạt ngay |
 | POST | `/api/trial/activate` | Dùng thử 3h |
@@ -983,6 +1005,8 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | `src/lib/gpu/providers/vast/vast-provider.js` | Vast.ai implementation |
 | `src/lib/currency.js` | Quy đổi USD → VNĐ cho giá GPU/h |
 | `src/lib/site-url.js` | URL gốc cho redirect email |
+| `src/lib/rate-limit.js` | **Mới (2026-08):** In-memory rate limiter — `checkRateLimit`, `isLocked`, `setLock`, `clearLock` |
+| `src/lib/audit-log.js` | **Mới (2026-08):** Ghi auth events vào `public.auth_audit_log` |
 | `src/components/layout/PublicHeader.tsx` | Header công khai + auth |
 | `src/components/layout/UserMenu.tsx` | Dropdown KH hoặc Admin (theo `isAdmin`) |
 | `src/components/dashboard/WalletDropdown.tsx` | Modal Ví căn giữa header Dashboard (3 tab) |
@@ -1073,6 +1097,7 @@ Chi tiết acceptance: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECY
 
 ## Đã xong (gần đây)
 
+- [x] **Auth Hardening P0+P1+P2 (2026-08-02)** — Rate limit 5 endpoints + OTP lock/cooldown/single-use; Middleware JWT verify (Web Crypto HS256); Secure cookie + Security headers (HSTS/CSP/X-Frame/nosniff); Anti-enumeration login; Fix `phone_verified` reset; Password strength client+server + confirm password; Session invalidation on password change; `pending_login_password` TTL 1h; Audit log `auth_audit_log`; Sign-out all devices
 - [x] **P0-A code path** — enqueue `user_start_provision` + VPS `scripts/lifecycle-worker.mjs` + systemd unit; bỏ fire-and-forget provision trên serverless
 - [x] **VPS Clore-only chốt** — `Environment=GPU_CLORE_ONLY=true` trên unit + verify environ (2026-07-24)
 - [x] **Continuity A→B (Clore)** — prod E2E trước đó; Gate2 PASS WITH CONSTRAINTS
