@@ -205,7 +205,7 @@ export async function runCloreProvisionGate(client, input) {
     cfg.comfyWorkflowTimeoutMs + cfg.comfyColdStartExtraMs + cfg.gpuCudaTimeoutMs;
   const t1 = Date.now();
   // Fail-fast edge errors so bad hosts don't burn the full ~5 min HTTP budget:
-  // Proxy Not Found ~90s (rarely recovers); sustained 502 ~180s (Comfy may still be booting).
+  // Proxy Not Found ~180s (container boot takes 2-3 min); sustained 502 ~240s (beyond this = real failure).
   const http = await waitForHttpCustomerPath(candidates, {
     gpuLine,
     timeoutMs: httpTimeout,
@@ -213,11 +213,11 @@ export async function runCloreProvisionGate(client, input) {
     proxyNotFoundFailMs:
       Number(process.env.CLORE_PROXY_NOT_FOUND_FAIL_MS) > 0
         ? Number(process.env.CLORE_PROXY_NOT_FOUND_FAIL_MS)
-        : 90_000,
+        : 180_000,  // 3 min — container boot takes 2-3 min before HTTP responds
     badGatewayFailMs:
       Number(process.env.CLORE_BAD_GATEWAY_FAIL_MS) > 0
         ? Number(process.env.CLORE_BAD_GATEWAY_FAIL_MS)
-        : 180_000,
+        : 240_000,  // 4 min — sustained 502 beyond this = real failure
   });
   for (const s of http.steps) {
     if (!steps.some((x) => x.step === s.step && x.ok === s.ok && x.detail === s.detail)) {
