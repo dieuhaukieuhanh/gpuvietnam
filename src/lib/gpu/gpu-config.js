@@ -64,13 +64,13 @@ export const GPU_LINE_TO_PLAN = {
 export const GPU_IMAGE_REPO = 'dieuhaukieuhanh/gpuvietnam-comfyui';
 
 export const GPU_IMAGE_V3 =
-  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.5`;
+  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.6`;
 
 export const GPU_IMAGE_V4 =
   (process.env.GPUVIETNAM_COMFYUI_IMAGE_V4 ?? '').trim() ||
   (process.env.DEFAULT_GPU_IMAGE ?? '').trim() ||
   (process.env.GPUVIETNAM_COMFYUI_IMAGE ?? '').trim() ||
-  `${GPU_IMAGE_REPO}:v4.2`;
+  `${GPU_IMAGE_REPO}:v4.3`;
 
 /**
  * Resolve ComfyUI image for a GPU line.
@@ -177,8 +177,8 @@ export const NO_AVAILABLE_WORKSTATION_MESSAGE = 'No Available Workstation';
  * Journal evidence: Clore often rents + http_pub but public HTTP proxy fails.
  */
 export const PROVIDER_ROUTING = {
-  sequence: /** @type {const} */ (['vast', 'vast', 'vast', 'vast', 'clore']),
-  providers: /** @type {const} */ (['vast', 'clore']),
+  sequence: /** @type {const} */ (['vast', 'vast', 'vast', 'clore', 'salad']),
+  providers: /** @type {const} */ (['vast', 'clore', 'salad']),
 };
 
 /**
@@ -355,6 +355,27 @@ export const CLORE_PROVISION_GATE = {
   sshExecAttemptTimeoutMs: Number(process.env.CLORE_SSH_EXEC_ATTEMPT_MS) > 0
     ? Number(process.env.CLORE_SSH_EXEC_ATTEMPT_MS)
     : 25_000,
+};
+
+/**
+ * Salad L2 provision gate — Quick Health Check (HTTP customer-path + VRAM + soft checks).
+ * Salad has NO SSH (ops_degraded is expected and normal).
+ * Longer cold-start buffer since Salad container images download over distributed network.
+ */
+export const SALAD_PROVISION_GATE = {
+  ...VAST_PROVISION_GATE,
+  // No SSH for Salad.
+  sshReadyTimeoutMs: 0,
+  sshSoftTimeoutMs: 0,
+  sshExecAttemptTimeoutMs: 0,
+  // Salad container image download + cold start may take longer over distributed nodes.
+  comfyColdStartExtraMs: Number(process.env.SALAD_COMFY_COLD_START_EXTRA_MS) > 0
+    ? Number(process.env.SALAD_COMFY_COLD_START_EXTRA_MS)
+    : VAST_PROVISION_GATE.comfyColdStartExtraMs + 120_000,
+  // Timeout for soft health checks (storage, R2, WebSocket).
+  healthCheckTimeoutMs: Number(process.env.SALAD_HEALTH_CHECK_TIMEOUT_MS) > 0
+    ? Number(process.env.SALAD_HEALTH_CHECK_TIMEOUT_MS)
+    : 30_000,
 };
 
 /**

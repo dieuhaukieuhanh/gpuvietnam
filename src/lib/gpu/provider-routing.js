@@ -29,6 +29,20 @@ export function isEnvFlagTrue(name) {
 }
 
 /**
+ * Provider-only routing flags.
+ *
+ * Priority: GPU_VAST_ONLY > GPU_CLORE_ONLY > GPU_SALAD_ONLY > lifecycle worker defaults.
+ */
+
+/**
+ * Salad-only routing:
+ * - GPU_SALAD_ONLY=true → always
+ */
+export function isSaladOnlyMode() {
+  return isEnvFlagTrue('GPU_SALAD_ONLY');
+}
+
+/**
  * Clore-only routing:
  * - GPU_CLORE_ONLY=true → always
  * - Lifecycle worker (VPS) → Clore-only by default unless GPU_ALLOW_VAST=true
@@ -46,8 +60,8 @@ export function isCloreOnlyMode() {
 }
 
 /**
- * Next provider in the Vast x4 -> Clore x1 rotation.
- * @returns {'clore'|'vast'}
+ * Next provider in the Salad → Vast x3 → Clore x1 rotation.
+ * @returns {'clore'|'vast'|'salad'}
  */
 export function nextProviderInRotation() {
   const sequence = PROVIDER_ROUTING.sequence;
@@ -58,25 +72,28 @@ export function nextProviderInRotation() {
 
 /**
  * Failover partner for a provider id.
- * @param {'clore'|'vast'|string} providerId
- * @returns {'clore'|'vast'}
+ * Salad → Vast → Clore chain.
+ * @param {'clore'|'vast'|'salad'|string} providerId
+ * @returns {'clore'|'vast'|'salad'}
  */
 export function failoverProvider(providerId) {
-  return providerId === 'clore' ? 'vast' : 'clore';
+  if (providerId === 'salad') return 'vast';
+  if (providerId === 'clore') return 'vast';
+  return 'clore';
 }
 
 /**
- * Ordered attempt list: Vast first, Clore failover (unless forced).
+ * Ordered attempt list: Salad → Vast → Clore failover chain (unless forced).
  * Clore is only eligible for 3090 / 4090 — never 5090/Studio.
- * Set GPU_CLORE_ONLY=true to force Clore-only on supported lines (journal / probe).
- * Set GPU_VAST_ONLY=true to disable Clore entirely (takes precedence over Clore-only /
- * lifecycle-worker default Clore-only).
- * @param {'clore'|'vast'|string | { forcedPrimary?: string; gpuLine?: string | null }} [forcedPrimaryOrOptions]
+ * Set GPU_SALAD_ONLY=true to force Salad-only.
+ * Set GPU_CLORE_ONLY=true to force Clore-only on supported lines.
+ * Set GPU_VAST_ONLY=true to force Vast-only.
+ * @param {'clore'|'vast'|'salad'|string | { forcedPrimary?: string; gpuLine?: string | null }} [forcedPrimaryOrOptions]
  * @param {{ gpuLine?: string | null }} [maybeOptions]
- * @returns {Array<'clore'|'vast'>}
+ * @returns {Array<'clore'|'vast'|'salad'>}
  */
 export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions) {
-  /** @type {'clore'|'vast'|string|undefined} */
+  /** @type {'clore'|'vast'|'salad'|string|undefined} */
   let forcedPrimary;
   /** @type {string | null | undefined} */
   let gpuLine;
@@ -94,14 +111,17 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
 
   const cloreAllowed = isCloreGpuLineSupported(gpuLine);
 
-  /** @param {Array<'clore'|'vast'>} order */
+  /** @param {Array<'clore'|'vast'|'salad'>} order */
   const filterOrder = (order) => {
     if (cloreAllowed) return order;
     const filtered = order.filter((p) => p !== 'clore');
-    return filtered.length ? filtered : ['vast'];
+    return filtered.length ? filtered : ['salad', 'vast'];
   };
 
-  // Explicit Vast-only probe wins over Clore-only / lifecycle default Clore-only.
+  // Explicit provider-only modes.
+  if (isEnvFlagTrue('GPU_SALAD_ONLY')) {
+    return ['salad'];
+  }
   if (isEnvFlagTrue('GPU_VAST_ONLY')) {
     return ['vast'];
   }
@@ -113,13 +133,13 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
           gpuLine: gpuLine != null ? String(gpuLine) : null,
           phase: 'SKIP',
         },
-        'Clore-only ignored for unsupported Clore gpuLine; using Vast',
+        'Clore-only ignored for unsupported Clore gpuLine; using Salad→Vast',
       );
-      return ['vast'];
+      return ['salad', 'vast'];
     }
     return ['clore'];
   }
-  if (forcedPrimary === 'clore' || forcedPrimary === 'vast') {
+  if (forcedPrimary === 'clore' || forcedPrimary === 'vast' || forcedPrimary === 'salad') {
     if (forcedPrimary === 'clore' && !cloreAllowed) {
       logger('provider').warn(
         {
@@ -127,14 +147,14 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
           gpuLine: gpuLine != null ? String(gpuLine) : null,
           phase: 'SKIP',
         },
-        'forceProvider=clore ignored for unsupported Clore gpuLine; using Vast',
+        'forceProvider=clore ignored for unsupported Clore gpuLine; using Salad→Vast',
       );
-      return ['vast'];
+      return ['salad', 'vast'];
     }
     return filterOrder([forcedPrimary, failoverProvider(forcedPrimary)]);
   }
-  // Vast primary — Clore HTTP proxy has been unreliable across hosts (journal).
-  return filterOrder(['vast', 'clore']);
+  // Default: Vast primary, Clore failover, Salad backup (last resort).
+  return filterOrder(['vast', 'clore', 'salad']);
 }
 
 /**
@@ -164,10 +184,10 @@ export function isProviderFailoverError(error, options = {}) {
  * Run createWorkstation across providers with failover.
  * @template T
  * @param {{
- *   attemptOrder?: Array<'clore'|'vast'>;
+ *   attemptOrder?: Array<'clore'|'vast'|'salad'>;
  *   gpuLine?: string | null;
- *   createWithProvider: (providerId: 'clore'|'vast') => Promise<T>;
- *   isConfigured?: (providerId: 'clore'|'vast') => boolean;
+ *   createWithProvider: (providerId: 'clore'|'vast'|'salad') => Promise<T>;
+ *   isConfigured?: (providerId: 'clore'|'vast'|'salad') => boolean;
  * }} options
  * @returns {Promise<T>}
  */

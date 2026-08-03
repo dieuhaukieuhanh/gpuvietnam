@@ -463,6 +463,7 @@ export class VastClient {
         ...(params.env ?? {}),
         [portMappingKey]: '1',
         COMFYUI_PORT: String(comfyPort),
+        COMFYUI_LISTEN: '0.0.0.0',  // override IPv6 default for Vast IPv4 hosts
         GPUVIETNAM_PACKAGE: packageSpec.planKey,
       },
     };

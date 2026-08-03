@@ -16,6 +16,7 @@ import {
   provisionWithProviderFailover,
   resolveProviderAttemptOrder,
   isCloreOnlyMode,
+  isSaladOnlyMode,
 } from './provider-routing.js';
 import { CloreClient } from './providers/clore/clore-client.js';
 import { logger } from '../logging/index.js';
@@ -33,7 +34,7 @@ import { logger } from '../logging/index.js';
  * @property {number} [port]
  * @property {string} [label]
  * @property {Record<string, string>} [env]
- * @property {'clore'|'vast'} [forceProvider]
+ * @property {'clore'|'vast'|'salad'} [forceProvider]
  * @property {(step: string) => void | Promise<void>} [onProgress]
  */
 
@@ -71,20 +72,31 @@ export async function provisionGpuInstance(_gpuService, params) {
       gpuLine: params.gpuLine,
     }),
     isConfigured(providerId) {
+      if (providerId === 'salad') {
+        return Boolean((process.env.SALAD_API_KEY ?? '').trim()) &&
+          Boolean((process.env.SALAD_ORGANIZATION ?? '').trim()) &&
+          Boolean((process.env.SALAD_PROJECT ?? '').trim());
+      }
       if (providerId === 'clore') {
         return cloreClient.isConfigured() && isCloreGpuLineSupported(params.gpuLine);
       }
       if (providerId === 'vast') {
-        if (isCloreOnlyMode()) return false;
+        if (isCloreOnlyMode() || isSaladOnlyMode()) return false;
         return Boolean((process.env.VAST_AI_KEY ?? process.env.VAST_API_KEY ?? '').trim());
       }
       return false;
     },
     async createWithProvider(providerId) {
-      if (providerId === 'vast' && isCloreOnlyMode()) {
-        throw new GPUProviderError('Clore-only mode: refusing Vast provision', {
+      if (providerId === 'vast' && (isCloreOnlyMode() || isSaladOnlyMode())) {
+        throw new GPUProviderError('Provider-only mode: refusing Vast provision', {
           retryable: false,
-          code: 'CLORE_ONLY_REFUSE_VAST',
+          code: 'PROVIDER_ONLY_REFUSE_VAST',
+        });
+      }
+      if (providerId === 'salad' && isCloreOnlyMode()) {
+        throw new GPUProviderError('Clore-only mode: refusing Salad provision', {
+          retryable: false,
+          code: 'CLORE_ONLY_REFUSE_SALAD',
         });
       }
       const adapter = tryGetProviderAdapter(providerId) ?? getProviderAdapter(providerId);

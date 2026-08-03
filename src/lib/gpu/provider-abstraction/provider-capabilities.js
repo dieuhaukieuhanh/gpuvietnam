@@ -83,11 +83,11 @@ export const SALAD_CAPABILITIES = defineProviderCapabilities({
   supportsSpot: true,
   supportsDocker: true,
   startupLatency: 'low',
-  billingGranularity: 'hourly',
+  billingGranularity: 'second',  // Salad bills per-second
   gpuTypes: ['rtx3090', 'rtx4090_1x', 'rtx5090_1x'],
-  regions: [],
+  regions: ['global'],
   pricingModel: 'spot_hourly',
-  implemented: false,
+  implemented: true,             // Salad provider is now live
 });
 
 export const RUNPOD_CAPABILITIES = defineProviderCapabilities({

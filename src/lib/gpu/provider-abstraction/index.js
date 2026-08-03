@@ -4,7 +4,7 @@
 
 import { VastProviderAdapter } from '../providers/vast/vast-provider-adapter.js';
 import { CloreProviderAdapter } from '../providers/clore/clore-provider-adapter.js';
-import { createSaladProviderAdapter } from '../providers/salad/salad-provider-adapter.js';
+import { SaladProviderAdapter } from '../providers/salad/salad-provider-adapter.js';
 import { createRunpodProviderAdapter } from '../providers/runpod/runpod-provider-adapter.js';
 import { attachWorkflowDelegate, createLegacyGpuProviderBridge } from './legacy-gpu-provider-bridge.js';
 import {
@@ -32,7 +32,7 @@ export function bootstrapProviderRegistry() {
 
   const cloreAdapter = new CloreProviderAdapter();
   registerProviderAdapter(cloreAdapter);
-  registerProviderAdapter(createSaladProviderAdapter());
+  registerProviderAdapter(new SaladProviderAdapter());
   registerProviderAdapter(createRunpodProviderAdapter());
 }
 
