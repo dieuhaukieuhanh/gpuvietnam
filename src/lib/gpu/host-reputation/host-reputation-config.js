@@ -50,6 +50,31 @@ export const HOST_REPUTATION = {
     .toLowerCase() !== 'false',
   knownGoodMinSuccessCount: envNum('HOST_REP_KNOWN_GOOD_MIN_SUCCESS', 1),
   knownGoodMaxPins: envNum('HOST_REP_KNOWN_GOOD_MAX_PINS', 3),
+
+  // ── Host Intelligence System ──────────────────────────────────────────
+  /** Hosts with lastVerified older than this need recheck (ms). Default 24h. */
+  staleThresholdMs: envMs('HOST_REP_STALE_THRESHOLD_MS', 24 * 60 * 60 * 1000),
+  /** Days before a failed host becomes eligible for retry. */
+  badHostCooldownDays: envNum('HOST_REP_BAD_HOST_COOLDOWN_DAYS', 3),
+  /** Max hosts to test per cron cycle. */
+  maxTestPerCycle: envNum('HOST_REP_MAX_TEST_PER_CYCLE', 2),
+  /** Min known-good hosts per GPU line to maintain (pool target). */
+  targetKnownGoodPerLine: envNum('HOST_REP_TARGET_KNOWN_GOOD_PER_LINE', 4),
+  /** When pool is below target, test up to this many hosts per cycle. */
+  maxTestWhenBelowTarget: envNum('HOST_REP_MAX_TEST_BELOW_TARGET', 4),
+  /** Sample fraction of stale known-good hosts to recheck per cycle. */
+  staleSampleFraction: envNum('HOST_REP_STALE_SAMPLE_FRACTION', 0.1),
+  /** Timeout for test-image provision gate (ms). Much shorter than full gate. */
+  testGateTimeoutMs: envMs('HOST_REP_TEST_GATE_TIMEOUT_MS', 90_000),
+
+  // ── Reliability Score weights (sum = 1.0) ────────────────────────────
+  reliabilityWeights: {
+    provisionPass: envNum('HOST_REP_RELIABILITY_W_PROVISION', 0.40),
+    bootTime: envNum('HOST_REP_RELIABILITY_W_BOOT', 0.20),
+    latency: envNum('HOST_REP_RELIABILITY_W_LATENCY', 0.20),
+    network: envNum('HOST_REP_RELIABILITY_W_NETWORK', 0.10),
+    unexpectedStop: envNum('HOST_REP_RELIABILITY_W_STOP', 0.10),
+  },
 };
 
 /** Failure category → base score penalty (positive number subtracted). */

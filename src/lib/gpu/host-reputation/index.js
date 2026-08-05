@@ -21,6 +21,9 @@ import {
   createNeutralHostRecord,
   isHostBlacklisted,
   isKnownGoodHost,
+  isHostStale,
+  isHostInCooldown,
+  computeReliabilityScore,
 } from './host-reputation-score.js';
 import {
   getHostReputationRecord,
@@ -369,7 +372,7 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
   const now = options.now ?? Date.now();
   const allowFallback = options.allowLeastBadFallback !== false;
 
-  /** @type {Array<{ offer: T; hostKey: string|null; score: number; blacklisted: boolean; blacklistUntil: number; knownGood: boolean; successCount: number; readyMs: number }>} */
+  /** @type {Array<{ offer: T; hostKey: string|null; score: number; blacklisted: boolean; blacklistUntil: number; knownGood: boolean; successCount: number; readyMs: number; reliabilityScore: number | null }>} */
   const annotated = [];
   let droppedBlacklisted = 0;
 
@@ -412,6 +415,7 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
         record?.lastReadyLatencyMs != null && Number.isFinite(Number(record.lastReadyLatencyMs))
           ? Number(record.lastReadyLatencyMs)
           : Number.POSITIVE_INFINITY,
+      reliabilityScore: computeReliabilityScore(record),
     });
   }
 
@@ -445,6 +449,10 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
       if (b.successCount !== a.successCount) return b.successCount - a.successCount;
       if (a.readyMs !== b.readyMs) return a.readyMs - b.readyMs;
     }
+    // Host Intelligence: prefer hosts with higher reliability scores
+    const relA = a.reliabilityScore ?? 0;
+    const relB = b.reliabilityScore ?? 0;
+    if (relB !== relA) return relB - relA;
     if (b.score !== a.score) return b.score - a.score;
     const pingA = Number(a.offer.pingMs ?? a.offer.offer?.pingMs ?? 9999);
     const pingB = Number(b.offer.pingMs ?? b.offer.offer?.pingMs ?? 9999);
@@ -511,3 +519,134 @@ export function applyHostReputationToOffers(offers, resolveHostKey, options = {}
 }
 
 export { getHostReputationMetrics as getHostReputationSnapshot };
+
+// ──────────────────────────────────────────────────────────────────────
+// Host Intelligence System — cron-driven discovery helpers
+// ──────────────────────────────────────────────────────────────────────
+
+// Re-export from host-reputation-score.js (already imported above)
+export { isHostStale, isHostInCooldown, computeReliabilityScore };
+
+/**
+ * Get hosts that need rechecking (known-good but stale: lastVerified > 24h).
+ * @param {number} [now]
+ * @returns {Array<import('./host-reputation-score').HostReputationRecord>}
+ */
+export function getHostsNeedingRecheck(now = Date.now()) {
+  loadHostReputationStore();
+  const records = listHostReputationRecords();
+  return records.filter((r) => {
+    if (!isKnownGoodHost(r)) return false;
+    return isHostStale(r, now);
+  }).sort((a, b) => {
+    // Prioritize: longest since last verification first
+    const aLast = Number(a.lastVerified || 0);
+    const bLast = Number(b.lastVerified || 0);
+    return aLast - bLast;
+  });
+}
+
+/**
+ * Get failed hosts whose cooldown has expired and are eligible for retry.
+ * @param {number} [now]
+ * @returns {Array<import('./host-reputation-score').HostReputationRecord>}
+ */
+export function getHostsInCooldownDone(now = Date.now()) {
+  loadHostReputationStore();
+  const records = listHostReputationRecords();
+  return records.filter((r) => {
+    const cd = Number(r.cooldownUntil || 0);
+    if (!cd) return false;
+    return cd <= now && !isHostBlacklisted(r, now);
+  }).sort((a, b) => {
+    // Prioritize: highest previous success count first (was good before failing)
+    const aSuccess = Number(a.successCount || 0);
+    const bSuccess = Number(b.successCount || 0);
+    return bSuccess - aSuccess;
+  });
+}
+
+/**
+ * Check if a host has never been seen before by looking up its record.
+ * @param {string} hostKey
+ * @returns {boolean}
+ */
+export function isHostUnseen(hostKey) {
+  loadHostReputationStore();
+  const record = getHostReputationRecord(hostKey);
+  return !record;
+}
+
+/**
+ * Get summary stats for the Host Intelligence System dashboard.
+ * @returns {{
+ *   totalHosts: number;
+ *   knownGood: number;
+ *   knownGoodByLine: Record<string, number>;
+ *   stale: number;
+ *   blacklisted: number;
+ *   inCooldown: number;
+ *   averagePassRate: number | null;
+ *   topHosts: Array<{ hostKey: string; reliabilityScore: number; gpuName: string | null; vramGb: number | null; passRate: number | null; avgBootSec: number | null }>;
+ * }}
+ */
+export function getHostIntelligenceSummary() {
+  loadHostReputationStore();
+  const records = listHostReputationRecords();
+  const now = Date.now();
+
+  let knownGood = 0;
+  /** @type {Record<string, number>} */
+  const knownGoodByLine = {};
+  let stale = 0;
+  let blacklisted = 0;
+  let inCooldown = 0;
+  let passRateSum = 0;
+  let passRateCount = 0;
+
+  for (const r of records) {
+    if (isKnownGoodHost(r)) {
+      knownGood += 1;
+      const line = r.gpuLine || 'unknown';
+      knownGoodByLine[line] = (knownGoodByLine[line] || 0) + 1;
+    }
+    if (isHostStale(r, now)) stale += 1;
+    if (isHostBlacklisted(r, now)) blacklisted += 1;
+    if (isHostInCooldown(r, now)) inCooldown += 1;
+
+    const pr = Number(r.passRate);
+    if (Number.isFinite(pr) && r.verificationCount && r.verificationCount > 0) {
+      passRateSum += pr;
+      passRateCount += 1;
+    }
+  }
+
+  /** @type {Array<{ hostKey: string; reliabilityScore: number; gpuName: string | null; vramGb: number | null; passRate: number | null; avgBootSec: number | null }>} */
+  const topHosts = [];
+  for (const r of records) {
+    const rs = computeReliabilityScore(r);
+    if (rs != null) {
+      topHosts.push({
+        hostKey: r.hostKey,
+        reliabilityScore: rs,
+        gpuName: r.gpuName ?? null,
+        vramGb: r.vramGb ?? null,
+        passRate: r.passRate ?? null,
+        avgBootSec: r.avgBootSec ?? null,
+      });
+    }
+  }
+  topHosts.sort((a, b) => b.reliabilityScore - a.reliabilityScore);
+  const top10 = topHosts.slice(0, 10);
+
+  return {
+    totalHosts: records.length,
+    knownGood,
+    knownGoodByLine,
+    stale,
+    blacklisted,
+    inCooldown,
+    averagePassRate: passRateCount > 0 ? Math.round(passRateSum / passRateCount) : null,
+    topHosts: top10,
+  };
+}

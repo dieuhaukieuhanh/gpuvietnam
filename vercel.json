@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/backup-retention",
       "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-host-intelligence",
+      "schedule": "*/25 * * * *"
     }
   ]
 }
