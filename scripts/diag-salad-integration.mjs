@@ -111,15 +111,15 @@ async function main() {
     command = ['sh', '-c', 'echo ready && sleep 3600'];
     modeLabel = 'SIMPLE TEST';
   } else if (testMode === 'noop') {
-    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.6';
+    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.7';
     command = ['sh', '-c', 'echo v3.6 loaded OK && nvidia-smi && sleep 3600'];
     modeLabel = 'NO-OP (skip start.sh, just nvidia-smi)';
   } else if (testMode === 'bash') {
-    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.6';
-    command = ['/bin/bash', '-c', 'set -x; cd /app/ComfyUI && ls -la && nvidia-smi && python -c "import torch; print(torch.cuda.is_available())" && echo ALL_CHECKS_PASSED && sleep 3600'];
-    modeLabel = 'BASH DEBUG (manual checks)';
+    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.7';
+    command = ['/bin/bash', '-c', 'echo "=== Internet?" && curl -sI https://huggingface.co 2>&1 | head -3; echo "=== Disk" && df -h /app; echo "=== nvidia-smi" && nvidia-smi 2>&1 | head -5; echo "=== Start ComfyUI bg" && cd /app/ComfyUI && nohup python main.py --listen :: --port 8080 --enable-cors-header "*" > /tmp/comfy.log 2>&1 & echo "PID=$!"; echo "=== Wait 120s" && sleep 120; echo "=== Check /system_stats" && curl -sS http://localhost:8080/system_stats 2>&1 | head -200; echo "=== Comfy log tail" && tail -30 /tmp/comfy.log 2>/dev/null; echo ALL_CHECKS_PASSED; sleep 3600'];
+    modeLabel = 'BASH DEBUG (manual checks + ComfyUI boot)';
   } else {
-    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.6';
+    image = 'dieuhaukieuhanh/gpuvietnam-comfyui:v3.7';
     command = [];
     modeLabel = 'FULL (default start.sh)';
   }
@@ -176,7 +176,7 @@ async function main() {
     hdr('4. Wait for running (autostart_policy=true, timeout 15 min)');
     let g = create.json;
     let s = stateStr(g);
-    const deadline = Date.now() + 900_000;
+    const deadline = Date.now() + 1_500_000; // 25 min — đủ cho cold start
     let lastStatus = '';
     while (Date.now() < deadline) {
       const poll = await api('GET', `/containers/${containerName}`);
@@ -192,24 +192,65 @@ async function main() {
       await new Promise((r) => setTimeout(r, 10_000));
     }
 
-    // 5. Quick health check
+    // 5. Health check — wait for ComfyUI to finish booting
     if (s === 'running') {
-      hdr('5. Quick health check (/system_stats)');
+      hdr('5. Health check (waiting for ComfyUI cold start — up to 9 min)...');
       const dns = g?.networking?.dns;
       if (dns) {
-        try {
-          const res = await fetch(`https://${dns}/system_stats`, { signal: AbortSignal.timeout(15000) });
-          if (res.ok) {
-            const stats = await res.json();
-            const devices = stats?.devices || [];
-            const names = Array.isArray(devices) ? devices.map((d) => d.name || '?').join(', ') : '?';
-            ok(`/system_stats OK — GPUs: ${names}`);
-          } else {
-            fail(`/system_stats HTTP ${res.status} — may still be booting`);
+        // Initial wait: ComfyUI needs time to start booting after container is ready
+        console.log('  Waiting 30s for initial boot...');
+        await new Promise((r) => setTimeout(r, 30_000));
+
+        let systemStatsOk = false;
+        // Retry /system_stats up to 60 times with 15s delay (15 min total retry)
+        for (let attempt = 1; attempt <= 60; attempt++) {
+          try {
+            const res = await fetch(`https://${dns}/system_stats`, { signal: AbortSignal.timeout(15000) });
+            if (res.ok) {
+              const stats = await res.json();
+              const devices = stats?.devices || [];
+              const names = Array.isArray(devices) ? devices.map((d) => d.name || '?').join(', ') : '?';
+              ok(`/system_stats OK — GPUs: ${names}`);
+              systemStatsOk = true;
+
+              // 5b. ComfyUI Smoke Test
+              hdr('5b. ComfyUI smoke test (POST /prompt)');
+              try {
+                const promptRes = await fetch(`https://${dns}/prompt`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    prompt: {
+                      "3": { "class_type": "KSampler", "inputs": { "seed": 42, "steps": 1, "cfg": 1, "sampler_name": "euler", "scheduler": "normal", "denoise": 1, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0] } },
+                      "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+                      "5": { "class_type": "EmptyLatentImage", "inputs": { "width": 512, "height": 512, "batch_size": 1 } },
+                      "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "a cat", "clip": ["4", 1] } },
+                      "7": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["4", 1] } },
+                      "8": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0], "vae": ["4", 2] } },
+                      "9": { "class_type": "PreviewImage", "inputs": { "images": ["8", 0] } }
+                    }
+                  }),
+                  signal: AbortSignal.timeout(120000),
+                });
+                if (promptRes.ok) {
+                  const promptJson = await promptRes.json();
+                  ok(`ComfyUI smoke OK — prompt_id: ${promptJson.prompt_id}`);
+                } else {
+                  const errText = await promptRes.text().catch(() => '');
+                  fail(`/prompt HTTP ${promptRes.status}: ${errText.slice(0, 200)}`);
+                }
+              } catch (err) {
+                fail(`ComfyUI smoke error: ${err.message}`);
+              }
+              break;
+            }
+            console.log(`  [${attempt}/60] /system_stats HTTP ${res.status} — waiting...`);
+          } catch (err) {
+            console.log(`  [${attempt}/60] /system_stats: ${err.message} — waiting...`);
           }
-        } catch (err) {
-          fail(`/system_stats error: ${err.message}`);
+          if (attempt < 60) await new Promise((r) => setTimeout(r, 15_000));
         }
+        if (!systemStatsOk) fail('/system_stats failed after 60 attempts (15 min)');
       }
     }
 

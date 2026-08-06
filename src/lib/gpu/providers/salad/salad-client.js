@@ -343,7 +343,8 @@ export class SaladClient {
   async createContainerGroup(params) {
     const port = params.port ?? DEFAULT_GPU_PORT;
     const env = {
-      HOST: '::',              // IPv6 dual-stack required by Salad
+      HOST: '::',              // IPv6 dual-stack required by Salad networking
+      COMFYUI_LISTEN: '::',    // ComfyUI must listen on IPv6 dual-stack (start-ipv6.sh reads this)
       PORT: String(port),
       ...(params.env ?? {}),
     };
@@ -525,11 +526,9 @@ export class SaladClient {
     }
 
     const gpuLine = params.gpuLine || 'rtx3090';
-    // Salad uses slim images (consumer nodes can't extract 20GB full images).
-    const saladImage =
-      (process.env.SALAD_GPU_IMAGE ?? '').trim() ||
-      resolveGpuImage(gpuLine);  // use v3.6/v4.3 — same as Vast/Clore
-    const image = params.image ?? saladImage;
+    // Unified image with IPv6 start.sh — COMFYUI_LISTEN defaults to :: (dual-stack).
+    // Vast + Clore override to 0.0.0.0 via their own env vars.
+    const image = params.image ?? resolveGpuImage(gpuLine);
     const port = params.port ?? DEFAULT_GPU_PORT;
 
     // 2. Resolve GPU class UUID
@@ -550,7 +549,7 @@ export class SaladClient {
     console.info(`[salad/createInstance] Created container group ${containerName}, state=${created.current_state}`);
 
     // 5. Poll until NOT pending (Salad prepares image → "stopped" when ready to start)
-    const prepareDeadline = Date.now() + 300_000;
+    const prepareDeadline = Date.now() + 600_000; // 10 min — consumer nodes pull image slowly
     let lastState = created.current_state;
     /** @type {{ dns?: string; protocol?: string; port?: number } | undefined} */
     let networking = created.networking;
@@ -572,7 +571,7 @@ export class SaladClient {
     }
     if (lastState === 'pending') {
       throw new GPUProviderError(
-        `Salad container group ${containerName} still pending after 5min`,
+        `Salad container group ${containerName} still pending after 10min`,
         { retryable: true },
       );
     }
@@ -581,8 +580,8 @@ export class SaladClient {
     await this.startContainerGroup(containerName);
     console.info(`[salad/createInstance] Started container group ${containerName}`);
 
-    // 7. Poll until running (timeout: 5 minutes)
-    const runDeadline = Date.now() + 300_000;
+    // 7. Poll until running (timeout: 10 minutes — consumer nodes deploy slowly)
+    const runDeadline = Date.now() + 600_000;
     while (Date.now() < runDeadline) {
       const group = await this.getContainerGroup(containerName);
       lastState = group.current_state;
@@ -607,7 +606,7 @@ export class SaladClient {
 
     if (lastState !== 'running') {
       throw new GPUProviderError(
-        `Salad container group ${containerName} timed out after 10min (state=${lastState})`,
+        `Salad container group ${containerName} timed out after 20min (state=${lastState})`,
         { retryable: true },
       );
     }

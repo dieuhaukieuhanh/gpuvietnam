@@ -19,6 +19,13 @@ if [[ "${GPUVIETNAM_SKIP_PRE_RESTORE:-0}" != "1" ]] && [[ -x /app/restore-enviro
   /app/restore-environment.sh || echo "[GPUVietnam] Warning: pre-start restore completed with warnings"
 fi
 
+# Install extra custom nodes (BiRefNet, WanVideo, IPAdapter Flux)
+# Disable with GPUVIETNAM_SKIP_EXTRA_NODES=1
+if [[ "${GPUVIETNAM_SKIP_EXTRA_NODES:-0}" != "1" ]] && [[ -x /app/install-extra-nodes.sh ]]; then
+  echo "[GPUVietnam] Installing extra custom nodes..."
+  /app/install-extra-nodes.sh || echo "[GPUVietnam] Warning: extra nodes install completed with warnings"
+fi
+
 # Periodic backup (presigned R2 via app token — no R2 secrets in container).
 # Disable with GPUVIETNAM_PERIODIC_BACKUP=0.
 if [[ "${GPUVIETNAM_PERIODIC_BACKUP:-1}" == "1" ]] && [[ -x /app/periodic-backup.sh ]]; then
@@ -27,7 +34,11 @@ if [[ "${GPUVIETNAM_PERIODIC_BACKUP:-1}" == "1" ]] && [[ -x /app/periodic-backup
 fi
 
 cd "${COMFYUI_DIR}"
-echo "[GPUVietnam] Starting ComfyUI on 0.0.0.0:${PORT}..."
+
+# IPv6 dual-stack support: default :: accepts both IPv4 and IPv6.
+# Vast + Clore override via COMFYUI_LISTEN=0.0.0.0 for IPv4-only hosts.
+LISTEN_ADDR="${COMFYUI_LISTEN:-::}"
+echo "[GPUVietnam] Starting ComfyUI on ${LISTEN_ADDR}:${PORT}..."
 
 # Notify runtime that ComfyUI is about to start
 if command -v curl >/dev/null 2>&1; then
@@ -56,4 +67,4 @@ if [[ "${GPUVIETNAM_FILMMAKER_AUTO_RESUME:-1}" != "0" ]] && [[ -x /app/filmmaker
   ) &
 fi
 
-exec python main.py --listen 0.0.0.0 --port "${PORT}" --enable-cors-header "*"
+exec python main.py --listen "${LISTEN_ADDR}" --port "${PORT}" --enable-cors-header "*"

@@ -32,6 +32,7 @@
 17. [Thay đổi gần đây](#17-thay-đổi-gần-đây)
 18. [Dev & vận hành](#18-dev--vận-hành)
 19. [Nguyên tắc truyền thông (KH-facing)](#19-nguyên-tắc-truyền-thông-kh-facing)
+20. [Môi trường Staging & Development](#20-môi-trường-staging--development)
 
 ---
 
@@ -44,7 +45,7 @@
 | **Mô hình kinh doanh** | Resell GPU marketplace + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
 | **Đối tượng chính** | Freelancer AI Art (~60%), sinh viên/người mới (~25%), agency nhỏ (~15%) |
 | **Điểm khác biệt (mục tiêu)** | Workspace/workflow không phụ thuộc một GPU; failover compute; thanh toán VN |
-| **Backend GPU thực tế** | **Vast + Clore + Salad** (adapter); routing Vast → Clore → Salad (Salad = backup); Go-Live/P0-A **Vast-only** (`GPU_VAST_ONLY=true` trên VPS worker). Thuê theo giờ khi KH bật máy |
+| **Backend GPU thực tế** | **Vast (primary) + Clore (secondary) + Salad (last resort)** (adapter); routing Vast→Clore→Salad; Go-Live/P0-A **Vast-only** (`GPU_VAST_ONLY=true` trên VPS worker). Thuê theo giờ khi KH bật máy |
 | **Control Plane** | `gpuvietnam.com` (Vercel Next) — session, billing, enqueue start |
 | **Lifecycle worker** | VPS Linux always-on (`gpuvietnam-lifecycle-worker`) — claim/execute `user_start_provision` |
 
@@ -67,12 +68,16 @@
 | **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
 | **Dashboard UX — optimistic start/stop, boot progress, stop confirm, editor khi boot** | ✅ |
 | **Wallet tab merge** | ✅ |
-| ComfyUI image prod | ✅ `:v3.5` (Starter/Pro, VPS active) + `:v4.2` (Studio/5090) — đầy đủ ffmpeg + filmmaker scripts |
+| ComfyUI image prod | ✅ `:v3.7` (Starter/Pro) + `:v4.4` (Studio/5090) — IPv6 dual-stack unified, dùng chung 3 provider; 20 GB / 24 GB; đầy đủ ffmpeg + filmmaker scripts |
 | **Filmmaker Mode** | ✅ Frame Saver + Auto-Skip + Auto-Resume + Realtime Quality Check (InsightFace) |
 | Môi trường làm việc → workflow riêng | ✅ (boot + SSH runtime) |
 | ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
 | Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
+| **Host Intelligence System** | ✅ **2026-08-06** — Cron 25 phút quét Vast, test image siêu nhẹ (dieuhaukieuhanh/gpu-test:v1), 3 job Discover/Recheck/BadRetry, reliability scoring, target 4 known-good/GPU line |
+| **Staging Environment (RC6 Verify)** | 🟡 **2026-08-05** — 4-layer precondition gate PASS; Vast readiness `PASS_HTTP_READY`; Scenario 1 FAIL (Clore provider, không phải RC6); Scenarios 2-5 BLOCKED |
+| **LoRA Training** | 🟡 **WIP (2026-08-04)** — `src/lib/lora-train/` + SQL + `docker/lora-train/` OK; 3 API route đang viết dở (untracked, import `supabase-route-client.js` chưa tồn tại, sai auth pattern) |
+| **Environment Switching** | ✅ **2026-08-05** — `.env.staging` + `.env.production` + script `scripts/switch-env.ps1` |
 | Dashboard "Chạy workflow" trên GPU | ❌ stub / CP Job path đang mở rộng |
 | Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
 | VNPay/PayOS tự động | ❌ dùng chuyển khoản + admin duyệt |
@@ -445,6 +450,7 @@ subscriptions ──sync──► user_plan_inventory ◄── manual_hour_gran
 | Support | `/api/support/*`, `/api/admin/support/request` | 7 |
 | Admin | pending approve, customers, hour-grants, pricing… | 22 |
 | Cron | `/api/cron/check-idle` | 1 |
+| Cron | `/api/cron/refresh-host-intelligence` — Host Intelligence refresh (Discover/Recheck/BadRetry) | 1 |
 | Public | `/api/gpu-pricing` | 1 |
 
 **Stub/disabled:** `POST /api/support/request` — luôn 403 (chỉ admin khởi tạo support).
@@ -540,6 +546,28 @@ R2_BUCKET_NAME=
 | `GPUVIETNAM_SKIP_MODEL_DOWNLOAD` | `1` = bỏ qua tải model lúc boot |
 | `CIVITAI_API_TOKEN` | Tải RealVisXL trong container |
 
+### File môi trường & chuyển đổi nhanh
+
+Dự án có 2 file cấu hình môi trường riêng biệt (không commit, nằm ngoài git):
+
+| File | Môi trường | Supabase |
+|------|-----------|----------|
+| `.env.staging` | Staging test | `cczqbuuuyctiqoiruxah` |
+| `.env.production` | Production | `rhtqiecieeyqjlctcvag` |
+
+**Switch nhanh qua PowerShell:**
+```powershell
+.\scripts\switch-env.ps1 staging     # → test
+.\scripts\switch-env.ps1 production  # → production
+```
+
+**Kiểm tra môi trường hiện tại:**
+```powershell
+Select-String "SUPABASE_URL" .env.local
+# rhtqiecieeyqjlctcvag → Production 🚀
+# cczqbuuuyctiqoiruxah → Staging 🧪
+```
+
 ---
 
 ## 15. Gói giá & billing
@@ -599,6 +627,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 
 | Hạng mục | Chi tiết |
 |----------|----------|
+| **Host Intelligence System (2026-08-06)** | Cron 25 phút quét Vast, test image `dieuhaukieuhanh/gpu-test:v1` (~1.2GB, no ComfyUI). 3 job Discover/Recheck/BadRetry. Host reputation mở rộng 13 field (gpuName, vramGb, driverVersion, passRate, avgBootSec…). Reliability score tích hợp vào offer ranking. Atomic file write + backup. Chi phí ~$2-3/tháng |
 | **Auth Hardening P0+P1+P2 (2026-08-02)** | Rate limit 5 endpoints + OTP lock/cooldown/single-use; Middleware JWT verify; Secure cookie + HSTS/CSP/X-Frame/nosniff; Anti-enumeration login; Fix `phone_verified` reset; Password strength client+server + confirm password; Session invalidation on password change; `pending_login_password` TTL; Audit log `auth_audit_log` (migration 0052); Sign-out all devices |
 | **P0-A + VPS worker (2026-07)** | `start-machine` enqueue durable; VPS `gpuvietnam-lifecycle-worker`; docs `LIFECYCLE_WORKER.md` / `GO_LIVE_READINESS_AUDIT.md` |
 | **Clore-only chốt trên VPS (2026-07-24)** | `Environment=GPU_CLORE_ONLY=true` trên systemd + verify `/proc/.../environ`; tạm dừng trước Start sạch acceptance |
@@ -608,6 +637,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 | **Dashboard UX** | Optimistic start/stop, boot progress, stop confirm, giờ 2 decimal |
 | **`/api/machines/status` infra-only** | Billing từ `/api/dashboard/me` |
 | **Image prod** | `dieuhaukieuhanh/gpuvietnam-comfyui:v3` |
+| **Image test (Host Intelligence)** | `dieuhaukieuhanh/gpu-test:v1` — Ubuntu + CUDA + nvidia-smi, ~1.2GB compressed, pull ~20-30s |
 
 ---
 
@@ -653,4 +683,59 @@ Không Dual Run / warm pool trừ khi owner mở.
 
 ---
 
-*Tài liệu cập nhật: 2026-08-02 — Auth Hardening P0+P1+P2; P0-A VPS + Vast-only; Continuity/ADR-005; SCB 4.0 (`scb-4.0`). Chi tiết tiến độ: `docs/PROGRESS.md`.*
+## 20. Môi trường Staging & Development
+
+### Staging Environment
+
+Staging là môi trường test **độc lập hoàn toàn** với Production, được tạo ra tháng 7/2026 để verify bản vá RC6 (SES-1 Adapter Count):
+
+| Thành phần | Production | Staging |
+|------------|-----------|---------|
+| **Vercel** | `gpuvietnam/gpuvietnam` → `gpuvietnam.com` | `gpuvietnam-staging` → `gpuvietnam-staging.vercel.app` |
+| **Supabase** | `rhtqiecieeyqjlctcvag` | `cczqbuuuyctiqoiruxah` |
+| **Lifecycle Worker** | `gpuvietnam-lifecycle-worker` | `gpuvietnam-lifecycle-worker-staging` |
+| **GPU Routing** | Vast-only | Vast-only |
+| **Cron** | 4 jobs (check-idle, reconcile, process-ops, backup-retention) | `crons: []` (Hobby-safe) |
+
+**Mục đích:** Test code mới an toàn trước khi deploy Production. Đặc biệt quan trọng với các thay đổi trong Core Domain (session, billing, provision, destroy, settlement).
+
+**Quy tắc quyết định khi nào cần test qua staging:**
+
+| Mức độ | Phạm vi thay đổi | Ví dụ |
+|--------|-----------------|-------|
+| 🔴 **Bắt buộc** | Core Domain: session-lifecycle, billing, provision, destroy, payment, auth, provider adapter, DB migration | Sửa `session-start.js`, thêm provider mới, đổi billing logic |
+| 🟡 **Cân nhắc** | Dashboard logic, admin panel, backup flow | Thay đổi cách tính giờ hiển thị, sửa query KH |
+| 🟢 **Không cần** | CSS/copy, static pages, UI component đơn lẻ | Sửa màu, đổi chữ, thêm FAQ |
+
+**Trạng thái hiện tại (2026-08-05):**
+- 4-layer precondition gate: **PASS** (Code, Deployment, Database, Execution Infrastructure)
+- Vast readiness: **PASS_HTTP_READY**
+- Scenario 1 (Clean Start): **FAIL** — lỗi Clore Proxy Not Found, **không phải lỗi RC6**
+- Scenarios 2-5: **BLOCKED** (stop-on-fail)
+
+**Docs liên quan:**
+- [`docs/investigations/2026-07-25-rc6-staging-environment-plan.md`](investigations/2026-07-25-rc6-staging-environment-plan.md) — Kế hoạch thiết lập
+- [`docs/verification/2026-07-25-rc6-staging-verification.md`](verification/2026-07-25-rc6-staging-verification.md) — Giao thức verify 5 scenario
+- [`docs/investigations/2026-07-26-staging-vast-readiness.md`](investigations/2026-07-26-staging-vast-readiness.md) — Probe Vast readiness
+
+### LoRA Training (WIP — 2026-08-04)
+
+Tính năng training LoRA trên GPU, đang làm dở:
+
+| Thành phần | Trạng thái | Ghi chú |
+|------------|------------|---------|
+| `src/lib/lora-train/job-manager.js` | ✅ Hoàn thiện | Code chuẩn, nhận `supabaseAdmin` parameter |
+| `src/lib/lora-train/provision-train.js` | ✅ Hoàn thiện | Code chuẩn |
+| `supabase/lora-train-jobs.sql` | ✅ Schema | Bảng `lora_train_jobs` + RLS |
+| `docker/lora-train/` | ✅ Docker image | Container training |
+| `src/pages/api/lora-train/[id].js` | ❌ Dở dang | Import `@/lib/supabase-route-client.js` chưa tồn tại |
+| `src/pages/api/lora-train/[id]/download.js` | ❌ Dở dang | Import `@/lib/supabase-route-client.js` chưa tồn tại |
+| `src/pages/api/lora-train/create.js` | ❌ Dở dang | Import `@/lib/supabase-route-client.js` chưa tồn tại |
+
+**Vấn đề:** 3 file API route import `createRouteClient` từ module chưa được tạo, và dùng pattern `@supabase/ssr` (App Router) trong khi project dùng Pages Router. Tất cả API route khác dùng `getAuthUserFromRequest` + `getSupabaseAdmin`.
+
+**Cần làm:** Sửa 3 API route theo pattern chuẩn của project, hoặc tạo file `src/lib/supabase-route-client.js`. Các file này đang untracked (chưa commit) — build sẽ fail đến khi được sửa hoặc xóa tạm.
+
+---
+
+*Tài liệu cập nhật: 2026-08-06 — Host Intelligence System; Staging Environment audit; LoRA Training WIP; Environment Switching; Auth Hardening P0+P1+P2; P0-A VPS + Vast-only; Continuity/ADR-005; SCB 4.0 (`scb-4.0`). Chi tiết tiến độ: `docs/PROGRESS.md`.*

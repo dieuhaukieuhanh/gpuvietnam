@@ -1,0 +1,9 @@
+# Bake SDXL base checkpoint into v4 image (5090)
+# Reduces cold start by 3-4 min — checkpoint is ready at boot.
+FROM dieuhaukieuhanh/gpuvietnam-comfyui:v4.4
+
+# Download SDXL 1.0 base (7 GB) directly into image
+RUN wget --retry-connrefused --waitretry=10 --timeout=60 --tries=5 --continue \
+  -O /app/ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors \
+  "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors" \
+  && ls -lh /app/ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors

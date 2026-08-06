@@ -64,13 +64,13 @@ export const GPU_LINE_TO_PLAN = {
 export const GPU_IMAGE_REPO = 'dieuhaukieuhanh/gpuvietnam-comfyui';
 
 export const GPU_IMAGE_V3 =
-  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.6`;
+  (process.env.GPUVIETNAM_COMFYUI_IMAGE_V3 ?? '').trim() || `${GPU_IMAGE_REPO}:v3.7`;
 
 export const GPU_IMAGE_V4 =
   (process.env.GPUVIETNAM_COMFYUI_IMAGE_V4 ?? '').trim() ||
   (process.env.DEFAULT_GPU_IMAGE ?? '').trim() ||
   (process.env.GPUVIETNAM_COMFYUI_IMAGE ?? '').trim() ||
-  `${GPU_IMAGE_REPO}:v4.3`;
+  `${GPU_IMAGE_REPO}:v4.4`;
 
 /**
  * Resolve ComfyUI image for a GPU line.
@@ -177,8 +177,8 @@ export const NO_AVAILABLE_WORKSTATION_MESSAGE = 'No Available Workstation';
  * Journal evidence: Clore often rents + http_pub but public HTTP proxy fails.
  */
 export const PROVIDER_ROUTING = {
-  sequence: /** @type {const} */ (['salad', 'salad', 'salad', 'vast', 'clore']),
-  providers: /** @type {const} */ (['salad', 'vast', 'clore']),
+  sequence: /** @type {const} */ (['vast', 'clore', 'salad']),
+  providers: /** @type {const} */ (['vast', 'clore', 'salad']),
 };
 
 /**
@@ -368,10 +368,12 @@ export const SALAD_PROVISION_GATE = {
   sshReadyTimeoutMs: 0,
   sshSoftTimeoutMs: 0,
   sshExecAttemptTimeoutMs: 0,
-  // Salad container image download + cold start may take longer over distributed nodes.
+  // Salad container on consumer nodes: slow image download + slow model download.
+  // Cold start includes download-models.sh (25 GB from HF) + install-extra-nodes.sh + ComfyUI boot.
+  // Real-world: 10-25 min after container running. Budget: 25 min (1500s) extra.
   comfyColdStartExtraMs: Number(process.env.SALAD_COMFY_COLD_START_EXTRA_MS) > 0
     ? Number(process.env.SALAD_COMFY_COLD_START_EXTRA_MS)
-    : VAST_PROVISION_GATE.comfyColdStartExtraMs + 120_000,
+    : 1_500_000, // 25 min — consumer nodes download models slowly
   // Timeout for soft health checks (storage, R2, WebSocket).
   healthCheckTimeoutMs: Number(process.env.SALAD_HEALTH_CHECK_TIMEOUT_MS) > 0
     ? Number(process.env.SALAD_HEALTH_CHECK_TIMEOUT_MS)

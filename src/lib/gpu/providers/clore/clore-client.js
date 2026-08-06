@@ -911,6 +911,7 @@ export class CloreClient {
       },
       env: sanitizeCloreContainerEnv({
         ...(params.env ?? {}),
+        COMFYUI_LISTEN: '0.0.0.0',   // unified image defaults to IPv6 :: — Clore needs IPv4
         COMFYUI_PORT: String(comfyPort),
         GPUVIETNAM_DISK_GB: String(diskSize),
         GPUVIETNAM_PACKAGE: packageSpec.planKey,

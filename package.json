@@ -14,6 +14,7 @@
     "provision:journal": "node scripts/summarize-provision-journal.mjs",
     "diag:clore-restart": "node scripts/diag-clore-http-restart-verify.mjs",
     "diag:clore-onstart": "node scripts/diag-clore-http-restart-verify.mjs --observe-only",
+    "diag:salad": "node scripts/diag-salad-integration.mjs",
     "smoke:apex": "node scripts/smoke-apex-next.mjs",
 
     "lifecycle-worker": "node --import ./scripts/register-src-alias.mjs scripts/lifecycle-worker.mjs",

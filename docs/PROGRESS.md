@@ -7,15 +7,17 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.6` (Starter/Pro) + `:v4.3` (Studio); port **8080**; providers **Vast** (primary) + **Clore** (secondary) + **Salad** (backup); P0-A VPS: **Vast-only**
+- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.7` (Starter/Pro) + `:v4.4` (Studio); port **8080**; providers **Vast** (primary) + **Clore** (secondary) + **Salad** (last resort); P0-A VPS: **Vast-only**
 - **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
 
 ## Thay đổi gần đây (2026-08)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
-| **SaladCloud GPU Provider (backup)** | ✅ SaladClient REST API + ProviderAdapter + ProvisionGate — 38 tests pass; routing: Vast → Clore → Salad (last resort) |
-| **Image IPv6 dual-stack** | ✅ `v3.6` / `v4.3` — `COMFYUI_LISTEN` env var (default `::`, Vast override `0.0.0.0`) |
+| **Host Intelligence System** | ✅ **2026-08-06** — Cron 25 phút quét Vast (jitter 0-6min, 10% skip), test image siêu nhẹ `dieuhaukieuhanh/gpu-test:v1` (~1.2GB, no ComfyUI). 3 job: Discover (host mới), Recheck (stale >24h), BadRetry (cooldown 3 ngày). Reliability scoring (40% pass rate + 20% boot + 20% latency + 10% network + 10% stops). Adaptive testing: pool < 4/line → test đến 4 host/chu kỳ. Atomic write + backup + auto-recovery cho host-reputation.json. Chi phí ~$2-3/tháng. |
+| **SaladCloud GPU Provider (last resort)** | ✅ **2026-08-05** — SaladClient REST API + ProviderAdapter + ProvisionGate; routing `vast→clore→salad` (Salad only when Vast+Clore exhausted); unified IPv6 dual-stack image; Salad limits: 35 GB image max, AMD64 only, no SSH (expected); consumer nodes I/O yếu, cold start 15-25 phút; ~60% reliability |
+| **Image IPv6 dual-stack (unified)** | ✅ **2026-08-05** — `COMFYUI_LISTEN` env var (default `::`, Vast+Clore override `0.0.0.0`); 1 image dùng chung 3 provider, không cần tag `-salad` riêng |
+| **Image bake SDXL thử nghiệm** | ❌ **2026-08-05** — Bake SDXL 7 GB vào image → Salad chậm hơn 3 phút (33 GB extract lâu trên consumer node); đã revert về v3.7/v4.4 (20 GB) |
 | **Auth Hardening — Phase 1 (P0)** | ✅ **13/13** — Rate limit, JWT middleware, Secure cookie, security headers, anti-enumeration, fix phone_verified reset, OTP lock + cooldown + single-use |
 | **Auth Hardening — Phase 2 (P1)** | ✅ **4/5** — Password strength (client + server), confirm password, session invalidation on password change, pending_password TTL 1h |
 | **Auth Hardening — Phase 3 (P2)** | ✅ **2/4** — Audit log (`auth_audit_log`), sign-out all devices |
@@ -30,8 +32,11 @@
 | **Editor khi đang boot** | ✅ "🚀 Vào phòng làm việc" thành nút chính trong lúc GPU khởi động |
 | **Token auto-refresh** | ✅ Tự refresh session trước stop/cancel/start — không còn silent fail khi token hết hạn |
 | **ComfyUI transparent reconnect** | ✅ Update upstream_url giữ nguyên workUrl khi auto-replace — tab không cần F5 |
-| **Image v3.6 (Starter/Pro)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; ffmpeg + filmmaker scripts + frame-quality-check; VPS active |
-| **Image v4.3 (Studio/5090)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; đầy đủ tính năng; code default đã là v4.3 |
+| **Image v3.7 (Starter/Pro)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; ffmpeg + filmmaker scripts + frame-quality-check; 20 GB compressed; VPS active |
+| **Image v4.4 (Studio/5090)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; đầy đủ tính năng; 24 GB compressed; code default đã là v4.4 |
+| **Staging Environment Audit** | 🟡 **2026-08-05** — Đã audit toàn bộ trạng thái: 4-layer gate PASS, Vast readiness `PASS_HTTP_READY`, Scenario 1 FAIL (Clore provider — không phải RC6), 2-5 BLOCKED. Đã tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1`. `.env.local` đã khôi phục về Production. |
+| **LoRA Training** | 🟡 **WIP (2026-08-04)** — `src/lib/lora-train/` + SQL + `docker/lora-train/` đã có; 3 file API route (`[id].js`, `download.js`, `create.js`) đang viết dở: import `@/lib/supabase-route-client.js` chưa tồn tại, sai auth pattern. File untracked — build sẽ fail. |
+| **Environment Switching** | ✅ **2026-08-05** — 2 file môi trường `.env.staging` / `.env.production` + script `scripts/switch-env.ps1` |
 
 ## Thay đổi gần đây (2026-07)
 
@@ -61,6 +66,8 @@
 
 > **Ngay:** P0-B T11 billing E2E → P0-C alerts → P0-D E2E khách.  
 > **Đã làm xong:** P0-A ✅, auto-replace GPU (không cần F5), editor khi boot, session continuity, filmmaker mode.  
+> **Staging:** Chạy lại Scenario 1 trên Vast → Scenarios 2-5 → RC6 VERIFIED → promote Production.  
+> **LoRA Training:** Sửa 3 API route theo pattern `getAuthUserFromRequest` + `getSupabaseAdmin` (hoặc tạo `supabase-route-client.js`).  
 > **Không làm ngay:** Dual Run product, warm pool.  
 > **Tech debt:** Vast disk-only host vẫn có thể lọt qua filter → cần harden thêm post-rent gate.
 
@@ -1051,6 +1058,19 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - **Sai số hiển thị giờ:** `20h` thay vì `20.09h` → `formatDisplayHours` 2 decimal
 
 ## Việc tiếp theo (backlog)
+
+**Ưu tiên milestone kế tiếp — Staging & RC6:**
+- [x] Audit toàn bộ trạng thái Staging Environment (2026-08-05)
+- [x] Tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1` (2026-08-05)
+- [x] Khôi phục `.env.local` về Production (2026-08-05)
+- [ ] Chạy lại Scenario 1 (Clean Start) trên Vast — đã unblock sau Vast readiness PASS
+- [ ] Chạy Scenarios 2-5 → `RC6 VERIFIED`
+- [ ] Promote RC6 lên Production
+
+**Ưu tiên milestone kế tiếp — LoRA Training (WIP):**
+- [x] `src/lib/lora-train/job-manager.js` + `provision-train.js`
+- [x] `supabase/lora-train-jobs.sql` + `docker/lora-train/`
+- [ ] Sửa 3 file `src/pages/api/lora-train/*.js` — thay `createRouteClient` bằng `getAuthUserFromRequest` + `getSupabaseAdmin` (hoặc tạo `src/lib/supabase-route-client.js`)
 
 **Ưu tiên milestone kế tiếp — ComfyUI tích hợp:**
 - [x] Build Docker Image + chạy local — **http://localhost:8080 OK**
