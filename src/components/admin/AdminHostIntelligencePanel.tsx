@@ -136,21 +136,51 @@ export default function AdminHostIntelligencePanel() {
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div className="stat-label">Host Intelligence System</div>
+      <div className="stat-label">Quét & Đánh giá GPU Hosts</div>
       <div className="stat-sub" style={{ marginTop: 8, lineHeight: 1.6 }}>
-        Tự động quét & kiểm tra GPU hosts từ marketplace, xây dựng pool known-good.
-        Cron chạy mỗi <strong>25 phút</strong> qua Vercel. Dùng test image siêu nhẹ (~300MB).
+        Hệ thống tự động thuê thử GPU từ Vast/Clore mỗi <strong>25 phút</strong> bằng image test siêu nhẹ (~300MB, không ComfyUI).
+        Host nào vượt qua kiểm tra (boot nhanh, GPU đúng, mạng ổn) được đưa vào <strong>pool Known-Good</strong>.
+        Khi KH thuê GPU, hệ thống ưu tiên chọn host trong pool này — giảm tỉ lệ thuê trúng máy lỗi.
+        Chi phí test ~$2-3/tháng.
       </div>
 
-      {/* ── Summary stats ──────────────────────────────────────────────── */}
+      {/* ── Estimate cards ─────────────────────────────────────────────── */}
       {summary.totalHosts != null && (
         <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div className="stat-card" style={{ padding: '8px 14px', background: '#1a1a24', borderRadius: 8 }}>
-            <span className="text-muted" style={{ fontSize: 12 }}>Known-good</span>
-            <div className="stat-value" style={{ fontSize: 20, fontWeight: 700 }}>
-              {summary.knownGood ?? 0}
+          {/* Pass rate → attempts per ready */}
+          <div className="stat-card" style={{ padding: '10px 16px', background: '#1a1a24', borderRadius: 8, flex: '1 1 200px' }}>
+            <span className="text-muted" style={{ fontSize: 12 }}>Tỉ lệ thuê trúng máy tốt</span>
+            <div className="stat-value" style={{ fontSize: 22, fontWeight: 700, color: summary.averagePassRate != null && summary.averagePassRate >= 0.6 ? '#4ade80' : '#fbbf24' }}>
+              {summary.averagePassRate != null ? `${Math.round((summary.averagePassRate as number) * 100)}%` : '—'}
+            </div>
+            <span className="text-muted" style={{ fontSize: 11 }}>
+              {summary.averagePassRate != null
+                ? `~${Math.round(1 / (summary.averagePassRate as number) * 10) / 10} lần thuê → 1 máy sẵn sàng`
+                : 'Chưa đủ dữ liệu'}
+            </span>
+          </div>
+          {/* Total verified */}
+          <div className="stat-card" style={{ padding: '10px 16px', background: '#1a1a24', borderRadius: 8, flex: '1 1 150px' }}>
+            <span className="text-muted" style={{ fontSize: 12 }}>Đã kiểm tra</span>
+            <div className="stat-value" style={{ fontSize: 22, fontWeight: 700 }}>
+              {summary.totalHosts ?? 0}
+              <span className="text-muted" style={{ fontSize: 13, marginLeft: 4 }}>hosts</span>
             </div>
           </div>
+          {/* Known-good pool */}
+          <div className="stat-card" style={{ padding: '10px 16px', background: '#0f2d0f', borderRadius: 8, flex: '1 1 150px' }}>
+            <span className="text-muted" style={{ fontSize: 12 }}>Pool sẵn sàng</span>
+            <div className="stat-value" style={{ fontSize: 22, fontWeight: 700, color: '#4ade80' }}>
+              {summary.knownGood ?? 0}
+              <span className="text-muted" style={{ fontSize: 13, marginLeft: 4 }}>known-good</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Per-line detail ─────────────────────────────────────────────── */}
+      {summary.totalHosts != null && (
+        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           {GPU_LINES.map((line) => {
             const count = summary.knownGoodByLine?.[line.key] ?? 0;
             const target = draft.targetPerLine[line.key] ?? 4;
