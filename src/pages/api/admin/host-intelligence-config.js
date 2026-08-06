@@ -9,12 +9,9 @@ import {
   getHostIntelligenceSummary,
 } from '@/lib/gpu/host-reputation/index.js';
 import {
-  readHostIntelligenceConfig,
-  writeHostIntelligenceConfig,
-  HOST_INTELLIGENCE_CONFIG_PATH,
+  readHostIntelligenceConfigAsync,
+  writeHostIntelligenceConfigAsync,
 } from '@/lib/gpu/host-reputation/host-reputation-config.js';
-import fs from 'fs';
-import path from 'path';
 
 const VALID_GPU_LINES = ['rtx3090', 'rtx4090_1x', 'rtx5090_1x'];
 const VALID_PROVIDERS = ['vast', 'clore'];
@@ -69,7 +66,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
-      const config = readHostIntelligenceConfig();
+      const config = await readHostIntelligenceConfigAsync();
       const summary = getHostIntelligenceSummary();
       return res.status(200).json({ config, summary });
     } catch (err) {
@@ -87,7 +84,7 @@ export default async function handler(req, res) {
     }
 
     try {
-      const current = readHostIntelligenceConfig();
+      const current = await readHostIntelligenceConfigAsync();
       const updated = {
         ...current,
         ...(req.body.enabled !== undefined ? { enabled: req.body.enabled } : {}),
@@ -98,7 +95,7 @@ export default async function handler(req, res) {
           providers: { ...current.providers, ...req.body.providers },
         } : {}),
       };
-      writeHostIntelligenceConfig(updated);
+      await writeHostIntelligenceConfigAsync(updated);
       const summary = getHostIntelligenceSummary();
       return res.status(200).json({ config: updated, summary });
     } catch (err) {

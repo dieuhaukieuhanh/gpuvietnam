@@ -14,7 +14,7 @@
  * Costs ~$0.002-0.01 per cycle (< $15/month total).
  */
 
-import { HOST_REPUTATION, readHostIntelligenceConfig } from '@/lib/gpu/host-reputation/host-reputation-config';
+import { HOST_REPUTATION, readHostIntelligenceConfigAsync } from '@/lib/gpu/host-reputation/host-reputation-config';
 import {
   getHostsNeedingRecheck,
   getHostsInCooldownDone,
@@ -239,7 +239,7 @@ export default async function handler(req, res) {
   }
 
   // ── Runtime config (admin UI) ────────────────────────────────────────
-  const runtimeConfig = readHostIntelligenceConfig();
+  const runtimeConfig = await readHostIntelligenceConfigAsync();
 
   if (!runtimeConfig.enabled) {
     return res.status(200).json({

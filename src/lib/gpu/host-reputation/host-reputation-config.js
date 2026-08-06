@@ -107,7 +107,7 @@ export const HOST_BLACKLIST_CATEGORIES = {
 };
 
 // ---------------------------------------------------------------------------
-// Runtime config (overridable via admin UI → JSON file)
+// Runtime config (overridable via admin UI → Supabase, fallback JSON file)
 // ---------------------------------------------------------------------------
 
 export const HOST_INTELLIGENCE_CONFIG_PATH = path.resolve(
@@ -120,11 +120,29 @@ const DEFAULT_RUNTIME_CONFIG = {
   providers: { vast: true, clore: false },
 };
 
+// ── Supabase client (lazy) ────────────────────────────────────────────────
+let _supabaseAdminConfig = null;
+
+function getSupabaseAdminForConfig() {
+  if (_supabaseAdminConfig) return _supabaseAdminConfig;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    _supabaseAdminConfig = createClient(url, key, { auth: { persistSession: false } });
+    return _supabaseAdminConfig;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Read runtime config from JSON file. Returns default if file missing/corrupt.
+ * Read runtime config — Supabase first, fallback JSON file, fallback defaults.
  * @returns {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }}
  */
 export function readHostIntelligenceConfig() {
+  // 1. Try JSON file (sync, always available as fallback)
   try {
     if (fs.existsSync(HOST_INTELLIGENCE_CONFIG_PATH)) {
       const raw = fs.readFileSync(HOST_INTELLIGENCE_CONFIG_PATH, 'utf-8');
@@ -137,13 +155,67 @@ export function readHostIntelligenceConfig() {
       };
     }
   } catch (err) {
-    console.warn('[host-intel] Failed to read runtime config, using defaults:', err instanceof Error ? err.message : String(err));
+    console.warn('[host-intel] Failed to read JSON config:', err instanceof Error ? err.message : String(err));
   }
+
   return { ...DEFAULT_RUNTIME_CONFIG, targetPerLine: { ...DEFAULT_RUNTIME_CONFIG.targetPerLine }, providers: { ...DEFAULT_RUNTIME_CONFIG.providers } };
 }
 
 /**
- * Write runtime config as JSON. Atomic via tmp + rename.
+ * Async version — reads from Supabase first, then JSON fallback.
+ * @returns {Promise<{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }>}
+ */
+export async function readHostIntelligenceConfigAsync() {
+  const admin = getSupabaseAdminForConfig();
+  if (admin) {
+    try {
+      const { data, error } = await admin.from('host_intelligence_config').select('*').eq('id', 1).single();
+      if (!error && data) {
+        return {
+          enabled: data.enabled ?? DEFAULT_RUNTIME_CONFIG.enabled,
+          targetPerLine: {
+            ...DEFAULT_RUNTIME_CONFIG.targetPerLine,
+            ...(typeof data.target_per_line === 'object' ? data.target_per_line : {}),
+          },
+          providers: {
+            ...DEFAULT_RUNTIME_CONFIG.providers,
+            ...(typeof data.providers === 'object' ? data.providers : {}),
+          },
+        };
+      }
+    } catch (err) {
+      console.warn('[host-intel] Supabase read error:', err instanceof Error ? err.message : String(err));
+    }
+  }
+  return readHostIntelligenceConfig();
+}
+
+/**
+ * Write runtime config to Supabase + JSON fallback.
+ * @param {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }} config
+ */
+export async function writeHostIntelligenceConfigAsync(config) {
+  // 1. Write to Supabase
+  const admin = getSupabaseAdminForConfig();
+  if (admin) {
+    try {
+      await admin.from('host_intelligence_config').upsert({
+        id: 1,
+        enabled: config.enabled,
+        target_per_line: config.targetPerLine,
+        providers: config.providers,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('[host-intel] Supabase write error:', err instanceof Error ? err.message : String(err));
+    }
+  }
+  // 2. JSON fallback
+  writeHostIntelligenceConfig(config);
+}
+
+/**
+ * Write runtime config as JSON only (sync, for backward compat).
  * @param {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }} config
  */
 export function writeHostIntelligenceConfig(config) {
