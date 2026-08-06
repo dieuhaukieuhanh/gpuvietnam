@@ -2,6 +2,9 @@
  * Host reputation configuration (multi-provider).
  */
 
+import fs from 'fs';
+import path from 'path';
+
 function envMs(name, fallback) {
   const raw = Number(process.env[name] ?? fallback);
   return Number.isFinite(raw) && raw > 0 ? raw : fallback;
@@ -102,3 +105,51 @@ export const HOST_BLACKLIST_CATEGORIES = {
   IMAGE_PULL_FAILURE: 'critical',
   HEALTH_FAILURE: 'critical',
 };
+
+// ---------------------------------------------------------------------------
+// Runtime config (overridable via admin UI → JSON file)
+// ---------------------------------------------------------------------------
+
+export const HOST_INTELLIGENCE_CONFIG_PATH = path.resolve(
+  process.env.HOST_INTEL_CONFIG_PATH || 'tmp/host-intelligence-config.json',
+);
+
+const DEFAULT_RUNTIME_CONFIG = {
+  enabled: true,
+  targetPerLine: { rtx3090: 4, rtx4090_1x: 4, rtx5090_1x: 4 },
+  providers: { vast: true, clore: false },
+};
+
+/**
+ * Read runtime config from JSON file. Returns default if file missing/corrupt.
+ * @returns {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }}
+ */
+export function readHostIntelligenceConfig() {
+  try {
+    if (fs.existsSync(HOST_INTELLIGENCE_CONFIG_PATH)) {
+      const raw = fs.readFileSync(HOST_INTELLIGENCE_CONFIG_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      return {
+        ...DEFAULT_RUNTIME_CONFIG,
+        ...parsed,
+        targetPerLine: { ...DEFAULT_RUNTIME_CONFIG.targetPerLine, ...(parsed.targetPerLine ?? {}) },
+        providers: { ...DEFAULT_RUNTIME_CONFIG.providers, ...(parsed.providers ?? {}) },
+      };
+    }
+  } catch (err) {
+    console.warn('[host-intel] Failed to read runtime config, using defaults:', err instanceof Error ? err.message : String(err));
+  }
+  return { ...DEFAULT_RUNTIME_CONFIG, targetPerLine: { ...DEFAULT_RUNTIME_CONFIG.targetPerLine }, providers: { ...DEFAULT_RUNTIME_CONFIG.providers } };
+}
+
+/**
+ * Write runtime config as JSON. Atomic via tmp + rename.
+ * @param {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }} config
+ */
+export function writeHostIntelligenceConfig(config) {
+  const dir = path.dirname(HOST_INTELLIGENCE_CONFIG_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const tmp = HOST_INTELLIGENCE_CONFIG_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  fs.renameSync(tmp, HOST_INTELLIGENCE_CONFIG_PATH);
+}

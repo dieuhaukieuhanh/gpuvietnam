@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "targetPerLine": {
+    "rtx3090": 4,
+    "rtx4090_1x": 4,
+    "rtx5090_1x": 4
+  },
+  "providers": {
+    "vast": true,
+    "clore": false
+  }
+}

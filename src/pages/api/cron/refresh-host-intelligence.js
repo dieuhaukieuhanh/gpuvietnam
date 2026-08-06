@@ -14,7 +14,7 @@
  * Costs ~$0.002-0.01 per cycle (< $15/month total).
  */
 
-import { HOST_REPUTATION } from '@/lib/gpu/host-reputation/host-reputation-config';
+import { HOST_REPUTATION, readHostIntelligenceConfig } from '@/lib/gpu/host-reputation/host-reputation-config';
 import {
   getHostsNeedingRecheck,
   getHostsInCooldownDone,
@@ -47,7 +47,6 @@ const TEST_GPU_PORT = Number(process.env.GPU_TEST_PORT || 8080);
 const GPU_LINES = ['rtx3090', 'rtx4090_1x', 'rtx5090_1x'];
 const MAX_TEST_PER_CYCLE = HOST_REPUTATION.maxTestPerCycle || 2;
 const MAX_TEST_BELOW_TARGET = HOST_REPUTATION.maxTestWhenBelowTarget || 4;
-const TARGET_PER_LINE = HOST_REPUTATION.targetKnownGoodPerLine || 4;
 
 // ── Jitter / anti-pattern detection ────────────────────────────────────
 // Providers should NOT see a fixed periodic pattern (every 15 min exactly).
@@ -239,6 +238,38 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── Runtime config (admin UI) ────────────────────────────────────────
+  const runtimeConfig = readHostIntelligenceConfig();
+
+  if (!runtimeConfig.enabled) {
+    return res.status(200).json({
+      ok: true,
+      message: 'Host Intelligence is disabled (admin config)',
+      results: [],
+      summary: getHostIntelligenceSummary(),
+      elapsedMs: Date.now() - t0,
+    });
+  }
+
+  // Filter GPU lines by provider availability. If both providers disabled, skip.
+  const enabledProviders = Object.entries(runtimeConfig.providers)
+    .filter(([, enabled]) => enabled)
+    .map(([name]) => name);
+
+  if (enabledProviders.length === 0) {
+    return res.status(200).json({
+      ok: true,
+      message: 'All providers disabled in admin config',
+      results: [],
+      summary: getHostIntelligenceSummary(),
+      elapsedMs: Date.now() - t0,
+    });
+  }
+
+  // Use admin-configurable target per GPU line
+  const targetPerLine = { ...runtimeConfig.targetPerLine };
+  const TARGET_PER_LINE = targetPerLine;
+
   // ── Jitter: anti-pattern detection ──────────────────────────────────
 
   // 1. Random initial delay before starting any work (0-6 min)
@@ -267,7 +298,8 @@ export default async function handler(req, res) {
   const summary = getHostIntelligenceSummary();
   const belowTarget = GPU_LINES.filter((line) => {
     const count = summary.knownGoodByLine?.[line] ?? 0;
-    return count < TARGET_PER_LINE;
+    const target = typeof TARGET_PER_LINE === 'object' ? (TARGET_PER_LINE[line] ?? 4) : 4;
+    return count < target;
   });
 
   let testCount = 1 + randInt(MAX_TEST_PER_CYCLE); // default: 1-2

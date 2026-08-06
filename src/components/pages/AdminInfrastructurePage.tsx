@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AdminAuthGate from '@/components/admin/AdminAuthGate';
 import AdminInfrastructurePanel from '@/components/admin/AdminInfrastructurePanel';
 import AdminReconciliationPanel from '@/components/admin/AdminReconciliationPanel';
+import AdminHostIntelligencePanel from '@/components/admin/AdminHostIntelligencePanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdminMobileShell } from '@/hooks/useAdminMobileShell';
 import {
@@ -164,6 +165,7 @@ export default function AdminInfrastructurePage() {
           <div className="content">
             <AdminInfrastructurePanel />
             <AdminReconciliationPanel />
+            <AdminHostIntelligencePanel />
           </div>
         </div>
         </div>
