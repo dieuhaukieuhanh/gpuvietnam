@@ -21,6 +21,7 @@ type HostIntelligenceSummary = {
 type HostIntelligenceResponse = {
   config: HostIntelligenceConfig;
   summary: HostIntelligenceSummary;
+  error?: string;
 };
 
 const GPU_LINES: { key: string; label: string }[] = [
@@ -66,7 +67,7 @@ export default function AdminHostIntelligencePanel() {
       const res = await adminFetch('/api/admin/host-intelligence-config');
       const data: HostIntelligenceResponse = await res.json();
       if (!res.ok) {
-        setError(data?.error ? String((data as any).error) : 'Không tải được cấu hình.');
+        setError(data?.error ?? 'Không tải được cấu hình.');
         return;
       }
       applyConfig(data.config, data.summary);
