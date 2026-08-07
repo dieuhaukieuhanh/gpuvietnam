@@ -290,6 +290,52 @@ export const authPageStyles = `
             text-decoration: underline;
         }
 
+        .auth-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 14px 0;
+        }
+        .auth-divider::before,
+        .auth-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--auth-border);
+        }
+        .auth-divider span {
+            font-size: 11px;
+            color: var(--auth-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .auth-google-btn {
+            width: 100%;
+            height: 48px;
+            border: 1.5px solid var(--auth-border);
+            border-radius: 8px;
+            background: #fff;
+            color: #3c4043;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .auth-google-btn:hover:not(:disabled) {
+            background: #f8f9fa;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .auth-google-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         @media (max-width: 400px) {
             .auth-main { padding: 16px; }
             .auth-form-card { padding: 20px 16px; }

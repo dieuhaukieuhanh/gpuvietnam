@@ -27,6 +27,7 @@ export type DashboardUser = {
   id: string;
   email: string;
   phone: string | null;
+  emailVerified: boolean;
   phoneVerified: boolean;
   fullName: string | null;
   displayName: string;
@@ -60,6 +61,8 @@ export type MachineSessionView = {
     canCancel: boolean;
     canStop: boolean;
     canOpenComfy: boolean;
+    /** Offline Comfy Workspace (mode=editor) while phase=opening. */
+    canOpenEditor: boolean;
   };
   message: string | null;
   domainEvent: string | null;

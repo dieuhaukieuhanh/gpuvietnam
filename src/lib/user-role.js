@@ -224,6 +224,16 @@ export async function syncUserRoleOnLogin(supabaseAdmin, { userId, email }) {
 
 
 
+  // Kiểm tra phone_verified, email_verified hiện tại để không ghi đè true → false
+  const { data: existing } = await supabaseAdmin
+    .from('users')
+    .select('phone_verified, email_verified')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const phoneVerified = existing?.phone_verified === true;
+  const emailVerified = existing?.email_verified === true;
+
   await supabaseAdmin.from('users').upsert(
 
     {
@@ -234,7 +244,8 @@ export async function syncUserRoleOnLogin(supabaseAdmin, { userId, email }) {
 
       role,
 
-      phone_verified: false,
+      email_verified: emailVerified,
+      phone_verified: phoneVerified,
 
     },
 

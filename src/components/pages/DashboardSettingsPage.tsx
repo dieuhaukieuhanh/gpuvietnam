@@ -333,16 +333,22 @@ export default function DashboardSettingsPage({
           </div>
           <div className="form-group">
             <label className="form-label">Số điện thoại</label>
+            {!user?.phoneVerified && (
+              <div className="settings-phone-banner">
+                <span className="settings-phone-banner-icon">🎁</span>
+                <span>Xác thực SĐT để nhận <strong>khuyến mại tự động</strong> và <strong>dùng thử GPU miễn phí</strong>.</span>
+              </div>
+            )}
             <div className="settings-phone-row">
               <input
                 type="tel"
                 className="form-input"
-                value={maskPhone(displayPhone)}
+                value={displayPhone ? maskPhone(displayPhone) : 'Chưa thêm'}
                 readOnly
               />
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className={`btn btn-sm ${user?.phoneVerified ? 'btn-secondary' : 'btn-primary'}`}
                 onClick={() => {
                   setShowPhoneModal(true);
                   setPhoneStep('input');
@@ -351,12 +357,13 @@ export default function DashboardSettingsPage({
                   setDevOtp(null);
                 }}
               >
-                Đổi SĐT
+                {displayPhone ? 'Đổi SĐT' : 'Thêm SĐT'}
               </button>
             </div>
             <p className="form-hint">
-              SĐT dùng nhận thông báo Zalo
-              {user?.phoneVerified ? ' (đã xác thực)' : ' (chưa xác thực)'}.
+              {user?.phoneVerified
+                ? '✅ SĐT đã xác thực — bạn có thể nhận khuyến mại tự động.'
+                : '⚠️ Chưa xác thực SĐT — bạn vẫn dùng GPU bình thường nhưng cần SĐT để nhận ưu đãi.'}
             </p>
           </div>
           <button

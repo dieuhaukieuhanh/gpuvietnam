@@ -66,7 +66,7 @@ export default async function handler(req, res) {
 
           .from('users')
 
-          .select('email, phone, phone_verified, full_name, wallet_balance')
+          .select('email, phone, email_verified, phone_verified, full_name, wallet_balance')
 
           .eq('id', user.id)
 
@@ -401,6 +401,7 @@ export default async function handler(req, res) {
             canCancel: true,
             canStop: false,
             canOpenComfy: false,
+            canOpenEditor: true,
           },
           message: 'Đang mở phiên làm việc...',
           domainEvent: 'MACHINE_PROVISIONING',
@@ -450,6 +451,8 @@ export default async function handler(req, res) {
         email: profile?.email ?? user.email,
 
         phone: profile?.phone ?? user.user_metadata?.phone ?? null,
+
+        emailVerified: profile?.email_verified ?? false,
 
         phoneVerified: profile?.phone_verified ?? false,
 

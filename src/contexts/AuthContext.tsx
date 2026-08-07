@@ -37,14 +37,18 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function setAuthCookie(expiresIn = 3600) {
+function setAuthCookie(accessToken: string, expiresIn = 3600) {
   if (typeof document === 'undefined') return;
-  document.cookie = `gpuvietnam-auth=1; path=/; max-age=${expiresIn}; SameSite=Lax`;
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `gpuvietnam-auth=1; path=/; max-age=${expiresIn}; SameSite=Lax${secure}`;
+  document.cookie = `gpuvietnam-token=${accessToken}; path=/; max-age=${expiresIn}; SameSite=Lax${secure}`;
 }
 
 function clearAuthCookie() {
   if (typeof document === 'undefined') return;
-  document.cookie = 'gpuvietnam-auth=; path=/; max-age=0; SameSite=Lax';
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `gpuvietnam-auth=; path=/; max-age=0; SameSite=Lax${secure}`;
+  document.cookie = `gpuvietnam-token=; path=/; max-age=0; SameSite=Lax${secure}`;
 }
 
 function normalizeRole(role?: string | null): UserRole {
@@ -143,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(data.session);
     setUser(data.session?.user ?? null);
     if (data.session) {
-      setAuthCookie(data.session.expires_in ?? 3600);
+      setAuthCookie(data.session.access_token, data.session.expires_in ?? 3600);
       await syncRole(data.session.access_token);
     } else {
       clearAuthCookie();
@@ -164,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         setUser(data.session?.user ?? null);
         if (data.session) {
-          setAuthCookie(data.session.expires_in ?? 3600);
+          setAuthCookie(data.session.access_token, data.session.expires_in ?? 3600);
           await syncRole(data.session.access_token);
         } else {
           setRole(null);
@@ -202,10 +206,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setAuthCookie(nextSession.expires_in ?? 3600);
+      setAuthCookie(nextSession.access_token, nextSession.expires_in ?? 3600);
 
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         void syncRole(nextSession.access_token);
+        // Sau Google OAuth sign-in, đảm bảo public.users có profile
+        if (event === 'SIGNED_IN') {
+          fetch('/api/auth/ensure-profile', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${nextSession.access_token}` },
+          }).catch(() => {});
+        }
       }
 
       setLoading(false);
@@ -231,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setSession(data.session);
       setUser(data.session?.user ?? null);
-      setAuthCookie(nextSession.expires_in ?? data.session?.expires_in ?? 3600);
+      setAuthCookie(nextSession.access_token, nextSession.expires_in ?? data.session?.expires_in ?? 3600);
 
       if (options?.role !== undefined && options?.role !== null) {
         applyRole(normalizeRole(options.role), { lockMs: 5000 });

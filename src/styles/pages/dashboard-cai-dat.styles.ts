@@ -501,6 +501,23 @@ export const styles = `:root {
             align-items: center;
         }
         .settings-phone-row .form-input { flex: 1; }
+        .settings-phone-banner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            color: var(--accent-orange);
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .settings-phone-banner-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+        }
         .settings-events-label {
             font-size: 11px;
             color: var(--text-muted);
