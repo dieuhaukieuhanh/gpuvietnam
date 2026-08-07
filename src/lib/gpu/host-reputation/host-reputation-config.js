@@ -120,7 +120,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   providers: { vast: true, clore: false },
 };
 
-// ── Supabase client (lazy) ────────────────────────────────────────────────
+// ── Supabase client (lazy, for runtime config only) ───────────────────────
 let _supabaseAdminConfig = null;
 
 function getSupabaseAdminForConfig() {
