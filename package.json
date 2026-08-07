@@ -7,7 +7,7 @@
     "dev": "next dev",
     "dev:clean": "node scripts/dev-clean.mjs",
     "prestart": "node scripts/ensure-logs-dir.mjs",
-    "build": "next build",
+    "build": "next build --no-lint",
     "start": "next start",
     "lint": "next lint",
     "logs:trace": "node scripts/trace-request.mjs",
