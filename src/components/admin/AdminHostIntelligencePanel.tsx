@@ -152,7 +152,7 @@ export default function AdminHostIntelligencePanel() {
           <div className="stat-card" style={{ padding: '10px 16px', background: '#1a1a24', borderRadius: 8, flex: '1 1 200px' }}>
             <span className="text-muted" style={{ fontSize: 12 }}>Tỉ lệ thuê trúng máy tốt</span>
             <div className="stat-value" style={{ fontSize: 22, fontWeight: 700, color: summary.averagePassRate != null && summary.averagePassRate >= 0.6 ? '#4ade80' : '#fbbf24' }}>
-              {summary.averagePassRate != null ? `${Math.round((summary.averagePassRate as number) * 100)}%` : '—'}
+              {summary.averagePassRate != null ? `${Math.round(summary.averagePassRate as number)}%` : '—'}
             </div>
             <span className="text-muted" style={{ fontSize: 11 }}>
               {summary.averagePassRate != null
