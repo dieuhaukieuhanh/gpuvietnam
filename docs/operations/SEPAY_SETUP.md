@@ -11,7 +11,7 @@
 | SQL | `supabase/sepay-transactions.sql` (manifest `0054`) |
 | Vercel env | `SEPAY_WEBHOOK_SECRET`, `SEPAY_API_TOKEN`, `SEPAY_ACCOUNT_NUMBER`, `CRON_SECRET` |
 | Tuỳ chọn | `SEPAY_BANK_CODE=MBBank`, `SEPAY_ACCOUNT_NAME` |
-| Cron | `vercel.json` → `/api/cron/sepay-reconcile` mỗi 5 phút |
+| Cron | `vercel.json` → `/api/cron/sepay-reconcile` **1 lần/ngày** (`25 3 * * *` UTC) — Hobby limit; webhook là đường chính |
 
 Webhook production:
 
@@ -113,4 +113,4 @@ Nếu `SEPAY_API_TOKEN` sai → HTTP 502.
 | `amount_mismatch` | CK thiếu tiền so với số tiền yêu cầu |
 | QR không hiện | Mạng chặn `qr.sepay.vn` — vẫn CK tay theo STK + nội dung |
 | Cron 403 | Thiếu `CRON_SECRET` / không phải Vercel Cron |
-| Cron `*/5` không chạy | Gói Vercel không hỗ trợ cron nhiều lần/ngày — nâng Pro hoặc gọi thủ công / external cron |
+| Cron nhiều lần/ngày | Hobby chỉ 1 cron/ngày — đã set `25 3 * * *`; cần dày hơn thì nâng Pro hoặc cron ngoài gọi API |

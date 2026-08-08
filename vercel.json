@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/sepay-reconcile",
-      "schedule": "*/5 * * * *"
+      "schedule": "25 3 * * *"
     }
   ]
 }
