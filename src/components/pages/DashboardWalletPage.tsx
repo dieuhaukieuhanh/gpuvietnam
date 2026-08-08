@@ -463,7 +463,7 @@ export default function DashboardWalletPage() {
               <>
                 <h3>💰 Nạp vào Ví</h3>
                 <p className="modal-subtitle">
-                  Nhập số tiền chuyển khoản — Admin duyệt trong ~15 phút.
+                  Nhập số tiền — chuyển khoản xong hệ thống tự cộng ví trong vài phút.
                 </p>
               </>
             ) : (

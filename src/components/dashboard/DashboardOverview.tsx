@@ -2067,10 +2067,10 @@ export default function DashboardOverview({
         <div className="alert-card warning" style={{ display: 'flex', marginBottom: 20 }}>
           <span className="alert-icon">⏳</span>
           <div className="alert-content">
-            <div className="alert-title">Chờ Admin xác nhận thanh toán</div>
+            <div className="alert-title">Đang chờ chuyển khoản (tự động duyệt)</div>
             <div className="alert-desc">
-              Yêu cầu gói <strong>{subscription.plan}</strong> đã được ghi nhận. Admin sẽ kiểm tra
-              chuyển khoản và kích hoạt GPU trong 5–10 phút. Nội dung CK:{' '}
+              Yêu cầu gói <strong>{subscription.plan}</strong> đã được ghi nhận. Chuyển khoản đúng
+              nội dung bên dưới — hệ thống tự kích hoạt trong vài phút. Nội dung CK:{' '}
               <em>{subscription.transfer_note ?? '—'}</em>
             </div>
           </div>

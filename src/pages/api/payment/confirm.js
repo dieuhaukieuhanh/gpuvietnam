@@ -35,13 +35,18 @@ export default async function handler(req, res) {
       await replaceActiveSubscriptions(supabaseAdmin, user.id);
     }
 
-    const data = await createPendingGpuSubscription(supabaseAdmin, user.id, input);
+    const result = await createPendingGpuSubscription(supabaseAdmin, user.id, input);
+    const subscription = result?.subscription ?? result;
+    const transfer = result?.transfer ?? null;
 
     return res.status(200).json({
       success: true,
-      subscription: data,
+      subscription,
+      transfer,
+      transferCode: result?.transferCode ?? null,
+      amount: result?.amount ?? null,
       message:
-        'Đã ghi nhận yêu cầu thanh toán. Admin sẽ xác nhận trong 5–10 phút sau khi kiểm tra chuyển khoản.',
+        'Đã ghi nhận yêu cầu. Chuyển khoản đúng nội dung (mã GD) — hệ thống tự duyệt trong vài phút.',
     });
   } catch (err) {
     console.error('[payment/confirm]', err);

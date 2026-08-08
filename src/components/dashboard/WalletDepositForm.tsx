@@ -20,7 +20,9 @@ export type DepositPendingData = {
     accountNumber: string;
     accountName: string;
     amount: number;
-    transferNote: string;
+    transferContent: string;
+    transferCode: string;
+    transferNote?: string;
     expectedMinutes: number;
     expectedLabel: string;
   };
@@ -55,17 +57,50 @@ function formatVnd(amount: number) {
 
 type WalletDepositPendingViewProps = {
   pending: DepositPendingData;
+  accessToken: string;
   onConfirm: () => void;
 };
 
-function WalletDepositPendingView({ pending, onConfirm }: WalletDepositPendingViewProps) {
+function WalletDepositPendingView({ pending, accessToken, onConfirm }: WalletDepositPendingViewProps) {
   const [copySuccess, setCopySuccess] = useState(false);
   const [transferred, setTransferred] = useState(false);
+  const [qrSrc, setQrSrc] = useState<string | null>(null);
   const { transaction, transfer } = pending;
+
+  // Fetch VietQR (SePay)
+  useEffect(() => {
+    let cancelled = false;
+    const fetchQr = async () => {
+      if (!accessToken) return;
+      try {
+        const content = transfer.transferContent || transfer.transferNote || '';
+        const res = await fetch('/api/payment/sepay-qr', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            amount: transfer.amount,
+            transferCode: transfer.transferCode || transfer.transferNote || '',
+            description: content,
+          }),
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const src = data.qrDataUrl || data.qrUrl;
+        if (src && !cancelled) setQrSrc(src);
+      } catch {
+        /* QR fetch failed — fall back to placeholder */
+      }
+    };
+    fetchQr();
+    return () => { cancelled = true; };
+  }, [accessToken, transfer.amount, transfer.transferContent, transfer.transferNote, transfer.transferCode]);
 
   const copyTransferNote = async () => {
     try {
-      await navigator.clipboard.writeText(transfer.transferNote);
+      await navigator.clipboard.writeText(transfer.transferContent || transfer.transferNote || '');
       setCopySuccess(true);
       window.setTimeout(() => setCopySuccess(false), 2000);
     } catch {
@@ -80,19 +115,23 @@ function WalletDepositPendingView({ pending, onConfirm }: WalletDepositPendingVi
           ⏳
         </span>
         <div className="wallet-deposit-pending-head-text">
-          <h4 className="wallet-deposit-pending-title">Chờ Admin duyệt</h4>
+          <h4 className="wallet-deposit-pending-title">Chuyển khoản — tự động duyệt</h4>
           <p className="wallet-deposit-pending-subtitle">
-            Chuyển khoản đúng số tiền và nội dung CK bên dưới
+            Quét QR hoặc chuyển đúng số tiền + nội dung CK. Hệ thống nhận tiền sẽ cộng ví tự động.
           </p>
         </div>
       </div>
 
       <div className="wallet-deposit-pending-main">
         <div className="wallet-deposit-pending-qr">
-          <span className="wallet-deposit-pending-qr-icon" aria-hidden>
-            🖼️
-          </span>
-          <span>Quét QR chuyển khoản</span>
+          {qrSrc ? (
+            <img src={qrSrc} alt="QR chuyển khoản" className="wallet-deposit-pending-qr-img" />
+          ) : (
+            <>
+              <span className="wallet-deposit-pending-qr-icon" aria-hidden>🖼️</span>
+              <span>Đang tạo QR…</span>
+            </>
+          )}
         </div>
 
         <dl className="wallet-deposit-pending-grid">
@@ -112,7 +151,7 @@ function WalletDepositPendingView({ pending, onConfirm }: WalletDepositPendingVi
       <div className="wallet-deposit-pending-note">
         <div className="wallet-deposit-pending-note-text">
           <span>Nội dung CK</span>
-          <strong>{transfer.transferNote}</strong>
+          <strong>{transfer.transferContent || transfer.transferNote}</strong>
         </div>
         <button type="button" className="wallet-deposit-copy" onClick={() => void copyTransferNote()}>
           {copySuccess ? '✅ Đã copy' : '📋 Copy'}
@@ -120,7 +159,7 @@ function WalletDepositPendingView({ pending, onConfirm }: WalletDepositPendingVi
       </div>
 
       <p className="wallet-deposit-pending-eta">
-        ⏱️ Duyệt trong {transfer.expectedLabel} (giờ hành chính)
+        ⏱️ Thường {transfer.expectedLabel}. Nếu quá 15 phút chưa vào, liên hệ CSKH kèm ảnh CK.
       </p>
 
       <div className="wallet-deposit-pending-foot">
@@ -231,7 +270,13 @@ export default function WalletDepositForm({
   };
 
   if (pending) {
-    return <WalletDepositPendingView pending={pending} onConfirm={handleConfirmPending} />;
+    return (
+      <WalletDepositPendingView
+        pending={pending}
+        accessToken={accessToken}
+        onConfirm={handleConfirmPending}
+      />
+    );
   }
 
   return (

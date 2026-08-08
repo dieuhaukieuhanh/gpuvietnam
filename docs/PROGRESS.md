@@ -7,16 +7,20 @@
 - **Framework:** Next.js 14 Pages Router (`src/pages/`, `src/components/pages/`)
 - **Auth & DB:** Supabase Auth + Postgres + Storage (`@supabase/supabase-js`)
 - **OTP SMS:** Speedsms.vn (dev: thiếu token → OTP hiện trên `/verify-otp`)
-- **ComfyUI (GPU):** prod image `dieuhaukieuhanh/gpuvietnam-comfyui:v3.7` (Starter/Pro) + `:v4.4` (Studio); port **8080**; providers **Vast** (primary) + **Clore** (secondary) + **Salad** (last resort); P0-A VPS: **Vast-only**
+- **ComfyUI (GPU):** prod image `:v3.7` (Starter/Pro) + `:v4.4` (Studio); port **8080**; providers Vast + Clore + Salad; **P0-A VPS: Vast-only**; code default attempt `salad→vast→clore` nếu không set flag
 - **Control Plane:** Vercel (`gpuvietnam.com`) · **Lifecycle worker:** VPS systemd `gpuvietnam-lifecycle-worker`
+- **Sản phẩm WIP:** MakeStudio (Train/Preview/Final) · SePay CK tự động · LoRA train API
 
 ## Thay đổi gần đây (2026-08)
 
 | Hạng mục | Trạng thái |
 |----------|------------|
-| **Host Intelligence System** | ✅ **2026-08-06** — Cron 25 phút quét Vast (jitter 0-6min, 10% skip), test image siêu nhẹ `dieuhaukieuhanh/gpu-test:v1` (~1.2GB, no ComfyUI). 3 job: Discover (host mới), Recheck (stale >24h), BadRetry (cooldown 3 ngày). Reliability scoring (40% pass rate + 20% boot + 20% latency + 10% network + 10% stops). Adaptive testing: pool < 4/line → test đến 4 host/chu kỳ. Atomic write + backup + auto-recovery cho host-reputation.json. Chi phí ~$2-3/tháng. |
-| **SaladCloud GPU Provider (last resort)** | ✅ **2026-08-05** — SaladClient REST API + ProviderAdapter + ProvisionGate; routing `vast→clore→salad` (Salad only when Vast+Clore exhausted); unified IPv6 dual-stack image; Salad limits: 35 GB image max, AMD64 only, no SSH (expected); consumer nodes I/O yếu, cold start 15-25 phút; ~60% reliability |
-| **Image IPv6 dual-stack (unified)** | ✅ **2026-08-05** — `COMFYUI_LISTEN` env var (default `::`, Vast+Clore override `0.0.0.0`); 1 image dùng chung 3 provider, không cần tag `-salad` riêng |
+| **Host Intelligence System** | ✅ **2026-08-06** + **vá/Clore 2026-08-08**. **Scheduler:** systemd `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. **Không** trong `vercel.json`. Sổ `vast-host:*` / `clore-host:*`. Vast: 3090/4090/5090. Clore cycle **đã wire** (Discover/Recheck/BadRetry + Admin card); default `providers.clore=false` — bật qua Admin. Available = known-good ∩ chợ. Fair deficit slots. Debt: passRate-on-fail. |
+| **gpu-test HOST=0.0.0.0** | ✅ **2026-08-08** — Bake `HOST=0.0.0.0` trong `docker/test-gpu`; Hub `gpu-test:v1` digest `sha256:fd74e09b…`. ComfyUI/MakeStudio dùng `COMFYUI_LISTEN` (không đổi bake). |
+| **MakeStudio (Train / Preview / Final)** | 🟡 **WIP (2026-08)** — UI + API + SQL `0053` + Docker train/preview/final. Route `/dashboard/makestudio` (`routes.dashboardMakestudio`). **Chưa** sidebar/nav. Bug: hook gửi snake_case, `createMakestudioJob` đọc camelCase. Preview → RunPod Serverless; train/final → Vast. Chưa billing/quota. |
+| **SePay (CK tự động)** | ✅ **2026-08-08** — VietQR `qr.sepay.vn` + webhook HMAC + match nạp ví/gói/tái tục (mã GD trong `transfer_note`) + SQL `0054` + cron `sepay-reconcile` `*/5` trên Vercel. Checkout tạo yêu cầu trước rồi hiện QR. UI “tự động duyệt”. |
+| **SaladCloud GPU Provider** | ✅ **2026-08-05** — SaladClient + adapter + gate. **Ops VPS:** Vast-only. **Code default** (không flag): attempt `salad→vast→clore`; `PROVIDER_ROUTING.sequence` = `vast→clore→salad`. Salad: 35 GB image max, AMD64, no SSH; cold start 15–25 phút. |
+| **Image IPv6 dual-stack (unified)** | ✅ **2026-08-05** — ComfyUI `COMFYUI_LISTEN` (default `::`, Vast+Clore override `0.0.0.0`); 1 image dùng chung 3 provider. **gpu-test** (2026-08-08) dùng `HOST` riêng, bake `0.0.0.0` cho Vast |
 | **Image bake SDXL thử nghiệm** | ❌ **2026-08-05** — Bake SDXL 7 GB vào image → Salad chậm hơn 3 phút (33 GB extract lâu trên consumer node); đã revert về v3.7/v4.4 (20 GB) |
 | **Auth Hardening — Phase 1 (P0)** | ✅ **13/13** — Rate limit, JWT middleware, Secure cookie, security headers, anti-enumeration, fix phone_verified reset, OTP lock + cooldown + single-use |
 | **Auth Hardening — Phase 2 (P1)** | ✅ **4/5** — Password strength (client + server), confirm password, session invalidation on password change, pending_password TTL 1h |
@@ -35,12 +39,12 @@
 | **Image v3.7 (Starter/Pro)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; ffmpeg + filmmaker scripts + frame-quality-check; 20 GB compressed; VPS active |
 | **Image v4.4 (Studio/5090)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; đầy đủ tính năng; 24 GB compressed; code default đã là v4.4 |
 | **Staging Environment Audit** | 🟡 **2026-08-05** — Đã audit toàn bộ trạng thái: 4-layer gate PASS, Vast readiness `PASS_HTTP_READY`, Scenario 1 FAIL (Clore provider — không phải RC6), 2-5 BLOCKED. Đã tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1`. `.env.local` đã khôi phục về Production. |
-| **LoRA Training** | 🟡 **WIP (2026-08-04)** — `src/lib/lora-train/` + SQL + `docker/lora-train/` đã có; 3 file API route (`[id].js`, `download.js`, `create.js`) đang viết dở: import `@/lib/supabase-route-client.js` chưa tồn tại, sai auth pattern. File untracked — build sẽ fail. |
-| **Environment Switching** | ✅ **2026-08-05** — 2 file môi trường `.env.staging` / `.env.production` + script `scripts/switch-env.ps1` |
-| **Auth Refactor — Email First** | ✅ **2026-08-08** — Email là chính (bắt buộc), SĐT là phụ (thêm sau trong Dashboard). Xác thực email qua Supabase verification. Chặn 150+ domain email rác (mailinator, yopmail...). Mật khẩu tự tạo hiển thị 1 lần cho user copy. Rollback nếu upsert thất bại → không orphan user. |
-| **Google OAuth** | ✅ **2026-08-08** — Đăng ký/đăng nhập 1 click qua Google, consent screen hiển thị `gpuvietnam.com` (OAuth trực tiếp, không qua Supabase redirect). Trigger DB auto tạo `public.users`. Callback page + API code exchange. |
-| **Zalo ZNS OTP** | ✅ **2026-08-08** — Gửi OTP qua Zalo Notification Service trước, fallback SMS Speedsms. Tách OTP khỏi flow đăng ký: SĐT xác thực trong Dashboard để mở khóa nhận khuyến mại tự động. Admin luôn có quyền override cộng KM thủ công. |
-| **Auth Docs Update** | ✅ **2026-08-08** — Cập nhật PROGRESS.md + PROJECT_CONTEXT.md phản ánh flow auth mới |
+| **LoRA Training** | 🟡 **WIP** — lib + Docker + SQL có; `supabase-route-client.js` **đã tracked**. API `create.js` **chưa** gọi `startLoraTraining`; auth `createRouteClient({req,res})` lệch signature `(req)`. SQL **chưa** trong manifest. UI chính = MakeStudio Train. |
+| **Environment Switching** | ✅ **2026-08-05** — `.env.staging` / `.env.production` + `scripts/switch-env.ps1` |
+| **Auth Refactor — Email First** | ✅ **2026-08-08** — Email chính, SĐT phụ (Dashboard). Disposable blocklist 150+. Rollback upsert → không orphan Auth user. |
+| **Google OAuth** | ✅ **2026-08-08** — OAuth trực tiếp (consent `gpuvietnam.com`), callback + code exchange. |
+| **Zalo ZNS OTP** | ✅ **2026-08-08** — ZNS trước, Speedsms fallback. SĐT verify trong Dashboard mở khóa KM. |
+| **Docs sync codebase** | ✅ **2026-08-08** — PROJECT_CONTEXT + PROGRESS: MakeStudio, SePay, LoRA status thật, Host Intel Clore opt-in, provider routing code vs ops, roadmap nhóm A–H |
 
 ## Thay đổi gần đây (2026-07)
 
@@ -68,12 +72,42 @@
 
 ## Bước tiếp theo
 
-> **Ngay:** P0-B T11 billing E2E → P0-C alerts → P0-D E2E khách.  
-> **Đã làm xong:** P0-A ✅, auto-replace GPU (không cần F5), editor khi boot, session continuity, filmmaker mode.  
-> **Staging:** Chạy lại Scenario 1 trên Vast → Scenarios 2-5 → RC6 VERIFIED → promote Production.  
-> **LoRA Training:** Sửa 3 API route theo pattern `getAuthUserFromRequest` + `getSupabaseAdmin` (hoặc tạo `supabase-route-client.js`).  
+> **Go-Live ngay:** P0-B T11 billing E2E → P0-C alerts → P0-D E2E khách.  
+> **Đã xong nền:** P0-A ✅, session continuity, auto-replace (không F5), editor khi boot, filmmaker, Host Intel Vast, Auth email-first/Google/Zalo.  
+> **Staging RC6:** Scenario 1 trên Vast → 2–5 → VERIFIED → promote.  
+> **SePay:** ✅ code xong — còn cấu hình env/webhook SePay trên Vercel + test giao dịch thật.  
+> **MakeStudio / LoRA:** fix snake↔camel create job; wire `startLoraTraining`; gắn nav; E2E 3 path; thêm `lora-train-jobs` vào manifest.  
+> **Host Intelligence:** Debt passRate-on-fail; đánh giá bật Clore (`providers.clore`); ổn định pool known-good available.  
 > **Không làm ngay:** Dual Run product, warm pool.  
-> **Tech debt:** Vast disk-only host vẫn có thể lọt qua filter → cần harden thêm post-rent gate.
+> **Tech debt:** Vast disk-only lọt filter → harden post-rent gate.  
+> **Roadmap dễ hiểu:** xem [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--đang-ở-đâu-còn-làm-gì).
+
+## MakeStudio 🟡 WIP
+
+Sản phẩm tạo video có mặt (Train LoRA face → Preview 5s → Final). Route: `/dashboard/makestudio`.
+
+| Thành phần | Path | Trạng thái |
+|------------|------|------------|
+| UI | `src/components/makestudio/*`, `useMakestudio.ts` | ✅ scaffold — chưa sidebar |
+| API | `/api/makestudio/jobs`, `[id]`, `upload-images`, `callback`, `train-callback` | ✅ scaffold — bug snake↔camel create |
+| SQL | `supabase/makestudio-jobs.sql` (`0053`) | ✅ manifest |
+| Docker | `docker/makestudio-preview/`, `makestudio-final/`, train từ `docker/lora-train/` | ✅ scaffold |
+| Provision | Train/Final → Vast; Preview → RunPod Serverless | 🟡 phụ thuộc env |
+
+**Còn lại:** fix mapping create job · gắn nav · billing/quota · E2E 3 path · wire LoRA `startLoraTraining`.
+
+## SePay (CK tự động) ✅
+
+| Thành phần | Path | Trạng thái |
+|------------|------|------------|
+| Lib + tests | `src/lib/sepay.js`, `sepay.test.mjs` | ✅ |
+| QR / Webhook | `/api/payment/sepay-qr`, `sepay-webhook` | ✅ |
+| Cron reconcile | `/api/cron/sepay-reconcile` + `vercel.json` `*/5` | ✅ |
+| SQL | `supabase/sepay-transactions.sql` (`0054`) | ✅ |
+| Match | Nạp ví (UUID→GD) · gói GPU · tái tục (`transfer_note` có GD) | ✅ |
+| UI | Wallet / PlanCheckout / PaymentSection — copy tự động duyệt | ✅ |
+
+**Ops còn lại:** set `SEPAY_*` + `CRON_SECRET` trên Vercel; trỏ webhook SePay → `/api/payment/sepay-webhook`; chạy migration `0054` nếu chưa.
 
 ## Filmmaker Mode ✅
 
@@ -371,7 +405,10 @@ VAST_SSH_PRIVATE_KEY_PATH=C:/Users/Lenovo/.ssh/id_rsa
 | `supabase/gpu-sessions.sql` | Bảng `gpu_sessions` — lịch sử phiên GPU |
 | `supabase/seed-gpu-sessions.sql` | 7 phiên mẫu cho user đầu tiên |
 | `supabase/support-sessions.sql` | Bảng `support_sessions` — phiên hỗ trợ từ xa Admin xem màn hình KH |
-| `supabase/auth-audit-log.sql` | **Mới (P2):** Bảng `auth_audit_log` — ghi nhận sự kiện xác thực |
+| `supabase/auth-audit-log.sql` | Bảng `auth_audit_log` — sự kiện xác thực |
+| `supabase/makestudio-jobs.sql` | **0053** MakeStudio jobs (Train/Preview/Final) |
+| `supabase/sepay-transactions.sql` | **0054** SePay webhook dedup + audit |
+| `supabase/lora-train-jobs.sql` | LoRA jobs — file có, **chưa** trong manifest |
 | `supabase/admin-approve-payment.sql` | Mẫu SQL duyệt CK thủ công |
 
 **Gán admin:** chạy `supabase/set-admin-role.sql` (email `admin@gpuvietnam.com`) hoặc `update public.users set role = 'admin' where email = '...';`
@@ -618,15 +655,16 @@ Bảng `notifications` dùng chung với các tính năng khác — không nằm
 
 | Route | Nội dung |
 |-------|----------|
-| `/dashboard` | Tổng quan gói, giờ (2 decimal), pending; boot progress; optimistic start/stop; stop confirm modal; chuông 🔔 thông báo; banner hỗ trợ từ xa khi active |
+| `/dashboard` | Tổng quan gói, giờ (2 decimal), pending; boot progress; optimistic start/stop; stop confirm modal; chuông 🔔; banner hỗ trợ từ xa |
 | `/dashboard/goi-cua-toi` | Tab **Gói của tôi** — trạng thái gói, tái tục, nâng cấp |
 | `/dashboard/model-lora` | Tab **Model & LoRA** |
 | `/dashboard/workflows` | Tab **Workflow** |
 | `/dashboard/storage` | Tab **Bộ nhớ** |
 | `/dashboard/storage/checkout` | Thanh toán nâng cấp bộ nhớ (Ví / CK) |
-| `/dashboard/cai-dat` | Thông tin tài khoản, SĐT, mật khẩu, xóa backup (đã gỡ card Ví + Gia hạn tự động + Giao diện sang tab Ví / xóa) |
-| `/dashboard/wallet` | Tab **Ví Nạp Trước** — số dư + nạp + auto-renew (Combo) + lịch sử 7gd mở rộng + modal nâng cấp bộ nhớ |
+| `/dashboard/cai-dat` | Thông tin tài khoản, SĐT (Zalo/SMS), mật khẩu, xóa backup |
+| `/dashboard/wallet` | Tab **Ví Nạp Trước** — số dư + nạp (SePay QR WIP) + auto-renew + lịch sử + modal nâng cấp bộ nhớ |
 | `/dashboard/lich-su` | Tab **Lịch sử phiên** |
+| `/dashboard/makestudio` | 🟡 **MakeStudio** Train / Preview / Final — scaffold, **chưa** sidebar |
 
 **Header Dashboard:** `WalletDropdown.tsx` — số dư Ví góc phải; `NotificationBell.tsx` — chuông 🔔 (poll unread, dropdown approve/reject hỗ trợ từ xa); click mở **modal căn giữa màn hình** (3 tab Nạp ví / Sử dụng / Lịch sử); nút **⚡ Nạp giờ** → `/bang-gia` (sidebar đã bỏ mục Nạp giờ/Gói mới)
 
@@ -920,6 +958,18 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | POST | `/api/auth/signout-all` | **Mới:** Đăng xuất tất cả thiết bị |
 | POST | `/api/payment/confirm` | Ghi `pending_payment` (CK gói GPU) |
 | POST | `/api/payment/pay-wallet` | Mua gói GPU bằng Ví — kích hoạt ngay |
+| POST | `/api/payment/sepay-qr` | **WIP:** VietQR SePay cho giao dịch pending |
+| POST | `/api/payment/sepay-webhook` | **WIP:** Webhook HMAC → auto-approve |
+| GET/POST | `/api/cron/sepay-reconcile` | **WIP:** reconcile — chưa gắn vercel cron |
+| POST | `/api/makestudio/jobs` | **WIP:** list/create MakeStudio job |
+| GET | `/api/makestudio/[id]` | **WIP:** chi tiết job |
+| POST | `/api/makestudio/upload-images` | **WIP:** presign R2 upload ảnh train |
+| POST/GET | `/api/makestudio/callback` | **WIP:** callback container + SSE |
+| POST | `/api/makestudio/train-callback` | **WIP:** callback train (+ fallback lora_train_jobs) |
+| POST | `/api/lora-train/create` | **WIP:** tạo job (chưa provision) |
+| GET | `/api/lora-train/[id]` | **WIP:** trạng thái job |
+| GET | `/api/lora-train/[id]/download` | **WIP:** redirect R2 |
+| POST | `/api/auth/google-callback` | Google OAuth code exchange |
 | POST | `/api/trial/activate` | Dùng thử 3h |
 | GET | `/api/user/pricing-context` | Trial eligibility, returning customer, số dư ví (bảng giá) |
 | GET | `/api/dashboard/me` | User + subscription active + `expiredSubscription` + `hasUsedTrial` + `billingType` |
@@ -1068,61 +1118,55 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 
 ## Việc tiếp theo (backlog)
 
-**Ưu tiên milestone kế tiếp — Staging & RC6:**
-- [x] Audit toàn bộ trạng thái Staging Environment (2026-08-05)
-- [x] Tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1` (2026-08-05)
-- [x] Khôi phục `.env.local` về Production (2026-08-05)
-- [ ] Chạy lại Scenario 1 (Clean Start) trên Vast — đã unblock sau Vast readiness PASS
-- [ ] Chạy Scenarios 2-5 → `RC6 VERIFIED`
-- [ ] Promote RC6 lên Production
+**Ưu tiên — Go-Live P0:**
+- [x] P0-A durable start + VPS Vast-only + smoke Phase F.2 7/7
+- [ ] P0-B T11 billing E2E proof
+- [ ] P0-C alerts / ops notify
+- [ ] P0-D E2E khách thật
 
-**Ưu tiên milestone kế tiếp — LoRA Training (WIP):**
-- [x] `src/lib/lora-train/job-manager.js` + `provision-train.js`
-- [x] `supabase/lora-train-jobs.sql` + `docker/lora-train/`
-- [ ] Sửa 3 file `src/pages/api/lora-train/*.js` — thay `createRouteClient` bằng `getAuthUserFromRequest` + `getSupabaseAdmin` (hoặc tạo `src/lib/supabase-route-client.js`)
+**Ưu tiên — Staging & RC6:**
+- [x] Audit Staging + env switch (2026-08-05)
+- [ ] Scenario 1 Clean Start trên Vast
+- [ ] Scenarios 2–5 → `RC6 VERIFIED` → promote Production
 
-**Ưu tiên milestone kế tiếp — ComfyUI tích hợp:**
-- [x] Build Docker Image + chạy local — **http://localhost:8080 OK**
-- [x] Push **Docker Hub** `dieuhaukieuhanh/gpuvietnam-comfyui:v1` (đang build lại)
-- [x] **Tầng GPU Service** — `GPUService` + `GPUProvider` + `VastProvider`
-- [x] Wire **`start-machine`** → `getGpuService().createInstance()`
-- [x] Môi trường làm việc → workflow riêng (`setup-workstation.sh`, `workstation-env.js`)
-- [ ] Push image sau build `--no-cache` hiện tại
-- [ ] Test workflow từng môi trường trên instance Vast
-- [ ] LoRA Việt hóa, bake/QR models (nếu cần)
-- [ ] Tích hợp ComfyUI workflow qua Dashboard → `getGpuService()` (nút Chạy workflow)
+**Ưu tiên — SePay:**
+- [x] Lib + QR + webhook + SQL `0054` + WalletDepositForm QR
+- [x] Cron `sepay-reconcile` trong `vercel.json`
+- [x] Match gói GPU + tái tục (mã GD) + UI tự động duyệt
+- [ ] Ops: env SePay trên Vercel + webhook dashboard + test giao dịch thật
+- [ ] (Sau) storage upgrade auto-match nếu cần
 
-- [ ] Cấu hình `SPEEDSMS_ACCESS_TOKEN` + QR thanh toán thật
-- [x] Custom SMTP Supabase (email hiển thị GPUVietnam) — Resend SMTP với `notify@gpuvietnam.com`
-- [x] Email/notify Admin khi có yêu cầu CK mới — API route `/api/notify/payment` + Resend
-- [ ] `server_status`: `provisioning` → `online` (hạ tầng GPU)
-- [ ] Model: nút **Dùng ngay** → mount/load ComfyUI thật
-- [ ] Workflow: upload JSON + nút **Chạy** / **Sửa** → tích hợp ComfyUI
-- [ ] Bộ nhớ: upload Backup + khôi phục/tải file thật qua storage GPU
-- [ ] QR thanh toán nạp Ví: ảnh QR thật (hiện placeholder 🖼️ trên bước 2)
-- [ ] QR thanh toán gói GPU / bộ nhớ: ảnh QR thật (placeholder trên `PlanCheckoutPage`, `PaymentSection`)
-- [ ] Auto Top-up / cảnh báo Hourly: gửi thông báo Zalo/Email khi số dư thấp (DB `auto_topup_*` còn, UI đã gỡ khỏi Cài đặt)
-- [ ] Gia hạn Combo qua chuyển khoản tự động (hiện chỉ Ví tự trừ; radio CK chỉ lưu preference + nhắc thông báo)
-- [ ] `gpu_sessions`: ghi phiên thật khi bật/tắt máy GPU (hiện seed + phiên live từ subscription)
-- [ ] Bảng `machines` trên Supabase (schema chưa có file SQL — API customers đã query + fallback)
-- [ ] Admin tab Khách hàng: nút Khóa TK / Gửi email / Xem phiên (hiện placeholder demo)
-- [ ] **Hỗ trợ từ xa:** WebRTC screen share thật; thông báo Admin khi KH đồng ý/từ chối
-- [ ] Admin: các tab còn lại (Tổng quan, Phiên GPU, Doanh thu) — placeholder
+**Ưu tiên — MakeStudio + LoRA:**
+- [x] Scaffold UI/API/Docker/SQL MakeStudio (`0053`)
+- [x] `supabase-route-client.js` + lib/Docker LoRA
+- [ ] Fix create-job snake↔camel; gắn sidebar/nav
+- [ ] Wire `startLoraTraining` + auth signature; thêm SQL LoRA vào manifest
+- [ ] E2E Train / Preview (RunPod) / Final; billing/quota
 
-## Go-Live / P0-A (snapshot 2026-07-24)
+**Ưu tiên — ComfyUI / Dashboard còn stub:**
+- [x] Image `:v3.7` / `:v4.4` + start-machine + workstation env
+- [ ] Test workflow từng môi trường trên Vast
+- [ ] Nút **Chạy workflow** / **Dùng ngay** E2E
+- [ ] WebRTC remote support; Admin overview/revenue tabs
+- [x] Custom SMTP Resend + `/api/notify/payment`
+- [ ] Auto Top-up / cảnh báo Hourly (Zalo/Email)
+- [ ] Gia hạn Combo qua CK tự động (SePay hoặc Admin)
+
+## Go-Live / P0 (cập nhật 2026-08)
 
 | Gate | Trạng thái |
 |------|------------|
 | Migration `user_start_provision` (0049) | ✅ |
 | `POST /api/user/start-machine` → enqueue `operationId` | ✅ |
-| Unit tests liên quan worker / harden | ✅ (local) |
-| VPS systemd `gpuvietnam-lifecycle-worker` | ✅ `active` + log `lifecycle worker ready` |
-| `GPU_CLORE_ONLY=true` trong process worker | ✅ đã verify `/proc/.../environ` |
-| Start → machine row + Comfy ready + op `completed` | ⬜ chưa PASS (smoke bị Vast dual-rent + Clore 502 walk) |
-| Worker restart / orphan / reclaim | ⬜ chưa ký acceptance |
-| Deploy harden Vast disk-only lên VPS | ⬜ (code local, VPS còn `1f700cd` + loader alias patch tay) |
+| VPS systemd `gpuvietnam-lifecycle-worker` | ✅ |
+| **P0-A** Vast-only (`GPU_VAST_ONLY` + `GPU_ALLOW_VAST`) + smoke Phase F.2 | ✅ **7/7 PASS** |
+| **P0-B** T11 billing E2E | ⬜ |
+| **P0-C** alerts | ⬜ |
+| **P0-D** E2E khách | ⬜ |
+| Staging RC6 Scenarios 1–5 | 🟡 gate/Vast ready; Scenario 1 chưa PASS trên Vast |
 
-Chi tiết acceptance: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md).
+Chi tiết worker: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md).  
+Roadmap dễ hiểu: [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--đang-ở-đâu-còn-làm-gì).
 
 ## Đã xong (gần đây)
 
@@ -1208,13 +1252,12 @@ Chi tiết acceptance: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECY
 
 ```
 Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
-SCB 4.0 + ADR-005 CP/Runtime đã freeze. Go-Live: P0-A → P0-B billing → P0-C alerts → P0-D E2E.
-P0-A: VPS lifecycle-worker đã lên; GPU_CLORE_ONLY=true đã chốt trên systemd/environ (2026-07-24).
-Chưa đóng P0-A: acceptance smoke Start→Comfy→completed (+ recovery/orphan).
-Tạm dừng sau chốt Clore-only. Không Dual Run / warm pool cho đến khi owner mở.
-Image: dieuhaukieuhanh/gpuvietnam-comfyui:v3. Branch làm việc: feat/cp-runtime-b1.
+SCB 4.0 + ADR-005 freeze. Go-Live: P0-A ✅ → P0-B billing → P0-C alerts → P0-D E2E.
+VPS Vast-only. Host Intelligence Vast on / Clore opt-in. Image :v3.7 / :v4.4.
+WIP lớn: SePay, MakeStudio, LoRA API, Staging RC6. Không Dual Run/warm pool trừ owner mở.
+Roadmap dễ hiểu: PROJECT_CONTEXT §21.
 ```
 
-**Lưu ý dev:** Giá GPU sửa trên Admin tab **Edit giá** (cần chạy `supabase/gpu-pricing-config.sql`). Giá SSD/Backup sửa tab Giá bộ nhớ. SQL mới: chạy `gpu-sessions.sql` + `seed-gpu-sessions.sql` nếu chưa có bảng lịch sử phiên; **`wallet-deposit-status.sql`** + **`user-plan-inventory.sql`** cho nạp Ví và kho gói; **`support-sessions.sql`** cho hỗ trợ từ xa (bắt buộc trước khi test luồng Admin → KH). Tab **Khách hàng** tại `/admin/customers`; cần bảng `machines` trên Supabase để online realtime đầy đủ (hiện fallback `gpu_sessions` / mock).
+**Lưu ý dev:** Giá GPU = Admin **Edit giá**. SQL mới gần đây: `makestudio-jobs.sql` (`0053`), `sepay-transactions.sql` (`0054`), `auth-audit-log.sql`; LoRA SQL có file nhưng **chưa** trong manifest. SePay cần `SEPAY_*` env. MakeStudio Preview cần `RUNPOD_SERVERLESS_PREVIEW_URL`.
 
-**Lưu ý SCB 4.0:** Mọi thay đổi đụng `runDestroyPipeline` / `destroy-pipeline-*.js` / `settlement.js` / `settlement-transaction-rpc.js` / `session-lifecycle.js` / `machines-drift.js` / `machines-drift-core.js` / `machines-status-projection.js` (response contract) / Queue / Scheduler / Worker / Provider Abstraction → **cần ADR-005+ và owner approval**. Bug fix tối thiểu diff + cùng semantics thì OK không cần ADR. Xem `docs/scb/ADR-004-scb4-product-exceptions.md` cho precedent.
+**Lưu ý SCB 4.0:** Thay đổi đụng destroy/settlement/session-lifecycle/machines-drift/status contract / Queue / Worker / Provider Abstraction → **cần ADR-005+ và owner approval**. Bug fix tối thiểu + cùng semantics OK. Xem `docs/scb/ADR-004-scb4-product-exceptions.md`.

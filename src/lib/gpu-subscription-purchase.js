@@ -13,6 +13,12 @@ import {
 } from '@/lib/plan-hours';
 import { DEFAULT_CHECKOUT_ENV } from '@/lib/checkout-auth';
 import { syncUserPlanInventory } from '@/lib/user-plan-inventory';
+import {
+  allocateTransferCode,
+  buildSepayTransferInfo,
+  buildTransferDescription,
+  parseTransferCode,
+} from '@/lib/sepay';
 
 const VALID_BILLING = ['hourly', 'combo1', 'combo2'];
 
@@ -151,7 +157,7 @@ export async function assertNoPendingGpuPayment(supabaseAdmin, userId) {
   if (pending) {
     return {
       ok: false,
-      error: 'Bạn đã có yêu cầu thanh toán đang chờ Admin xác nhận.',
+      error: 'Bạn đã có yêu cầu thanh toán đang chờ xác nhận chuyển khoản.',
       code: 'pending_exists',
     };
   }
@@ -170,12 +176,30 @@ export async function replaceActiveSubscriptions(supabaseAdmin, userId) {
 export async function createPendingGpuSubscription(
   supabaseAdmin,
   userId,
-  { plan, billing, env, icon, desc, transferNote, hours },
+  { plan, billing, env, icon, desc, transferNote, hours, fullName },
 ) {
   await ensureGpuPricingLoaded(supabaseAdmin);
   const pricing = resolvePurchasePricing(plan, billing, hours);
   const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
+
+  // Ensure SePay can auto-match: transfer_note must contain GD + 2 chars.
+  let note = typeof transferNote === 'string' ? transferNote.trim() : '';
+  let transferCode = parseTransferCode(note);
+  if (!transferCode) {
+    transferCode = await allocateTransferCode(supabaseAdmin);
+    const profileName = fullName || null;
+    if (!profileName) {
+      const { data: profile } = await supabaseAdmin
+        .from('users')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle();
+      note = buildTransferDescription(profile?.full_name, transferCode);
+    } else {
+      note = buildTransferDescription(profileName, transferCode);
+    }
+  }
 
   const { data, error } = await supabaseAdmin
     .from('subscriptions')
@@ -192,7 +216,7 @@ export async function createPendingGpuSubscription(
       status: 'pending_payment',
       server_status: 'offline',
       is_trial: false,
-      transfer_note: transferNote,
+      transfer_note: note,
       expires_at: expiresAt,
       activated_at: null,
       created_at: now,
@@ -201,7 +225,14 @@ export async function createPendingGpuSubscription(
     .single();
 
   if (error) throw error;
-  return data;
+
+  const transfer = buildSepayTransferInfo({
+    amount: pricing.price,
+    transferCode,
+    description: note,
+  });
+
+  return { subscription: data, transfer, transferCode, amount: pricing.price };
 }
 
 export async function purchaseGpuPlanWithWallet(

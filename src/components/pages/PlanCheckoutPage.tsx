@@ -58,16 +58,16 @@ export default function PlanCheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
-
-  const phone =
-    (user?.user_metadata?.phone as string | undefined) ??
-    (user?.phone as string | undefined) ??
-    '09xxxxxxx';
-
-  const transferContent = useMemo(
-    () => `${phone} + Gói ${plan.name} + ${BILLING_LABELS[billing]}`,
-    [phone, plan.name, billing],
-  );
+  const [pendingTransfer, setPendingTransfer] = useState<{
+    transferContent: string;
+    transferCode: string;
+    amount: number;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    qrUrl?: string | null;
+    expectedLabel?: string;
+  } | null>(null);
 
   const checkoutUrl = useMemo(() => {
     const params = new URLSearchParams({ plan: planName, billing });
@@ -179,9 +179,7 @@ export default function PlanCheckoutPage() {
     }
   };
 
-  const handlePayTransfer = async () => {
-    if (!transferChecked) return;
-
+  const handleCreateTransferRequest = async () => {
     const { data: sessionData } = await getSupabaseBrowser().auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) {
@@ -199,15 +197,28 @@ export default function PlanCheckoutPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          ...purchaseBody,
-          transferNote: transferContent,
-        }),
+        body: JSON.stringify(purchaseBody),
       });
       const data = await res.json();
 
       if (!res.ok) {
         setError(data.error ?? 'Không ghi nhận được thanh toán.');
+        return;
+      }
+
+      const transfer = data.transfer;
+      if (transfer?.transferContent) {
+        setPendingTransfer({
+          transferContent: transfer.transferContent,
+          transferCode: transfer.transferCode || data.transferCode || '',
+          amount: Number(transfer.amount ?? data.amount ?? amount),
+          bankName: transfer.bankName || 'MB Bank',
+          accountNumber: transfer.accountNumber || '888666369',
+          accountName: transfer.accountName || 'Lê Thế Cường',
+          qrUrl: transfer.qrUrl || null,
+          expectedLabel: transfer.expectedLabel || '~1–5 phút (tự động)',
+        });
+        setTransferChecked(false);
         return;
       }
 
@@ -220,7 +231,9 @@ export default function PlanCheckoutPage() {
   };
 
   const copyTransfer = () => {
-    navigator.clipboard.writeText(transferContent).then(() => {
+    const text = pendingTransfer?.transferContent;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
       setCopySuccess(true);
       window.setTimeout(() => setCopySuccess(false), 2000);
     });
@@ -311,7 +324,7 @@ export default function PlanCheckoutPage() {
             >
               <span className="method-icon">🏦</span>
               <span className="method-label">Chuyển khoản</span>
-              <span className="method-meta">Chờ Admin duyệt 5–10 phút</span>
+              <span className="method-meta">Tự động duyệt ~1–5 phút</span>
             </button>
           </div>
 
@@ -343,32 +356,77 @@ export default function PlanCheckoutPage() {
 
           {paymentMode === 'transfer' && (
             <div className="plan-checkout-panel">
-              <p className="subtitle">Quét mã QR hoặc chuyển khoản theo thông tin bên dưới</p>
-              <div className="plan-checkout-qr">🖼️ QR thanh toán</div>
-              <div className="plan-checkout-transfer-note">
-                <strong>Nội dung chuyển khoản:</strong>
-                <span className="highlight">{transferContent}</span>
-              </div>
-              <button type="button" className="copy-btn" onClick={copyTransfer}>
-                {copySuccess ? '✅ Đã sao chép!' : '📋 Sao chép nội dung CK'}
-              </button>
-              <label className="plan-checkout-check">
-                <input
-                  type="checkbox"
-                  checked={transferChecked}
-                  onChange={(e) => setTransferChecked(e.target.checked)}
-                />
-                Tôi xác nhận đã chuyển khoản đúng nội dung
-              </label>
-              <button
-                type="button"
-                className={`btn btn-primary btn-lg${transferChecked && !submitting ? '' : ' btn-disabled'}`}
-                style={{ width: '100%', marginTop: 12 }}
-                disabled={submitting || !transferChecked}
-                onClick={handlePayTransfer}
-              >
-                {submitting ? 'Đang ghi nhận...' : '✅ Tôi đã chuyển khoản'}
-              </button>
+              {!pendingTransfer ? (
+                <>
+                  <p className="subtitle">
+                    Bấm tạo yêu cầu để nhận mã QR + nội dung CK (có mã GD). Sau khi chuyển khoản,
+                    hệ thống tự kích hoạt gói.
+                  </p>
+                  <button
+                    type="button"
+                    className={`btn btn-primary btn-lg${!submitting ? '' : ' btn-disabled'}`}
+                    style={{ width: '100%', marginTop: 12 }}
+                    disabled={submitting}
+                    onClick={() => void handleCreateTransferRequest()}
+                  >
+                    {submitting ? 'Đang tạo yêu cầu...' : 'Tạo yêu cầu chuyển khoản'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="subtitle">Quét QR hoặc chuyển khoản đúng thông tin bên dưới</p>
+                  <div className="plan-checkout-qr">
+                    {pendingTransfer.qrUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={pendingTransfer.qrUrl} alt="QR chuyển khoản" width={220} height={220} />
+                    ) : (
+                      '🖼️ QR thanh toán'
+                    )}
+                  </div>
+                  <div className="plan-checkout-transfer-note">
+                    <div>
+                      <strong>Ngân hàng:</strong> {pendingTransfer.bankName}
+                    </div>
+                    <div>
+                      <strong>STK:</strong> {pendingTransfer.accountNumber}
+                    </div>
+                    <div>
+                      <strong>Chủ TK:</strong> {pendingTransfer.accountName}
+                    </div>
+                    <div>
+                      <strong>Số tiền:</strong>{' '}
+                      {pendingTransfer.amount.toLocaleString('vi-VN')}đ
+                    </div>
+                    <div>
+                      <strong>Nội dung CK:</strong>{' '}
+                      <span className="highlight">{pendingTransfer.transferContent}</span>
+                    </div>
+                  </div>
+                  <button type="button" className="copy-btn" onClick={copyTransfer}>
+                    {copySuccess ? '✅ Đã sao chép!' : '📋 Sao chép nội dung CK'}
+                  </button>
+                  <p style={{ marginTop: 12, opacity: 0.85 }}>
+                    ⏱️ {pendingTransfer.expectedLabel || '~1–5 phút (tự động)'}
+                  </p>
+                  <label className="plan-checkout-check">
+                    <input
+                      type="checkbox"
+                      checked={transferChecked}
+                      onChange={(e) => setTransferChecked(e.target.checked)}
+                    />
+                    Tôi đã chuyển khoản đúng số tiền và nội dung
+                  </label>
+                  <button
+                    type="button"
+                    className={`btn btn-primary btn-lg${transferChecked ? '' : ' btn-disabled'}`}
+                    style={{ width: '100%', marginTop: 12 }}
+                    disabled={!transferChecked}
+                    onClick={() => router.push(`${routes.dashboard}?pending=1`)}
+                  >
+                    ✅ Đã chuyển — vào Dashboard
+                  </button>
+                </>
+              )}
             </div>
           )}
 

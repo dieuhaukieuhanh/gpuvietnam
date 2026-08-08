@@ -238,7 +238,7 @@ export default function WalletDropdown() {
                           <div className="wallet-dropdown-history-desc">
                             {tx.description ?? tx.type}
                             {isPending && (
-                              <span className="wallet-tx-pending"> · Chờ duyệt</span>
+                              <span className="wallet-tx-pending"> · Chờ CK</span>
                             )}
                           </div>
                           <div className="wallet-dropdown-history-date">

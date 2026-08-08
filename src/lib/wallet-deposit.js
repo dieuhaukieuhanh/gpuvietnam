@@ -13,7 +13,7 @@ export const WALLET_BANK_INFO = {
   bankName: 'MB Bank',
   accountNumber: '888666369',
   accountName: 'Lê Thế Cường',
-  expectedApprovalMinutes: 15,
+  expectedApprovalMinutes: 5,
 };
 
 export const WALLET_DEPOSIT_TYPES = ['deposit'];
@@ -23,16 +23,18 @@ export function formatDepositDescription(amount) {
 }
 
 export function buildDepositTransferNote(transactionId) {
-  const short = String(transactionId).replace(/-/g, '').slice(0, 8).toUpperCase();
-  return `NAPVI-${short}`;
+  const short = String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
+  return `GD${short}`;
 }
 
 export function shortTransactionId(transactionId) {
-  return String(transactionId).replace(/-/g, '').slice(0, 8).toUpperCase();
+  return String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
 }
 
-export function buildDepositPendingResponse(transaction) {
+export function buildDepositPendingResponse(transaction, fullName) {
   const amount = Number(transaction.amount);
+  const code = buildDepositTransferNote(transaction.id);
+  const displayName = (fullName || 'Khach Hang').trim();
   return {
     transaction: {
       id: transaction.id,
@@ -41,15 +43,17 @@ export function buildDepositPendingResponse(transaction) {
       description: transaction.description,
       created_at: transaction.created_at,
       shortId: shortTransactionId(transaction.id),
+      transferCode: code,
     },
     transfer: {
       bankName: WALLET_BANK_INFO.bankName,
       accountNumber: WALLET_BANK_INFO.accountNumber,
       accountName: WALLET_BANK_INFO.accountName,
       amount,
-      transferNote: buildDepositTransferNote(transaction.id),
+      transferContent: `${displayName} ${code}`,
+      transferCode: code,
       expectedMinutes: WALLET_BANK_INFO.expectedApprovalMinutes,
-      expectedLabel: `~${WALLET_BANK_INFO.expectedApprovalMinutes} phút`,
+      expectedLabel: '~1–5 phút (tự động)',
     },
   };
 }
@@ -78,13 +82,14 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('users')
-    .select('wallet_balance')
+    .select('wallet_balance, full_name')
     .eq('id', userId)
     .maybeSingle();
 
   if (profileError) throw profileError;
 
   const currentBalance = Number(profile?.wallet_balance ?? 0);
+  const fullName = profile?.full_name || null;
   const now = new Date().toISOString();
 
   const { data: tx, error: txError } = await supabaseAdmin
@@ -107,7 +112,7 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
   return {
     success: true,
     transaction: tx,
-    pending: buildDepositPendingResponse(tx),
+    pending: buildDepositPendingResponse(tx, fullName),
   };
 }
 

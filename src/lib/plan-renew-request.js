@@ -10,12 +10,27 @@ import {
   notifyPlanRenewPending,
   notifyPlanRenewRejected,
 } from '@/lib/user-notifications';
+import {
+  allocateTransferCode,
+  buildSepayTransferInfo,
+  parseTransferCode,
+} from '@/lib/sepay';
 
+/**
+ * Legacy helper — still used by some call sites for display.
+ * Prefer allocateTransferCode() when creating a new renew request.
+ */
 export function buildRenewTransferNote(userId) {
   return `TAITUC-${String(userId).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 }
 
 function formatPendingRenewResponse(row) {
+  const code = parseTransferCode(row.transfer_note);
+  const sepay = buildSepayTransferInfo({
+    amount: Number(row.transfer_amount),
+    transferCode: code || row.transfer_note,
+    description: row.transfer_note,
+  });
   return {
     request: {
       id: row.id,
@@ -25,17 +40,21 @@ function formatPendingRenewResponse(row) {
       transferAmount: Number(row.transfer_amount),
       hoursToAdd: Number(row.hours_to_add),
       transferNote: row.transfer_note,
+      transferCode: code,
       status: row.status,
       createdAt: row.created_at,
     },
     transfer: {
-      bankName: WALLET_BANK_INFO.bankName,
-      accountNumber: WALLET_BANK_INFO.accountNumber,
-      accountName: WALLET_BANK_INFO.accountName,
-      amount: Number(row.transfer_amount),
+      bankName: sepay.bankName,
+      accountNumber: sepay.accountNumber,
+      accountName: sepay.accountName,
+      amount: sepay.amount,
       transferNote: row.transfer_note,
-      expectedMinutes: WALLET_BANK_INFO.expectedApprovalMinutes,
-      expectedLabel: `~${WALLET_BANK_INFO.expectedApprovalMinutes} phút`,
+      transferCode: code || sepay.transferCode,
+      transferContent: sepay.transferContent,
+      expectedMinutes: sepay.expectedMinutes,
+      expectedLabel: sepay.expectedLabel,
+      qrUrl: sepay.qrUrl,
     },
   };
 }
@@ -140,7 +159,9 @@ export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { pl
   }
 
   const now = new Date().toISOString();
-  const transferNote = buildRenewTransferNote(userId);
+  const transferCode = await allocateTransferCode(supabaseAdmin);
+  const shortUser = String(userId).replace(/-/g, '').slice(0, 6).toUpperCase();
+  const transferNote = `TAITUC-${shortUser} ${transferCode}`;
 
   const { data: row, error: insertError } = await supabaseAdmin
     .from('plan_renew_requests')

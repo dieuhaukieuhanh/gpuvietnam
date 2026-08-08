@@ -86,7 +86,7 @@ export async function notifyWalletDepositApproved(supabaseAdmin, { userId, amoun
     userId,
     type: NOTIFICATION_TYPES.PAYMENT_SUCCESS,
     title: `✅ Nạp ${amountLabel} thành công — Số dư: ${balanceLabel}`,
-    message: 'Yêu cầu nạp Ví đã được Admin duyệt.',
+    message: 'Yêu cầu nạp Ví đã được xác nhận (tự động hoặc Admin).',
     link: routes.dashboardWallet,
   });
 }

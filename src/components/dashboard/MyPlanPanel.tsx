@@ -666,7 +666,7 @@ export default function MyPlanPanel({
             void loadPlans();
           }}
           onPendingSubmitted={() => {
-            setToast('Yêu cầu tái tục đã gửi — chờ Admin duyệt 5–15 phút.');
+            setToast('Yêu cầu tái tục đã ghi nhận — chuyển khoản đúng mã GD để hệ thống tự duyệt.');
           }}
         />
       )}
