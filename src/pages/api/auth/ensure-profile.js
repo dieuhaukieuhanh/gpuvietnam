@@ -1,5 +1,6 @@
 import { getAuthUserFromRequest, unauthorized } from '@/lib/api-auth';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { syncUserRoleOnLogin } from '@/lib/user-role';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -38,7 +39,10 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ ok: true });
+    // Đồng bộ role admin — Google OAuth user cũng được gán admin nếu email khớp ADMIN_EMAILS
+    const role = await syncUserRoleOnLogin(supabaseAdmin, { userId: user.id, email });
+
+    return res.status(200).json({ ok: true, role });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
