@@ -31,8 +31,9 @@ export function shortTransactionId(transactionId) {
   return String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
 }
 
-export function buildDepositPendingResponse(transaction, _fullName) {
+export function buildDepositPendingResponse(transaction) {
   const amount = Number(transaction.amount);
+  // Nội dung CK = mã 4 ký tự (GD + 2), không kèm tên khách.
   const code = buildDepositTransferNote(transaction.id);
   return {
     transaction: {
@@ -111,7 +112,7 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
   return {
     success: true,
     transaction: tx,
-    pending: buildDepositPendingResponse(tx, fullName),
+    pending: buildDepositPendingResponse(tx),
   };
 }
 

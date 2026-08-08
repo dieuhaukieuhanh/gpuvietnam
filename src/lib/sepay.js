@@ -530,30 +530,41 @@ export async function generateVietQR({ amount, description, asDataUrl = false } 
 }
 
 /**
- * Build transfer description — chỉ mã GD (SePay parse theo prefix).
- * @param {string|null|undefined} _fullName unused (giữ signature cũ)
- * @param {string} [transferCode]
+ * Nội dung CK = mã giao dịch 4 ký tự (GD + 2 chữ/số). Không kèm tên khách.
+ * @param {string} [transferCodeOrName]
+ * @param {string} [maybeCode] nếu gọi kiểu cũ (fullName, code) thì lấy code
  */
-export function buildTransferDescription(_fullName, transferCode) {
-  const code = parseTransferCode(transferCode) || transferCode || generateTransferCode();
-  return code;
+export function buildTransferDescription(transferCodeOrName, maybeCode) {
+  const fromSecond = parseTransferCode(maybeCode);
+  if (fromSecond) return fromSecond;
+  const fromFirst = parseTransferCode(transferCodeOrName);
+  if (fromFirst) return fromFirst;
+  if (maybeCode && /^[A-Z0-9]{4}$/i.test(String(maybeCode).trim())) {
+    return String(maybeCode).trim().toUpperCase();
+  }
+  if (transferCodeOrName && /^GD[A-Z0-9]{2}$/i.test(String(transferCodeOrName).trim())) {
+    return String(transferCodeOrName).trim().toUpperCase();
+  }
+  return generateTransferCode();
 }
 
 /**
  * Build bank transfer info block for API responses / UI.
- * @param {{ amount: number, transferCode: string, fullName?: string|null, description?: string|null }} params
+ * @param {{ amount: number, transferCode: string, description?: string|null }} params
  */
 export function buildSepayTransferInfo({ amount, transferCode, description }) {
   const config = getSepayConfig();
-  const code = parseTransferCode(transferCode) || transferCode;
-  const fromDesc = description ? parseTransferCode(description) : null;
-  const content = fromDesc || code;
+  const code =
+    parseTransferCode(transferCode) ||
+    parseTransferCode(description) ||
+    transferCode;
+  const content = buildTransferDescription(code);
   return {
     bankName: WALLET_BANK_INFO.bankName,
     accountNumber: config.accountNumber,
     accountName: config.accountName,
     amount: Number(amount) || 0,
-    transferCode: code,
+    transferCode: content,
     transferContent: content,
     expectedMinutes: 5,
     expectedLabel: '~1–5 phút (tự động)',

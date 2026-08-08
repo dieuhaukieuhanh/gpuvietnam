@@ -144,7 +144,7 @@ function WalletDepositPendingView({ pending, accessToken, onConfirm }: WalletDep
           <dt>Số tiền CK</dt>
           <dd>{formatVnd(transfer.amount)}</dd>
           <dt>Mã GD</dt>
-          <dd className="mono">#{transaction.shortId}</dd>
+          <dd className="mono">{transfer.transferCode || `GD${transaction.shortId}`}</dd>
         </dl>
       </div>
 

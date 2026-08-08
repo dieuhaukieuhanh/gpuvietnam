@@ -18,18 +18,16 @@ export default async function handler(req, res) {
     const user = await getAuthUserFromRequest(req);
     if (!user) return unauthorized(res);
 
-    const { amount, transferCode, fullName, description: descriptionOverride } = req.body || {};
+    const { amount, transferCode, description: descriptionOverride } = req.body || {};
     if (!amount || !transferCode) {
       return res.status(400).json({ error: 'Thiếu amount hoặc transferCode.' });
     }
 
     const code = parseTransferCode(transferCode) || String(transferCode).trim().toUpperCase();
-    const override =
-      typeof descriptionOverride === 'string' && descriptionOverride.trim()
-        ? descriptionOverride.trim()
-        : '';
-    // Chỉ dùng mã GD — bỏ tên/Khach Hang để nội dung CK gọn.
-    const description = parseTransferCode(override) || code;
+    // Nội dung CK / QR des = chỉ mã 4 ký tự (GDxx)
+    const fromOverride =
+      typeof descriptionOverride === 'string' ? parseTransferCode(descriptionOverride) : null;
+    const description = fromOverride || code;
 
     const result = await generateVietQR({
       amount: Number(amount),

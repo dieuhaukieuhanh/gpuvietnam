@@ -183,15 +183,14 @@ export async function createPendingGpuSubscription(
   const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
 
-  // Ensure SePay can auto-match: transfer_note = GD + 2 chars only.
+  // SePay auto-match: transfer_note = mã 4 ký tự (GDxx), không kèm tên.
   let note = typeof transferNote === 'string' ? transferNote.trim() : '';
   let transferCode = parseTransferCode(note);
   if (!transferCode) {
     transferCode = await allocateTransferCode(supabaseAdmin);
-    note = buildTransferDescription(fullName, transferCode);
-  } else {
-    note = transferCode;
   }
+  note = buildTransferDescription(transferCode);
+  void fullName;
 
   const { data, error } = await supabaseAdmin
     .from('subscriptions')

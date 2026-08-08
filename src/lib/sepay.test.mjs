@@ -24,25 +24,26 @@ describe('parseTransferCode', () => {
 });
 
 describe('wallet transfer code length parity', () => {
-  it('matches shortTransactionId used by deposit note', () => {
+  it('matches shortTransactionId used by deposit note — 4 alphanumeric chars', () => {
     const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
     assert.equal(shortTransactionId(id), 'A1');
     assert.equal(buildDepositTransferNote(id), 'GDA1');
-    assert.equal(parseTransferCode(`Khach Hang ${buildDepositTransferNote(id)}`), 'GDA1');
+    assert.equal(buildDepositTransferNote(id).length, 4);
+    assert.equal(parseTransferCode(buildDepositTransferNote(id)), 'GDA1');
   });
 });
 
 describe('buildTransferDescription / VietQR', () => {
-  it('uses GD code only (no customer name prefix)', () => {
+  it('uses only 4-char GD code (no customer name)', () => {
     assert.equal(buildTransferDescription('Nguyen Van A', 'GDX7'), 'GDX7');
-    assert.equal(buildTransferDescription(null, 'GDA1'), 'GDA1');
+    assert.equal(buildTransferDescription('GD64'), 'GD64');
   });
 
   it('builds qr.sepay.vn URL', () => {
-    const url = buildVietQrUrl({ amount: 100000, description: 'GDX7' });
+    const url = buildVietQrUrl({ amount: 100000, description: 'Nguyen Van A GDX7' });
     assert.match(url, /^https:\/\/qr\.sepay\.vn\/img\?/);
     assert.match(url, /amount=100000/);
-    assert.match(url, /des=GDX7/);
+    assert.match(url, /des=Nguyen/);
     assert.match(url, /template=qronly/);
   });
 });
