@@ -102,7 +102,7 @@ Sản phẩm tạo video có mặt (Train LoRA face → Preview 5s → Final). R
 |------------|------|------------|
 | Lib + tests | `src/lib/sepay.js`, `sepay.test.mjs` | ✅ |
 | QR / Webhook | `/api/payment/sepay-qr`, `sepay-webhook` | ✅ |
-| Cron reconcile | `/api/cron/sepay-reconcile` + `vercel.json` `*/5` | ✅ |
+| Cron reconcile | `/api/cron/sepay-reconcile` + `vercel.json` daily `25 3 * * *` (Hobby) | ✅ |
 | SQL | `supabase/sepay-transactions.sql` (`0054`) | ✅ |
 | Match | Nạp ví (UUID→GD) · gói GPU · tái tục (`transfer_note` có GD) | ✅ |
 | UI | Wallet / PlanCheckout / PaymentSection — copy tự động duyệt | ✅ |
