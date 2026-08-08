@@ -53,7 +53,7 @@ export {
   resolveLatencyBonus,
   applyTimeRecovery,
 } from './host-reputation-score.js';
-export { resetHostReputationStoreForTests, loadHostReputationStoreAsync } from './host-reputation-store.js';
+export { resetHostReputationStoreForTests, loadHostReputationStoreAsync, listHostReputationRecords } from './host-reputation-store.js';
 export { resetHostReputationMetrics } from './host-reputation-metrics.js';
 
 /**
