@@ -400,7 +400,9 @@ VAST_SSH_PRIVATE_KEY_PATH=C:/Users/Lenovo/.ssh/id_rsa
 - **UI Login / Register:** layout 2 cột full-viewport (`AuthPageShell.tsx`) — hero trái (desktop), form trắng phải; mobile chỉ form, không scroll trừ màn h `<500px` cao
 - `AuthContext` + cookie `gpuvietnam-auth` + `gpuvietnam-token`
 - Middleware bảo vệ `/dashboard`, `/dashboard/*` — verify JWT thật (không chỉ check cookie)
-- Reset password: cấu hình Supabase **Redirect URL** `.../dat-lai-mat-khau`; email mặc định từ `noreply@mail.app.supabase.io` — muốn hiển thị **GPUVietnam** cần **Custom SMTP** + domain riêng
+- Reset password: cấu hình Supabase **Redirect URL** `.../dat-lai-mat-khau`; email gửi từ **`GPUVietnam <notify@gpuvietnam.com>`** qua **Resend Custom SMTP** (Supabase → Authentication → Email Templates).
+- Email nền tảng: `cskh@gpuvietnam.com` (hiển thị website) · `notify@gpuvietnam.com` (transactional: auth, thông báo thanh toán) · Resend API key server-side (`RESEND_API_KEY`), không lộ client.
+- API route `/api/notify/payment` server-side gửi thông báo thanh toán cho admin qua Resend; utility `src/lib/resend.js`.
 
 **File chính:** `AuthPageShell.tsx`, `auth-pages.styles.ts`, `LoginPage.tsx`, `RegisterPage.tsx`, `AuthContext.tsx`, `src/middleware.ts`, `src/pages/api/register.js`, `src/pages/api/otp/*`, `src/pages/api/auth/*`, `src/lib/rate-limit.js`, `src/lib/audit-log.js`, `supabase/auth-audit-log.sql`
 
@@ -1084,7 +1086,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - [ ] Tích hợp ComfyUI workflow qua Dashboard → `getGpuService()` (nút Chạy workflow)
 
 - [ ] Cấu hình `SPEEDSMS_ACCESS_TOKEN` + QR thanh toán thật
-- [ ] Custom SMTP Supabase (email hiển thị GPUVietnam)
+- [x] Custom SMTP Supabase (email hiển thị GPUVietnam) — Resend SMTP với `notify@gpuvietnam.com`
 - [ ] Email/notify Admin khi có yêu cầu CK mới
 - [ ] `server_status`: `provisioning` → `online` (hạ tầng GPU)
 - [ ] Model: nút **Dùng ngay** → mount/load ComfyUI thật

@@ -372,6 +372,19 @@ POST /api/user/change-environment
 | Session | JWT Supabase + cookie `gpuvietnam-auth` + `gpuvietnam-token` (middleware verify JWT bằng Web Crypto API) |
 | Admin | `public.users.role = 'admin'` hoặc email trong `ADMIN_EMAILS` |
 
+### Email (2026-08-08)
+
+| Email | Vai trò |
+|---|---|
+| `cskh@gpuvietnam.com` | Hiển thị trên website (footer, liên hệ, giới thiệu...) |
+| `notify@gpuvietnam.com` | Email transactional: auth (xác nhận, reset password), thông báo thanh toán |
+| `admin@gpuvietnam.com` | Admin email (`ADMIN_EMAILS`) |
+
+- **Resend** làm email provider — API key server-side (`RESEND_API_KEY`), không lộ client.
+- **Supabase Custom SMTP** qua Resend: `smtp.resend.com:587`, sender `GPUVietnam <notify@gpuvietnam.com>`.
+- API route `/api/notify/payment` (server-side) gửi thông báo KH mới cho admin.
+- Utility `src/lib/resend.js` — `sendEmail()`, `sendPaymentNotification()`.
+
 **Không dùng** trigger `on_auth_user_created` — profile sync trong API register (`supabase/fix-trigger.sql`).
 
 ### Hardening (2026-08-02)

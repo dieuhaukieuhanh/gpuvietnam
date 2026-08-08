@@ -158,7 +158,7 @@ export default function Checkout2Page() {
       <footer className="footer">
         <div className="container">
           <p className="copyright">
-            © 2026 GPUVietnam. Tất cả quyền được bảo lưu. | hello@gpuvietnam.com | Zalo: 09xxxxxxx
+            © 2026 GPUVietnam. Tất cả quyền được bảo lưu. | cskh@gpuvietnam.com | Zalo: 09xxxxxxx
           </p>
         </div>
       </footer>

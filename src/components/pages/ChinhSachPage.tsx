@@ -131,7 +131,7 @@ export default function ChinhSachPage() {
                         <p>Nếu bạn có bất kỳ câu hỏi nào về Chính sách Bảo mật này, vui lòng liên hệ với chúng tôi:</p>
                         <div className="contact-info">
                             <span>📱 <strong>Zalo:</strong> 09xxxxxxx</span>
-                            <span>📧 <strong>Email:</strong> hello@gpuvietnam.com</span>
+                            <span>📧 <strong>Email:</strong> cskh@gpuvietnam.com</span>
                         </div>
                     </div>
         
@@ -152,7 +152,7 @@ export default function ChinhSachPage() {
                         <a href="#">Chính sách bảo mật</a>
                         <a href="#">Hỗ trợ</a>
                     </div>
-                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | hello@gpuvietnam.com</p>
+                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | cskh@gpuvietnam.com</p>
                 </div>
             </footer>
       </>

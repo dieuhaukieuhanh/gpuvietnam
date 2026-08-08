@@ -92,7 +92,7 @@ export default function AboutUsPage() {
                         <a href="#">Hỗ trợ</a>
                         <a href="#">Chính sách bảo mật</a>
                     </div>
-                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | hello@gpuvietnam.com</p>
+                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | cskh@gpuvietnam.com</p>
                 </div>
             </footer>
       </>

@@ -61,26 +61,16 @@ export default function PaymentPage() {
 
   const submitPayment = async () => {
     try {
-      await fetch('https://api.resend.com/emails', {
+      await fetch('/api/notify/payment', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer re_xxxxxxxx',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: 'GPUVietnam <notify@gpuvietnam.com>',
-          to: 'your-email@gmail.com',
-          subject: `🔔 KH mới: Gói ${order.plan} - ${BILLING_LABELS[order.billing]}`,
-          html: `
-            <h2>Có khách hàng xác nhận thanh toán!</h2>
-            <p><strong>Email:</strong> ${order.email}</p>
-            <p><strong>SĐT:</strong> ${order.phone}</p>
-            <p><strong>Gói:</strong> ${order.plan}</p>
-            <p><strong>Cách dùng:</strong> ${BILLING_LABELS[order.billing]}</p>
-            <p><strong>Số tiền:</strong> ${pricing.price}${pricing.unit}</p>
-            <p><strong>Môi trường:</strong> ${order.env}</p>
-            <p><strong>Thời gian:</strong> ${new Date().toLocaleString('vi-VN')}</p>
-          `,
+          plan: order.plan,
+          billing: BILLING_LABELS[order.billing],
+          email: order.email,
+          phone: order.phone,
+          env: order.env,
+          price: `${pricing.price}${pricing.unit}`,
         }),
       });
     } catch {

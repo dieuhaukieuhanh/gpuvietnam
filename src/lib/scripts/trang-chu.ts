@@ -31,7 +31,7 @@ export function initTrangChu(): void {
             }
         }
 
-        function startFreeTrial() { alert('🎁 Đăng ký dùng thử 3 giờ GPU miễn phí!\\n\\n📱 Nhắn Zalo: 0961 862 141\\n📧 Hoặc Email: hello@gpuvietnam.com\\n\\nChúng tôi sẽ tạo máy chủ GPU dùng thử cho bạn ngay lập tức.'); }
+        function startFreeTrial() { alert('🎁 Đăng ký dùng thử 3 giờ GPU miễn phí!\\n\\n📱 Nhắn Zalo: 0961 862 141\\n📧 Hoặc Email: cskh@gpuvietnam.com\\n\\nChúng tôi sẽ tạo máy chủ GPU dùng thử cho bạn ngay lập tức.'); }
         function contactCustomWorkstation() { alert('🎯 Workstation Theo Yêu Cầu\\n\\n📱 Nhắn Zalo: 0961 862 141 mô tả nhu cầu của bạn.\\nChúng tôi sẽ tạo môi trường riêng trong 24h — miễn phí setup.'); }
         function scrollToSection(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
 

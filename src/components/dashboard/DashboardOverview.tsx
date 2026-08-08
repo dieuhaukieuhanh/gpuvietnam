@@ -2560,7 +2560,7 @@ export default function DashboardOverview({
           </div>
           <div className="support-row">
             <span>📱 Zalo: 0961 862 141</span>
-            <span>📧 hello@gpuvietnam.com</span>
+            <span>📧 cskh@gpuvietnam.com</span>
             <Link
               href={routes.home}
               prefetch

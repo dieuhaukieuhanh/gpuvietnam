@@ -299,7 +299,7 @@ export default function TrangChuPage() {
                         <a href="#">Liên hệ</a>
                         <a href="#">Chính sách bảo mật</a>
                     </div>
-                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | hello@gpuvietnam.com | Zalo: 0961 862 141</p>
+                    <p className="copyright">© 2026 GPUVietnam. Tất cả quyền được bảo lưu. | cskh@gpuvietnam.com | Zalo: 0961 862 141</p>
                 </div>
             </footer>
 

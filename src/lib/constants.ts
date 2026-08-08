@@ -1,7 +1,7 @@
 export const brand = {
   name: 'GPUVietnam',
   icon: '⚡',
-  email: 'hello@gpuvietnam.com',
+  email: 'cskh@gpuvietnam.com',
   zalo: '0961 862 141',
   copyright: '© 2026 GPUVietnam. Tất cả quyền được bảo lưu.',
 } as const;

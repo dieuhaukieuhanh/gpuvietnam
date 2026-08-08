@@ -258,28 +258,19 @@ export function initCheckout1(): void {
                 'combo2': 'Combo2'
             };
             
-            // Gửi email thông báo cho bạn (dùng Resend — thay API Key thật)
+            // Gửi email thông báo cho admin qua API route server-side
             try {
-                await fetch('https://api.resend.com/emails', {
+                await fetch('/api/notify/payment', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer re_xxxxxxxx' // Thay bằng API Key Resend của bạn
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        from: 'GPUVietnam <notify@gpuvietnam.com>',
-                        to: 'your-email@gmail.com',  // Thay bằng email của bạn
-                        subject: \`🔔 KH mới: Gói \${plan.name} - \${billingNames[currentBilling]}\`,
-                        html: \`
-                            <h2>Có khách hàng xác nhận thanh toán!</h2>
-                            <p><strong>Gói:</strong> \${plan.name}</p>
-                            <p><strong>Cách dùng:</strong> \${billingNames[currentBilling]}</p>
-                            <p><strong>Số tiền:</strong> \${p.price}\${p.unit}</p>
-                            <p><strong>Môi trường:</strong> \${envName}</p>
-                            <p><strong>Thời gian:</strong> \${new Date().toLocaleString('vi-VN')}</p>
-                            <p>Vui lòng kiểm tra tài khoản ngân hàng và kích hoạt máy.</p>
-                        \`
-                    })
+                        plan: plan.name,
+                        billing: billingNames[currentBilling],
+                        email: 'khach@example.com',
+                        phone: '09xxxxxxxx',
+                        env: envName,
+                        price: \`\${p.price}\${p.unit}\`,
+                    }),
                 });
             } catch(e) {
                 console.log('Email notification failed, but continuing...');
