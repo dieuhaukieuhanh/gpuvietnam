@@ -26,6 +26,8 @@ import {
   rememberHostSuccess,
   rememberHostFailure,
   getHostIntelligenceSummary,
+  listHostReputationRecords,
+  isKnownGoodHost,
 } from '../src/lib/gpu/host-reputation/index.js';
 import { HOST_REPUTATION, readHostIntelligenceConfigAsync } from '../src/lib/gpu/host-reputation/host-reputation-config.js';
 import { classifyHostFailure } from '../src/lib/gpu/host-reputation/host-reputation-classify.js';
@@ -168,26 +170,38 @@ async function main() {
     return;
   }
 
-  // 3. Adaptive test count
-  const summary = getHostIntelligenceSummary();
-  const targetPerLine = runtimeConfig.targetPerLine;
-  const belowTarget = GPU_LINES.filter((line) => {
-    const count = summary.knownGoodByLine?.[line] ?? 0;
-    return count < (targetPerLine[line] ?? 4);
-  });
-
-  let testCount = 1 + randInt(MAX_TEST_PER_CYCLE);
-  if (belowTarget.length > 0) {
-    testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
-    console.log(`[host-intel] Pool below target: ${belowTarget.join(', ')}, testing up to ${testCount}`);
-  }
-
-  // 4. Collect candidates
+  // 3. Collect all candidates first (need to check availability)
   const shuffledLines = shuffle([...GPU_LINES]);
   const allCandidates = [];
   for (const gpuLine of shuffledLines) {
     const candidates = await searchCandidates(vastClient, gpuLine);
     allCandidates.push(...candidates);
+  }
+
+  // 4. Count AVAILABLE known-good hosts (still on marketplace, not rented)
+  const targetPerLine = runtimeConfig.targetPerLine;
+  const allHostKeys = new Set(allCandidates.map((c) => c.hostKey));
+  const summary = getHostIntelligenceSummary();
+  const records = listHostReputationRecords();
+  const availablePerLine = {};
+  for (const r of records) {
+    if (isKnownGoodHost(r) && allHostKeys.has(r.hostKey)) {
+      const line = r.gpuLine || 'unknown';
+      availablePerLine[line] = (availablePerLine[line] || 0) + 1;
+    }
+  }
+
+  const belowTarget = GPU_LINES.filter((line) => {
+    const available = availablePerLine[line] ?? 0;
+    return available < (targetPerLine[line] ?? 4);
+  });
+
+  console.log(`[host-intel] Available known-good per line: 3090=${availablePerLine['rtx3090']??0} 4090=${availablePerLine['rtx4090_1x']??0} 5090=${availablePerLine['rtx5090_1x']??0} (pool total: ${summary.knownGood??0})`);
+
+  let testCount = 1 + randInt(MAX_TEST_PER_CYCLE);
+  if (belowTarget.length > 0) {
+    testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
+    console.log(`[host-intel] Pool below target: ${belowTarget.join(', ')}, testing up to ${testCount}`);
   }
 
   if (allCandidates.length === 0) {
