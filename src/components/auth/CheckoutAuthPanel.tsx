@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { orderToSearchParams, type CheckoutOrder } from '@/lib/checkout-order';
 import { resolvePostLoginRedirect } from '@/lib/post-login-redirect';
-import { getSupabaseBrowser } from '@/lib/supabase-browser';
+import { getGoogleOAuthUrl } from '@/lib/google-oauth';
 import { routes } from '@/lib/routes';
 
 type CheckoutAuthPanelProps = {
@@ -133,32 +133,14 @@ export default function CheckoutAuthPanel({
     }
   };
 
-  const handleGoogleAuth = async () => {
+  const handleGoogleAuth = () => {
     setError('');
     setGoogleLoading(true);
     try {
-      const supabase = getSupabaseBrowser();
-      const redirectParams = new URLSearchParams();
-      if (trial) redirectParams.set('trial', 'true');
-      if (workstation) redirectParams.set('workstation', workstation);
-      const redirectTo = `${window.location.origin}/auth/callback${redirectParams.toString() ? '?' + redirectParams.toString() : ''}`;
-
-      const { error: googleError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-      if (googleError) {
-        setError(googleError.message);
-        setGoogleLoading(false);
-      }
+      const url = getGoogleOAuthUrl('/auth/google-callback');
+      window.location.href = url;
     } catch {
-      setError('Không thể kết nối Google.');
+      setError('Google OAuth chưa được cấu hình (thiếu NEXT_PUBLIC_GOOGLE_CLIENT_ID).');
       setGoogleLoading(false);
     }
   };

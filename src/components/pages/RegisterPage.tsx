@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import AuthPageShell from '@/components/auth/AuthPageShell';
-import { getSupabaseBrowser } from '@/lib/supabase-browser';
+import { getGoogleOAuthUrl } from '@/lib/google-oauth';
 import { routes } from '@/lib/routes';
 
 function getPasswordStrength(password: string): { label: string; color: string; pct: number } {
@@ -110,27 +110,14 @@ export default function RegisterPage() {
     }
   };
 
-  const handleGoogleSignUp = async () => {
+  const handleGoogleSignUp = () => {
     setError('');
     setGoogleLoading(true);
     try {
-      const supabase = getSupabaseBrowser();
-      const { error: googleError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-      if (googleError) {
-        setError(googleError.message);
-        setGoogleLoading(false);
-      }
-    } catch {
-      setError('Không thể kết nối Google.');
+      const url = getGoogleOAuthUrl('/auth/google-callback');
+      window.location.href = url;
+    } catch (err: unknown) {
+      setError('Google OAuth chưa được cấu hình (thiếu NEXT_PUBLIC_GOOGLE_CLIENT_ID).');
       setGoogleLoading(false);
     }
   };

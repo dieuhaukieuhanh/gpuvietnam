@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import AuthPageShell from '@/components/auth/AuthPageShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { resolveLoginRedirectFromResponse } from '@/lib/post-login-redirect';
-import { getSupabaseBrowser } from '@/lib/supabase-browser';
+import { getGoogleOAuthUrl } from '@/lib/google-oauth';
 import { routes } from '@/lib/routes';
 
 export default function LoginPage() {
@@ -55,27 +55,14 @@ export default function LoginPage() {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = () => {
     setError('');
     setGoogleLoading(true);
     try {
-      const supabase = getSupabaseBrowser();
-      const { error: googleError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-      if (googleError) {
-        setError(googleError.message);
-        setGoogleLoading(false);
-      }
+      const url = getGoogleOAuthUrl('/auth/google-callback');
+      window.location.href = url;
     } catch {
-      setError('Không thể kết nối Google.');
+      setError('Google OAuth chưa được cấu hình (thiếu NEXT_PUBLIC_GOOGLE_CLIENT_ID).');
       setGoogleLoading(false);
     }
   };
