@@ -14,8 +14,9 @@ EnvironmentFile=-/etc/gpuvietnam/lifecycle.env
 Environment=HOME=/opt/gpuvietnam/tmp
 Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
 Environment=TMPDIR=/tmp
-# ──────── Provider: Vast-only ────────
-Environment=GPU_VAST_ONLY=true
+# ──────── Provider routing ────────
+# Start order SoT = Admin Hạ tầng (provider_routing_policy). Do NOT pin GPU_*_ONLY here
+# unless break-glass. GPU_ALLOW_VAST keeps Vast usable when policy enables it.
 Environment=GPU_ALLOW_VAST=true
 Environment=GPUVIETNAM_LIFECYCLE_WORKER=1
 # ──────── Image: v3.7 (3090/4090) + v4.4 (5090) ────────
