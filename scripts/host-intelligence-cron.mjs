@@ -230,6 +230,7 @@ async function main() {
           ? (rented.new_contract ?? rented.id ?? rented.instance_id)
           : null) ?? '',
       );
+      console.log(`[host-intel-debug] rented: offerId=${target.offerId} instanceId=${instanceId} image=${TEST_IMAGE}`);
 
       if (!instanceId) {
         results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: 'no instance id' });
@@ -240,7 +241,9 @@ async function main() {
 
       const waitForEndpoint = async () => {
         const resolved = await resolveVastEndpoint(vastClient, instanceId, comfyPort, liveInstance);
-        return resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
+        const url = resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
+        console.log(`[host-intel-debug] endpoint resolution: instanceId=${instanceId} status=${resolved?.status} url=${url} detail=${resolved?.detail}`);
+        return url;
       };
 
       const gate = await runTestProvisionGate({
