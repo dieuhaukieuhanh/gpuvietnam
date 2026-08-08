@@ -27,6 +27,7 @@ import {
   leaseNext,
   markRunning,
 } from './machine-operation-queue.js';
+import { opsAlertAsync } from '@/lib/ops/alert-dispatcher.js';
 
 /**
  * @param {Record<string, unknown>} row
@@ -237,6 +238,21 @@ export async function executeMachineOperationRow(supabaseAdmin, row, gpuService)
     });
     const outcome =
       failedRow && String(failedRow.state) === 'dead_letter' ? 'dead_letter' : 'retry_scheduled';
+    if (outcome === 'dead_letter') {
+      opsAlertAsync({
+        event: 'recovery_exhausted',
+        severity: 'critical',
+        title: `Operation dead_letter: ${opType}`,
+        details: {
+          operationId,
+          operation: opType,
+          provider: ctx.provider ?? null,
+          attempt: failedRow?.attempt ?? null,
+          error: message,
+        },
+        dedupeKey: `recovery_exhausted:${operationId}`,
+      });
+    }
     return { outcome, executionMs, error: message };
   } finally {
     if (provisionHeartbeat) clearInterval(provisionHeartbeat);

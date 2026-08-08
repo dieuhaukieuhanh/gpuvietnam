@@ -14,6 +14,7 @@ import { mapCloreOrderToGPUInstance } from './clore-mapper.js';
 import { isCloreOrderActive, isGpuVietnamCloreOrder } from './clore-client.js';
 import { logCloreOrphanEvent } from './clore-orphan-log.js';
 import { getCloreOrphanMetrics, incrCloreOrphanMetric } from './clore-orphan-metrics.js';
+import { opsAlertAsync } from '../../../ops/alert-dispatcher.js';
 import { createProvisioningPendingSession } from '../../session-start.js';
 import { getGpuLabel } from '../../../gpu-pricing.js';
 import {
@@ -321,6 +322,18 @@ export async function runCloreOrphanReconciliationPass(deps) {
         },
         'Clore orphan candidate detected',
       );
+      opsAlertAsync({
+        event: 'orphan_clore',
+        severity: 'critical',
+        title: `Clore orphan order ${order.orderId}`,
+        details: {
+          orderId: order.orderId,
+          serverId: order.serverId,
+          image: order.image,
+          requestId: orphanRequestId,
+        },
+        dedupeKey: `orphan_clore:${order.orderId}`,
+      });
       deps.scheduleRecheck?.(order.orderId, graceMs);
       actions.push({ orderId: order.orderId, action: 'observe', reason: 'grace_period' });
       continue;

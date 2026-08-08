@@ -35,6 +35,7 @@ import {
 } from '@/lib/provision-progress/index.js';
 import { logger, logPhase, updateLogContext } from '../logging/index.js';
 import { ProvisionLeaseHandle } from '../provision-lease.js';
+import { opsAlertAsync } from '@/lib/ops/alert-dispatcher.js';
 
 /**
  * @param {Record<string, unknown> | null | undefined} instance
@@ -452,6 +453,31 @@ export async function completeUserStartProvision(supabaseAdmin, params) {
       });
     } catch {
       /* ignore */
+    }
+
+    {
+      const failMsg = gpuError instanceof Error ? gpuError.message : String(gpuError);
+      if (
+        /timeout|No Available Workstation|finished without an active machine|rent failed/i.test(
+          failMsg,
+        )
+      ) {
+        opsAlertAsync({
+          event: 'provision_timeout',
+          severity: 'critical',
+          title: `Provision failed: ${planKey}/${gpuLine}`,
+          details: {
+            userId,
+            subscriptionId,
+            correlationId,
+            planKey,
+            gpuLine,
+            label,
+            message: failMsg,
+          },
+          dedupeKey: `provision_timeout:${correlationId || subscriptionId}`,
+        });
+      }
     }
 
     try {

@@ -86,7 +86,7 @@
 | Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
 | VNPay/PayOS | ❌ — dùng SePay webhook; fallback CK + admin duyệt |
 
-> **Go-Live (owner order):** P0-A ✅ → P0-B billing T11 ✅ → P0-C alerts → P0-D E2E khách.  
+> **Go-Live (owner order):** P0-A ✅ → P0-B billing T11 ✅ → P0-C alerts ✅ (email) → P0-D E2E khách.  
 > Chi tiết: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md), [`docs/PROGRESS.md`](PROGRESS.md).
 
 ---

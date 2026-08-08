@@ -31,6 +31,7 @@ import {
   isSettlementRpcRetryable,
 } from './settlement-transaction-rpc.js';
 import { filterEntitlementPlansForMachine } from './remaining-time.js';
+import { opsAlertAsync } from '@/lib/ops/alert-dispatcher.js';
 
 export {
   SETTLEMENT_MODULE_VERSION,
@@ -495,6 +496,13 @@ export async function settleSession(supabaseAdmin, input) {
   // Preserve existing logging style (console.error, same as prior catch path).
   if (isSettlementRpcRetryable(code)) {
     console.error('[settlement] transaction RPC failed (retryable):', code, rpcResult.message);
+    opsAlertAsync({
+      event: 'settlement_failed',
+      severity: 'critical',
+      title: `Settlement RPC failed (${code})`,
+      details: { sessionId, userId, code, message: rpcResult.message },
+      dedupeKey: `settlement_failed:${sessionId}:${code}`,
+    });
     return {
       state: 'ERROR',
       code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,
@@ -504,6 +512,13 @@ export async function settleSession(supabaseAdmin, input) {
 
   // Unknown code — treat as internal/retryable.
   console.error('[settlement] transaction RPC failed (unknown code):', code, rpcResult.message);
+  opsAlertAsync({
+    event: 'settlement_failed',
+    severity: 'critical',
+    title: `Settlement RPC failed (unknown:${code})`,
+    details: { sessionId, userId, code, message: rpcResult.message },
+    dedupeKey: `settlement_failed:${sessionId}:${code}`,
+  });
   return {
     state: 'ERROR',
     code: SETTLEMENT_ERROR_CODE.COMMIT_FAILED,

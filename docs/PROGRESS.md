@@ -73,7 +73,7 @@
 
 ## Bước tiếp theo
 
-> **Go-Live ngay:** P0-B T11 ✅ → P0-C alerts → P0-D E2E khách.  
+> **Go-Live ngay:** P0-B T11 ✅ → P0-C alerts ✅ (email) → P0-D E2E khách.  
 > **Đã xong nền:** P0-A ✅, session continuity, auto-replace (không F5), editor khi boot, filmmaker, Host Intel Vast, Auth email-first/Google/Zalo.  
 > **Staging RC6:** Scenario 1 trên Vast → 2–5 → VERIFIED → promote.  
 > **SePay:** ✅ **chốt xong** (code + ops + test nạp ví thật; mã `NVxxxx`).  
@@ -1125,7 +1125,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - [x] P0-A durable start + VPS Vast-only + smoke Phase F.2 7/7
 - [x] P0-B harness: `scripts/p0b-t11-billing-proof.mjs` + [`P0B_T11_BILLING_PROOF.md`](operations/P0B_T11_BILLING_PROOF.md) (unit gate + full E2E)
 - [x] P0-B T11 **ký PASS** — prod 2026-08-08 report `tmp/p0b-t11-1786206245215.json`
-- [ ] P0-C alerts / ops notify
+- [x] P0-C alerts / ops notify — email Resend → `OPS_ALERT_EMAIL` ([`P0C_MINIMAL_ALERTING.md`](operations/P0C_MINIMAL_ALERTING.md))
 - [ ] P0-D E2E khách thật
 
 **Ưu tiên — Staging & RC6:**
@@ -1165,7 +1165,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | VPS systemd `gpuvietnam-lifecycle-worker` | ✅ |
 | **P0-A** Vast-only (`GPU_VAST_ONLY` + `GPU_ALLOW_VAST`) + smoke Phase F.2 | ✅ **7/7 PASS** |
 | **P0-B** T11 billing E2E | ✅ **PASS** 2026-08-08 — `tmp/p0b-t11-1786206245215.json` |
-| **P0-C** alerts | ⬜ |
+| **P0-C** alerts | ✅ email (Resend) — 5 event → `dieuhaukieuhanh@gmail.com` |
 | **P0-D** E2E khách | ⬜ |
 | Staging RC6 Scenarios 1–5 | 🟡 gate/Vast ready; Scenario 1 chưa PASS trên Vast |
 

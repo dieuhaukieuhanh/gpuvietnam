@@ -8,6 +8,7 @@ import {
   PENDING_STALE_MS,
 } from './machine-operation-policies.js';
 import { logMachineOperation } from './machine-operation-observability.js';
+import { opsAlertAsync } from '@/lib/ops/alert-dispatcher.js';
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
@@ -70,7 +71,7 @@ export async function runQueueSelfHealing(supabaseAdmin, options = {}) {
     .from('machine_operations')
     .update({
       retry_reason: 'stale_pending_recovered',
-      priority: 65,
+      priority: 75,
     })
     .eq('state', MACHINE_OPERATION_STATE.PENDING)
     .lt('created_at', pendingStaleCutoff)
@@ -98,6 +99,19 @@ export async function runQueueSelfHealing(supabaseAdmin, options = {}) {
       { correlationId: null, operationId: null, durationMs: null, extra: summary },
       'queue self-healing applied',
     );
+  }
+
+  // Stuck ops: stale leased/running recovered (not routine retry promotion).
+  const stuckCount =
+    summary.releasedLeases + summary.recoveredRunning + summary.cleanedOrphans;
+  if (stuckCount > 0) {
+    opsAlertAsync({
+      event: 'machine_op_stuck',
+      severity: 'warning',
+      title: `Queue self-heal recovered ${stuckCount} stuck op(s)`,
+      details: summary,
+      dedupeKey: `machine_op_stuck:${nowIso.slice(0, 16)}`,
+    });
   }
 
   return summary;
