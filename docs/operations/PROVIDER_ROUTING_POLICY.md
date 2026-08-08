@@ -31,4 +31,13 @@ Clore + Vast: 3090 / 4090 / **5090** (`CLORE_SUPPORTED_GPU_LINES`).
 
 ## Default
 
-`vast=true`, `clore=false`, `salad=false`, priority `vast → clore → salad` (khớp prod Vast-only hiện tại).
+`vast=true`, `clore=false`, `salad=false`, priority `vast → clore → salad`.
+
+## Prod status (2026-08-09)
+
+| Layer | Status |
+|-------|--------|
+| Migration `0056` | ✅ applied (Supabase prod) |
+| Vercel | ✅ Ready (`gpuvietnam.com`, commit `dbfe602`) |
+| VPS worker | ✅ loads policy from Supabase; unit **không** pin `GPU_VAST_ONLY` (giữ `GPU_ALLOW_VAST=true`) |
+| Admin UI | ✅ Tab Hạ tầng → *Provider routing* |

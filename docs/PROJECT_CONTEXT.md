@@ -46,7 +46,7 @@
 | **Mô hình kinh doanh** | Resell GPU marketplace + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
 | **Đối tượng chính** | Freelancer AI Art (~60%), sinh viên/người mới (~25%), agency nhỏ (~15%) |
 | **Điểm khác biệt (mục tiêu)** | Workspace/workflow không phụ thuộc một GPU; failover compute; thanh toán VN |
-| **Backend GPU thực tế** | Adapter **Vast + Clore + Salad**. **SoT Start:** Admin Hạ tầng `provider_routing_policy` (default Vast-only). Env `GPU_*_ONLY` = break-glass. Clore hỗ trợ 3090/4090/5090. Thuê theo giờ khi KH bật máy |
+| **Backend GPU thực tế** | Adapter **Vast + Clore + Salad**. **SoT Start (prod):** Admin → Hạ tầng → *Provider routing* (`provider_routing_policy`, default Vast-only). Env `GPU_*_ONLY` chỉ break-glass. Clore 3090/4090/5090. Thuê theo giờ khi KH bật máy |
 | **Control Plane** | `gpuvietnam.com` (Vercel Next) — session, billing, enqueue start |
 | **Lifecycle worker** | VPS Linux always-on (`gpuvietnam-lifecycle-worker`) — claim/execute `user_start_provision` |
 
@@ -64,7 +64,8 @@
 | GPUService + Vast + Clore + **Salad** (backup) adapters | ✅ |
 | **CP/Runtime Architecture v2.0** | ✅ Frozen (ADR-005); Continuity A→B chứng minh trên Clore |
 | **P0-A durable Start** (enqueue + VPS worker) | ✅ **Phase F.2: 7/7 PASS** (boot events, v3.4, R2 restore) |
-| **VPS lifecycle worker + Vast-only** | ✅ Chốt 2026-08-01 (systemd `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true`) |
+| **VPS lifecycle worker** | ✅ Active; `GPU_ALLOW_VAST=true`; **không** pin `GPU_VAST_ONLY` (Admin policy SoT từ 2026-08-09) |
+| **Provider routing Admin (Hạ tầng)** | ✅ **Prod 2026-08-09** — bật/tắt + priority cho Start mới; migration `0056`; [`PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md) |
 | **Session Continuity** (Backup → Destroy → Start → Restore) | ✅ E2E verified; auto-restore không giới hạn 200MB |
 | Billing theo phiên (combo giờ + hourly ví) | ✅ logic + P0-B T11 **PASS** 2026-08-08 (`tmp/p0b-t11-1786206245215.json`) |
 | **SCB 4.0 — server-authoritative remaining hours** | ✅ Frozen at tag `scb-4.0` (ADR-004) |
@@ -86,8 +87,8 @@
 | Jupyter / Blender workstation | ❌ UI only — "Sắp ra mắt" |
 | VNPay/PayOS | ❌ — dùng SePay webhook; fallback CK + admin duyệt |
 
-> **Go-Live (owner order):** P0-A ✅ → P0-B billing T11 ✅ → P0-C alerts ✅ (email) → P0-D E2E khách.  
-> Chi tiết: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md), [`docs/PROGRESS.md`](PROGRESS.md).
+> **Go-Live (owner order):** P0-A ✅ → P0-B ✅ → P0-C ✅ → Provider routing Admin ✅ → **P0-D** E2E khách.  
+> Chi tiết: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md), [`docs/PROGRESS.md`](PROGRESS.md), [`docs/operations/PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md).
 
 ---
 
@@ -101,7 +102,7 @@
 | **OAuth** | Google OAuth trực tiếp (`google-oauth.js`) — consent `gpuvietnam.com` |
 | **Thanh toán CK** | SePay VietQR + webhook auto-approve ✅ + Admin duyệt thủ công (fallback) |
 | **Backup storage** | Cloudflare R2 qua `@aws-sdk/client-s3` |
-| **GPU backend** | Vast + Clore + Salad; Start order từ Admin Hạ tầng (`provider_routing_policy`); `GPU_*_ONLY` = break-glass |
+| **GPU backend** | Vast + Clore + Salad; Start order = Admin Hạ tầng `provider_routing_policy` (prod); `GPU_*_ONLY` = break-glass |
 | **Lifecycle worker** | VPS systemd → `scripts/lifecycle-worker.mjs` (claim `machine_operations`) |
 | **ComfyUI image** | Docker Hub `:v3.7` (Starter/Pro) + `:v4.4` (Studio/5090); port **8080**; listen qua `COMFYUI_LISTEN` |
 | **Host-intel test image** | `dieuhaukieuhanh/gpu-test:v1` (~200–300MB); bake/default `HOST=0.0.0.0` (Vast IPv4) |
@@ -152,7 +153,7 @@ gpuvietnam/
 POST /api/user/start-machine
   → enqueue user_start_provision (machine_operations)
   → VPS lifecycle-worker claim / execute
-  → provider routing (P0-A: Vast-only) → rent → gate → machines row
+  → provider routing (Admin policy / default Vast) → rent → gate → machines row
 ```
 
 Dashboard / billing UI **không** gọi Clore/Vast API trực tiếp. Dual-run (nếu có) qua API CP riêng, không qua `start-machine`.
@@ -317,15 +318,14 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 | Pro | `rtx4090_1x` | RTX 4090 | Clore + Vast |
 | Studio | `rtx5090_1x` | 1× RTX 5090 | Clore + Vast (image `:v4.x`; Clore gate timeout dài hơn) |
 
-**Routing provider (thực tế code + ops):**
+**Routing provider (prod 2026-08-09):**
 
 | Ngữ cảnh | Attempt order |
 |----------|---------------|
-| VPS lifecycle Start routing | Admin `provider_routing_policy` (default Vast-only); unset `GPU_VAST_ONLY` để Admin điều khiển |
-| `GPU_CLORE_ONLY` / worker default không allow Vast | chỉ Clore (3090/4090/5090 qua `CLORE_SUPPORTED_GPU_LINES`) |
-| `GPU_SALAD_ONLY` | chỉ Salad |
-| Không set flag (code default) | **salad → vast → clore** |
-| `PROVIDER_ROUTING.sequence` (rotation cursor) | vast → clore → salad |
+| **SoT** — Admin → Hạ tầng → *Provider routing* | `provider_routing_policy` (default: Vast on, Clore/Salad off → attempt `vast`) |
+| `GPU_VAST_ONLY` / `GPU_CLORE_ONLY` / `GPU_SALAD_ONLY` | Break-glass — đè Admin nếu set trên server |
+| Clore GPU lines | 3090 / 4090 / **5090** (`CLORE_SUPPORTED_GPU_LINES`) |
+| VPS unit | `GPU_ALLOW_VAST=true`; **không** pin `GPU_*_ONLY` |
 
 ---
 
@@ -359,7 +359,7 @@ POST /api/user/start-machine
 → claim subscription / idempotency single-start
 → enqueue machine_operations (user_start_provision) → 200 { operationId }
 → VPS lifecycle-worker: lease + heartbeat + provision
-→ provider order: Admin policy (default Vast) unless emergency GPU_*_ONLY
+→ provider order: Admin `provider_routing_policy` (default Vast) — trừ khi break-glass GPU_*_ONLY
 → rent + L2 gate (HTTP/Comfy) → machines row
 → UI poll /api/machines/status + provision-progress
 → Comfy traffic-ready → op completed + billing anchor
@@ -687,18 +687,19 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 - Dashboard tab đầy đủ (trừ GPU run trên workflow/model; MakeStudio park sau MVP)
 - GPUService + **Vast + Clore + Salad** adapters; Host Intelligence (Vast on, Clore opt-in)
 - **CP/Runtime v2.0** freeze + Continuity A→B evidence
-- **P0-A** durable start + VPS worker **Vast-only** — Phase F.2 smoke 7/7 PASS
+- **P0-A** durable start + VPS worker — Phase F.2 smoke 7/7 PASS
+- **P0-B** billing T11 PASS · **P0-C** alerts email · **Provider routing Admin** (Hạ tầng SoT, prod 2026-08-09)
 - Session continuity (backup → destroy → start → restore); transparent Comfy reconnect
 - Billing phiên, auto-stop theo gói đang dùng, cảnh báo 30 phút
-- Storage R2 + entitlement theo gói GPU; Admin panels (duyệt, KH, giá, hạ tầng, host-intel)
+- Storage R2 + entitlement theo gói GPU; Admin panels (duyệt, KH, giá, hạ tầng, host-intel, provider routing)
 - Image prod `:v3.7` / `:v4.4` + Filmmaker mode; gpu-test `:v1`
 - **SCB 4.0** + Dashboard optimistic UX
 
 ### ⏳ Đang / chờ (ưu tiên)
 
-- **Go-Live:** P0-B T11 — chạy `scripts/p0b-t11-billing-proof.mjs` (full) để ký PASS → P0-C alerts → P0-D E2E khách
+- **Go-Live:** **P0-D** E2E khách thật
 - **Staging RC6:** Scenario 1 lại trên Vast → 2–5 → VERIFIED → promote
-- Host-intel debt: passRate-on-fail; mở Clore khi Admin sẵn sàng
+- Host-intel debt: passRate-on-fail; mở Clore qua Admin *Provider routing* khi sẵn sàng
 
 ### ❌ Chưa / sau MVP
 
@@ -718,9 +719,10 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 | **Auth Email-first + Google + Zalo (2026-08-08)** | Email chính; Google OAuth trực tiếp; Zalo ZNS OTP + Speedsms fallback; disposable email blocklist. |
 | **Host Intelligence — vá + Clore (2026-08-08)** | Persist merge-by-key; fair deficit slots; available = known-good ∩ chợ; Admin card Vast + Clore. Clore cycle **đã wire**, default `clore: false`. Debt: passRate-on-fail. |
 | **gpu-test HOST IPv4 (2026-08-08)** | Bake `HOST=0.0.0.0`; Hub digest `sha256:fd74e09b…`. ComfyUI vẫn `COMFYUI_LISTEN`. |
-| **Salad adapter (2026-08-05)** | SaladClient + gate; code default attempt `salad→vast→clore`; ops VPS vẫn Vast-only. |
+| **Provider routing Admin (2026-08-09 prod)** | Hạ tầng SoT enable + priority; `0056`; Vercel Ready; VPS bỏ `GPU_VAST_ONLY` pin. |
+| **Salad adapter (2026-08-05)** | SaladClient + gate; bật qua Admin policy (default off). |
 | **Auth Hardening P0+P1+P2 (2026-08-02)** | Rate limit, JWT middleware, headers, OTP lock, password strength, audit log, sign-out all |
-| **P0-A Vast-only (2026-08-01)** | Lifecycle worker `GPU_VAST_ONLY` + smoke Phase F.2 7/7 |
+| **P0-A Vast-only (2026-08-01)** | Smoke Phase F.2 7/7 với `GPU_VAST_ONLY` — sau đó thay bằng Admin policy (2026-08-09) |
 | **CP/Runtime v2.0 + SCB 4.0** | ADR-005 + Continuity; tag `scb-4.0` ADR-001..004 closed |
 | **Image prod** | `:v3.7` + `:v4.4` dual-stack; Filmmaker mode |
 
@@ -739,19 +741,20 @@ npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 
 **Checklist sau deploy / P0-A:**
 
-1. VPS lifecycle worker `active` + `GPU_VAST_ONLY=true` / `GPU_ALLOW_VAST=true`
-2. Host-intel timer `gpuvietnam-host-intel.timer` active; image `gpu-test:v1` (`HOST=0.0.0.0`)
-3. Migration 0049 applied
-4. Start một lần từ `gpuvietnam.com` → `operationId` → Comfy → Stop sạch
-5. (Tuỳ chọn) `systemctl restart` worker giữa provision — op không mất
+1. VPS lifecycle worker `active` + `GPU_ALLOW_VAST=true` (không pin `GPU_*_ONLY` trừ break-glass)
+2. Admin Hạ tầng *Provider routing* load/save OK; worker resolve order từ Supabase
+3. Host-intel timer `gpuvietnam-host-intel.timer` active; image `gpu-test:v1` (`HOST=0.0.0.0`)
+4. Migrations 0049 + **0056** (`provider_routing_policy`) applied
+5. Start một lần từ `gpuvietnam.com` → `operationId` → Comfy → Stop sạch
+6. (Tuỳ chọn) `systemctl restart` worker giữa provision — op không mất
 
 **Chat mới — copy nhanh:**
 
 ```
 Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
-SCB 4.0 + ADR-005 freeze. Go-Live: P0-A ✅ → P0-B billing → P0-C alerts → P0-D E2E.
-VPS Vast-only. Host Intelligence Vast on / Clore opt-in. Image :v3.7/:v4.4.
-Ưu tiên: Go-Live P0-B..D + Staging RC6. SePay ✅. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool.
+SCB 4.0 + ADR-005 freeze. Go-Live: P0-A..C ✅ → Provider routing Admin ✅ → P0-D E2E.
+Start SoT = Admin Hạ tầng provider_routing_policy (default Vast). Host Intel Vast on / Clore opt-in. Image :v3.7/:v4.4.
+Ưu tiên: P0-D + Staging RC6. SePay ✅. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool.
 ```
 
 ---
@@ -779,7 +782,7 @@ Staging là môi trường test **độc lập hoàn toàn** với Production, �
 | **Vercel** | `gpuvietnam/gpuvietnam` → `gpuvietnam.com` | `gpuvietnam-staging` → `gpuvietnam-staging.vercel.app` |
 | **Supabase** | `rhtqiecieeyqjlctcvag` | `cczqbuuuyctiqoiruxah` |
 | **Lifecycle Worker** | `gpuvietnam-lifecycle-worker` | `gpuvietnam-lifecycle-worker-staging` |
-| **GPU Routing** | Vast-only | Vast-only |
+| **GPU Routing** | Admin `provider_routing_policy` (default Vast) | Theo env staging (thường Vast) |
 | **Cron** | 4 jobs (check-idle, reconcile, process-ops, backup-retention) | `crons: []` (Hobby-safe) |
 
 **Mục đích:** Test code mới an toàn trước khi deploy Production. Đặc biệt quan trọng với các thay đổi trong Core Domain (session, billing, provision, destroy, settlement).
@@ -943,12 +946,12 @@ Nền tảng thuê GPU làm AI Art đã **chạy được phần lõi**: khách 
 
 ### Thứ tự nên làm (thực tế)
 
-1. P0-B T11 — ký billing proof (full GPU) rồi P0-C / P0-D
-2. Staging — test sạch rồi mới lên production
+1. ~~P0-A..C + Provider routing Admin~~ ✅ → **P0-D** E2E khách thật
+2. Staging RC6 — Scenario 1 trên Vast → 2–5 → VERIFIED
 3. ~~SePay~~ ✅ chốt
 4. ~~MakeStudio / LoRA~~ ⏸️ sau MVP
 5. Host Intelligence tinh chỉnh + Dashboard stub
 
 ---
 
-*Tài liệu cập nhật: 2026-08-08 — SePay chốt; MakeStudio park sau MVP; P0-B harness sẵn. Chi tiết: `docs/PROGRESS.md`.*
+*Tài liệu cập nhật: 2026-08-09 — Provider routing Admin prod; P0-A..C ✅; P0-D tiếp theo. Chi tiết: `docs/PROGRESS.md`.*
