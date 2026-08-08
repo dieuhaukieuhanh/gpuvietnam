@@ -53,7 +53,13 @@ export const HOST_REPUTATION = {
     .trim()
     .toLowerCase() !== 'false',
   knownGoodMinSuccessCount: envNum('HOST_REP_KNOWN_GOOD_MIN_SUCCESS', 1),
-  knownGoodMaxPins: envNum('HOST_REP_KNOWN_GOOD_MAX_PINS', 3),
+  /**
+   * Max online known-good hosts to try before marketplace fallback.
+   * Keep high enough to exhaust the warm pool for a package (Starter/Pro/Studio).
+   */
+  knownGoodMaxPins: envNum('HOST_REP_KNOWN_GOOD_MAX_PINS', 12),
+  /** Rent walk length: pool hosts + fallback shortlist room. */
+  rentWalkMaxCandidates: envNum('HOST_REP_RENT_WALK_MAX', 12),
 
   // ── Host Intelligence System ──────────────────────────────────────────
   /** Hosts with lastVerified older than this need recheck (ms). Default 24h. */
@@ -191,31 +197,50 @@ export async function readHostIntelligenceConfigAsync() {
 }
 
 /**
- * Write runtime config to Supabase + JSON fallback.
+ * Write runtime config — Supabase is SoT on Vercel; JSON is best-effort for VPS.
  * @param {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }} config
  */
 export async function writeHostIntelligenceConfigAsync(config) {
-  // 1. Write to Supabase
   const admin = getSupabaseAdminForConfig();
+  let supabaseOk = false;
+
   if (admin) {
-    try {
-      await admin.from('host_intelligence_config').upsert({
+    const { error } = await admin.from('host_intelligence_config').upsert(
+      {
         id: 1,
         enabled: config.enabled,
         target_per_line: config.targetPerLine,
         providers: config.providers,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-    } catch (err) {
-      console.warn('[host-intel] Supabase write error:', err instanceof Error ? err.message : String(err));
+      },
+      { onConflict: 'id' },
+    );
+    if (error) {
+      throw new Error(`Supabase host_intelligence_config upsert failed: ${error.message}`);
     }
+    supabaseOk = true;
   }
-  // 2. JSON fallback
-  writeHostIntelligenceConfig(config);
+
+  // JSON fallback for VPS local file. Vercel filesystem is read-only — never fail the request.
+  try {
+    writeHostIntelligenceConfig(config);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (supabaseOk || process.env.VERCEL) {
+      console.warn('[host-intel] JSON config write skipped/failed (non-fatal):', msg);
+      return;
+    }
+    throw err instanceof Error ? err : new Error(msg);
+  }
+
+  if (!supabaseOk) {
+    // No Supabase client and JSON write succeeded above.
+    return;
+  }
 }
 
 /**
- * Write runtime config as JSON only (sync, for backward compat).
+ * Write runtime config as JSON only (sync, for backward compat / VPS).
  * @param {{ enabled: boolean; targetPerLine: Record<string, number>; providers: Record<string, boolean> }} config
  */
 export function writeHostIntelligenceConfig(config) {

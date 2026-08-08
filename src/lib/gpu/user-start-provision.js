@@ -2,6 +2,7 @@ import {
   formatGpuUserMessage,
   getGpuService,
   getGpuServiceForMachine,
+  openBillableSession,
   provisionGpuInstance,
   createProvisioningPendingSession,
   snapshotToMachineRecord,
@@ -18,6 +19,7 @@ import {
   resolveLiveMachineStatus,
   rollbackProvisionAfterRentFailure,
   syncMachineFromLiveStatus,
+  updateMachineRecord,
 } from '@/lib/machines';
 import { recoverRentedInstance } from '@/lib/gpu/provision-recover';
 import {
@@ -348,6 +350,33 @@ export async function completeUserStartProvision(supabaseAdmin, params) {
           region: instance.region != null ? String(instance.region) : null,
           readyLatencyMs: Date.now() - started,
         });
+      }
+
+      // P0-B: open billable clock as soon as Comfy is ready — do not wait for a
+      // later lifecycle projection tick (that race left started_at null).
+      if (liveStatus.healthOk === true && rentedInstanceId) {
+        try {
+          const readyRow = syncedMachine ?? machine;
+          if (readyRow?.id) {
+            await updateMachineRecord(supabaseAdmin, String(readyRow.id), {
+              projection_verified_at: new Date().toISOString(),
+              projection_message:
+                typeof liveStatus.message === 'string'
+                  ? liveStatus.message
+                  : 'Generate đã sẵn sàng',
+            });
+          }
+          await openBillableSession(
+            supabaseAdmin,
+            userId,
+            String(rentedInstanceId),
+            gpuService,
+          );
+        } catch (billingErr) {
+          log.warn('openBillableSession after comfy_ready failed (non-fatal)', {
+            err: billingErr,
+          });
+        }
       }
 
       // Smart Restore Level 1 — best-effort after Comfy ready (does not fail provision).

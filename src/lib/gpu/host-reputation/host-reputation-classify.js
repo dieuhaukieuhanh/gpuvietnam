@@ -38,7 +38,12 @@ export function classifyHostFailure(errorOrMessage, context = {}) {
     return HOST_FAILURE_CATEGORY.IMAGE_PULL_FAILURE;
   }
   if (
-    /comfy|health|system_stats|never.?healthy|unhealthy|disconnected/.test(message) ||
+    /disk_only|struck through|storage.?only|no_gpu|gpu detached|vram 0/.test(message)
+  ) {
+    return HOST_FAILURE_CATEGORY.HEALTH_FAILURE;
+  }
+  if (
+    /comfy|health|system_stats|never.?healthy|unhealthy|disconnected|cuda smoke/.test(message) ||
     phase.includes('health') ||
     phase.includes('comfy')
   ) {

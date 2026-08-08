@@ -17,20 +17,29 @@ import { VastClient } from '../src/lib/gpu/providers/vast/vast-client.js';
 import { runTestProvisionGate } from '../src/lib/gpu/providers/test-gate.js';
 import { resolveVastEndpoint } from '../src/lib/gpu/providers/vast/vast-endpoint-resolver.js';
 import { normalizeVastOffer, selectWorkstationOffers } from '../src/lib/gpu/offer-selection.js';
-import { filterVastOffersBySanity } from '../src/lib/gpu/providers/vast/vast-offer-sanity.js';
 import {
-  getHostsNeedingRecheck,
-  getHostsInCooldownDone,
-  isHostUnseen,
+  filterVastOffersBySanity,
+  isVastDiskOnlyBilling,
+  unwrapVastInstanceRecord,
+} from '../src/lib/gpu/providers/vast/vast-offer-sanity.js';
+import {
   resolveVastHostKey,
   rememberHostSuccess,
   rememberHostFailure,
   getHostIntelligenceSummary,
   listHostReputationRecords,
   isKnownGoodHost,
+  loadHostReputationStoreAsync,
+  persistHostReputationStoreAsync,
 } from '../src/lib/gpu/host-reputation/index.js';
 import { HOST_REPUTATION, readHostIntelligenceConfigAsync } from '../src/lib/gpu/host-reputation/host-reputation-config.js';
 import { classifyHostFailure } from '../src/lib/gpu/host-reputation/host-reputation-classify.js';
+import {
+  allocateSlotsByDeficit,
+  selectTargetsFair,
+} from '../src/lib/gpu/host-reputation/host-intelligence-targets.js';
+import { runCloreHostIntelligenceCycle } from '../src/lib/gpu/host-reputation/host-intelligence-clore-run.js';
+import { matchesHostIntelligenceProvider } from '../src/lib/gpu/host-reputation/host-intelligence-inventory.js';
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const TEST_IMAGE = process.env.GPU_TEST_IMAGE || 'dieuhaukieuhanh/gpu-test:v1';
@@ -62,26 +71,40 @@ function sleep(ms) {
 }
 
 // ── Candidate search ───────────────────────────────────────────────────────
-async function searchCandidates(client, gpuLine) {
+/**
+ * @returns {Promise<{
+ *   rentCandidates: Array<{ hostKey: string; offerId: number|string; gpuLine: string }>;
+ *   marketHostKeys: string[];
+ * }>}
+ */
+async function searchLineOffers(client, gpuLine) {
   try {
     const plan = LINE_TO_PLAN[gpuLine] || 'starter';
     const rawOffers = await client.searchOffers(gpuLine);
-    if (!rawOffers.length) return [];
+    if (!rawOffers.length) return { rentCandidates: [], marketHostKeys: [] };
 
     const normalized = [];
     for (const raw of rawOffers) {
       const offer = normalizeVastOffer(raw);
       if (offer) normalized.push(offer);
     }
-    if (!normalized.length) return [];
+    if (!normalized.length) return { rentCandidates: [], marketHostKeys: [] };
 
     const { offers: saneOffers } = filterVastOffersBySanity(normalized, gpuLine, { plan });
-    if (!saneOffers.length) return [];
+    if (!saneOffers.length) return { rentCandidates: [], marketHostKeys: [] };
 
+    // Available inventory = known-good still listed anywhere in sane marketplace
+    const marketHostKeys = [];
+    for (const offer of saneOffers) {
+      const raw = offer.raw && typeof offer.raw === 'object' ? offer.raw : null;
+      if (!raw) continue;
+      const hostKey = resolveVastHostKey(raw, gpuLine);
+      if (hostKey) marketHostKeys.push(hostKey);
+    }
+
+    // Rent/test shortlist stays price/uptime truncated
     const selected = selectWorkstationOffers(saneOffers, { plan, gpuLine });
-    if (!selected.length) return [];
-
-    return selected
+    const rentCandidates = selected
       .map((offer) => {
         const raw = offer.raw && typeof offer.raw === 'object' ? offer.raw : null;
         if (!raw) return null;
@@ -91,57 +114,20 @@ async function searchCandidates(client, gpuLine) {
         return { hostKey, offerId, gpuLine };
       })
       .filter((c) => c != null);
+
+    return { rentCandidates, marketHostKeys };
   } catch (err) {
     console.warn(`[host-intel] Vast search failed for ${gpuLine}:`, err.message);
-    return [];
+    return { rentCandidates: [], marketHostKeys: [] };
   }
-}
-
-function selectTargets(allCandidates, maxTotal) {
-  const targets = [];
-  const seen = new Set();
-
-  function add(c, reason) {
-    if (targets.length >= maxTotal) return;
-    if (seen.has(c.hostKey)) return;
-    seen.add(c.hostKey);
-    targets.push({ ...c, reason });
-  }
-
-  // A) Discover
-  for (const c of allCandidates) {
-    if (targets.length >= maxTotal) break;
-    if (isHostUnseen(c.hostKey)) add(c, 'discover');
-  }
-
-  // B) Recheck
-  if (targets.length < maxTotal) {
-    const staleRecords = getHostsNeedingRecheck();
-    const sampleSize = Math.max(1, Math.ceil(staleRecords.length * 0.1));
-    const sampled = staleRecords.slice(0, sampleSize);
-    const staleKeys = new Set(sampled.map((r) => r.hostKey));
-    for (const c of allCandidates) {
-      if (targets.length >= maxTotal) break;
-      if (staleKeys.has(c.hostKey)) add(c, 'recheck');
-    }
-  }
-
-  // C) BadRetry
-  if (targets.length < maxTotal) {
-    const cdRecords = getHostsInCooldownDone();
-    const cdKeys = new Set(cdRecords.map((r) => r.hostKey));
-    for (const c of allCandidates) {
-      if (targets.length >= maxTotal) break;
-      if (cdKeys.has(c.hostKey)) add(c, 'bad_retry');
-    }
-  }
-
-  return targets;
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
 async function main() {
   console.log('[host-intel] VPS cron starting');
+
+  // 0. Load reputation SoT (JSON + Supabase merge) before any decisions
+  await loadHostReputationStoreAsync();
 
   // 1. Check config
   const runtimeConfig = await readHostIntelligenceConfigAsync();
@@ -158,166 +144,190 @@ async function main() {
     return;
   }
 
-  if (!enabledProviders.includes('vast')) {
-    console.log('[host-intel] Vast not enabled — exiting (Clore cron not implemented yet)');
-    return;
-  }
-
-  // 2. Check Vast API key
-  const vastClient = new VastClient();
-  if (!vastClient.apiKey) {
-    console.log('[host-intel] Missing VAST_AI_KEY — exiting');
-    return;
-  }
-
-  // 3. Collect all candidates first (need to check availability)
-  const shuffledLines = shuffle([...GPU_LINES]);
-  const allCandidates = [];
-  for (const gpuLine of shuffledLines) {
-    const candidates = await searchCandidates(vastClient, gpuLine);
-    allCandidates.push(...candidates);
-  }
-
-  // 4. Count AVAILABLE known-good hosts (still on marketplace, not rented)
   const targetPerLine = runtimeConfig.targetPerLine;
-  const allHostKeys = new Set(allCandidates.map((c) => c.hostKey));
-  const summary = getHostIntelligenceSummary();
-  const records = listHostReputationRecords();
-  const availablePerLine = {};
-  for (const r of records) {
-    if (isKnownGoodHost(r) && allHostKeys.has(r.hostKey)) {
-      const line = r.gpuLine || 'unknown';
-      availablePerLine[line] = (availablePerLine[line] || 0) + 1;
-    }
-  }
 
-  const belowTarget = GPU_LINES.filter((line) => {
-    const available = availablePerLine[line] ?? 0;
-    return available < (targetPerLine[line] ?? 4);
-  });
-
-  console.log(`[host-intel] Available known-good per line: 3090=${availablePerLine['rtx3090']??0} 4090=${availablePerLine['rtx4090_1x']??0} 5090=${availablePerLine['rtx5090_1x']??0} (pool total: ${summary.knownGood??0})`);
-
-  // Filter candidates to only GPU lines below target (don't waste money on lines already full)
-  const belowTargetSet = new Set(belowTarget);
-  const candidatesNeeded = allCandidates.filter((c) => belowTargetSet.has(c.gpuLine));
-  console.log(`[host-intel] Candidates: total=${allCandidates.length} needed=${candidatesNeeded.length} (below lines: ${belowTarget.join(', ')||'none'})`);
-
-  if (belowTarget.length === 0) {
-    console.log('[host-intel] All GPU lines at or above target — skipping this cycle');
-    return;
-  }
-
-  let testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
-  console.log(`[host-intel] Pool below target: ${belowTarget.join(', ')}, testing up to ${testCount}`);
-
-  if (candidatesNeeded.length === 0) {
-    console.log('[host-intel] No candidates available for lines below target');
-    return;
-  }
-
-  // 5. Select targets from candidates needed
-  const targets = selectTargets(candidatesNeeded, testCount);
-  if (targets.length === 0) {
-    console.log('[host-intel] No hosts need testing this cycle');
-    return;
-  }
-
-  // 6. Test each target
-  const results = [];
-  for (let i = 0; i < targets.length; i++) {
-    const target = targets[i];
-    const tStart = Date.now();
-    let instanceId = null;
-
-    try {
-      const comfyPort = TEST_GPU_PORT;
-      const rentBody = {
-        label: 'gpuvietnam-host-intel',
-        image: TEST_IMAGE,
-        disk: 20,
-        runtype: 'args',
-        target_state: 'running',
-        env: {
-          [`-p ${comfyPort}:${comfyPort}`]: '1',
-          HOST: '0.0.0.0',    // IPv4 — Vast hosts may not have IPv6
-          PORT: String(comfyPort),
-          COMFYUI_PORT: String(comfyPort),
-        },
-      };
-
-      const rented = await vastClient.request('PUT', `/asks/${target.offerId}/`, rentBody);
-      instanceId = String(
-        (rented && typeof rented === 'object'
-          ? (rented.new_contract ?? rented.id ?? rented.instance_id)
-          : null) ?? '',
-      );
-      console.log(`[host-intel-debug] rented: offerId=${target.offerId} instanceId=${instanceId} image=${TEST_IMAGE}`);
-
-      if (!instanceId) {
-        results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: 'no instance id' });
-        continue;
+  // ── Vast cycle (optional) ─────────────────────────────────────────────
+  if (enabledProviders.includes('vast')) {
+    const vastClient = new VastClient();
+    if (!vastClient.apiKey) {
+      console.log('[host-intel] Vast enabled but missing VAST_AI_KEY — skip Vast');
+    } else {
+      const shuffledLines = shuffle([...GPU_LINES]);
+      const allCandidates = [];
+      const marketHostKeys = new Set();
+      for (const gpuLine of shuffledLines) {
+        const { rentCandidates, marketHostKeys: keys } = await searchLineOffers(vastClient, gpuLine);
+        allCandidates.push(...rentCandidates);
+        for (const key of keys) marketHostKeys.add(key);
       }
 
-      const liveInstance = rented && typeof rented === 'object' ? rented : null;
+      const records = listHostReputationRecords();
+      const availablePerLine = {};
+      for (const r of records) {
+        if (!matchesHostIntelligenceProvider(r, 'vast')) continue;
+        if (isKnownGoodHost(r) && marketHostKeys.has(r.hostKey)) {
+          const line = r.gpuLine || 'unknown';
+          availablePerLine[line] = (availablePerLine[line] || 0) + 1;
+        }
+      }
 
-      const waitForEndpoint = async () => {
-        const resolved = await resolveVastEndpoint(vastClient, instanceId, comfyPort, liveInstance);
-        const url = resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
-        console.log(`[host-intel-debug] endpoint resolution: instanceId=${instanceId} status=${resolved?.status} url=${url} detail=${resolved?.detail}`);
-        return url;
-      };
-
-      const gate = await runTestProvisionGate({
-        waitForEndpoint,
-        gpuLine: target.gpuLine,
-        timeoutMs: HOST_REPUTATION.testGateTimeoutMs,
+      const belowTarget = GPU_LINES.filter((line) => {
+        const available = availablePerLine[line] ?? 0;
+        return available < (targetPerLine[line] ?? 4);
       });
 
-      if (gate.ok) {
-        rememberHostSuccess(target.hostKey, {
-          gpuLine: target.gpuLine,
-          gpuName: gate.gpuName,
-          vramGb: gate.vramGb,
-          driverVersion: gate.driverVersion,
-          readyLatencyMs: gate.elapsedMs,
-          bootSec: gate.bootSec,
-        });
+      console.log(`[host-intel] Vast available: 3090=${availablePerLine['rtx3090']??0} 4090=${availablePerLine['rtx4090_1x']??0} 5090=${availablePerLine['rtx5090_1x']??0}`);
+
+      const belowTargetSet = new Set(belowTarget);
+      const candidatesNeeded = allCandidates.filter((c) => belowTargetSet.has(c.gpuLine));
+
+      if (belowTarget.length === 0) {
+        console.log('[host-intel] Vast: all lines at target — skip tests');
+      } else if (candidatesNeeded.length === 0) {
+        console.log('[host-intel] Vast: no candidates for below-target lines');
       } else {
-        const category = classifyHostFailure(gate.detail);
-        rememberHostFailure(target.hostKey, { error: new Error(gate.detail), phase: 'provision', category });
+        let testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
+        testCount = Math.max(testCount, Math.min(belowTarget.length, MAX_TEST_BELOW_TARGET));
+        const slotAlloc = allocateSlotsByDeficit(belowTarget, targetPerLine, availablePerLine, testCount);
+        console.log(`[host-intel] Vast below: ${belowTarget.join(', ')}, testing up to ${testCount}, slots=${JSON.stringify(slotAlloc)}`);
+
+        const targets = selectTargetsFair(candidatesNeeded, testCount, {
+          belowTarget,
+          targetPerLine,
+          availablePerLine,
+        });
+        console.log(`[host-intel] Vast targets: ${targets.map((t) => `${t.gpuLine}:${t.reason}:${t.hostKey}`).join(' | ')}`);
+
+        const results = [];
+        for (let i = 0; i < targets.length; i++) {
+          const target = targets[i];
+          const tStart = Date.now();
+          let instanceId = null;
+
+          try {
+            const comfyPort = TEST_GPU_PORT;
+            const rentBody = {
+              label: 'gpuvietnam-host-intel',
+              image: TEST_IMAGE,
+              disk: 20,
+              runtype: 'args',
+              target_state: 'running',
+              env: {
+                [`-p ${comfyPort}:${comfyPort}`]: '1',
+                HOST: '0.0.0.0',
+                PORT: String(comfyPort),
+                COMFYUI_PORT: String(comfyPort),
+              },
+            };
+
+            const rented = await vastClient.request('PUT', `/asks/${target.offerId}/`, rentBody);
+            instanceId = String(
+              (rented && typeof rented === 'object'
+                ? (rented.new_contract ?? rented.id ?? rented.instance_id)
+                : null) ?? '',
+            );
+            console.log(`[host-intel-debug] rented: offerId=${target.offerId} instanceId=${instanceId} image=${TEST_IMAGE}`);
+
+            if (!instanceId) {
+              results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: 'no instance id' });
+              continue;
+            }
+
+            const liveInstance = rented && typeof rented === 'object' ? rented : null;
+            const gate = await runTestProvisionGate({
+              waitForEndpoint: async () => {
+                // Fail fast on Vast disk-only / GPU struck-through before HTTP looks "ok".
+                try {
+                  const raw = await vastClient.getInstance(instanceId);
+                  const live = unwrapVastInstanceRecord(
+                    raw && typeof raw === 'object'
+                      ? /** @type {Record<string, unknown>} */ (raw)
+                      : null,
+                  );
+                  if (isVastDiskOnlyBilling(live)) {
+                    throw new Error('disk_only_billing (GPU struck through / stopped)');
+                  }
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  if (/disk_only/i.test(msg)) throw err instanceof Error ? err : new Error(msg);
+                  // getInstance flakiness — continue endpoint poll
+                }
+                const resolved = await resolveVastEndpoint(vastClient, instanceId, comfyPort, liveInstance);
+                const url = resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
+                console.log(`[host-intel-debug] endpoint resolution: instanceId=${instanceId} status=${resolved?.status} url=${url}`);
+                return url;
+              },
+              gpuLine: target.gpuLine,
+              timeoutMs: HOST_REPUTATION.testGateTimeoutMs,
+            });
+
+            if (gate.ok) {
+              rememberHostSuccess(target.hostKey, {
+                provider: 'vast',
+                gpuLine: target.gpuLine,
+                gpuName: gate.gpuName,
+                vramGb: gate.vramGb,
+                driverVersion: gate.driverVersion,
+                readyLatencyMs: gate.elapsedMs,
+                bootSec: gate.bootSec,
+              });
+            } else {
+              const category = classifyHostFailure(gate.detail);
+              rememberHostFailure(target.hostKey, {
+                provider: 'vast',
+                error: new Error(gate.detail),
+                phase: 'provision',
+                category,
+              });
+            }
+
+            try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ }
+
+            results.push({
+              reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine,
+              ok: gate.ok, detail: gate.detail, elapsedMs: Date.now() - tStart,
+            });
+            console.log(`[host-intel-result] status=${gate.ok ? 'OK' : 'FAIL'} host=${target.hostKey} line=${target.gpuLine} reason=${target.reason} detail="${gate.detail}" elapsed=${Date.now() - tStart}ms`);
+          } catch (err) {
+            if (instanceId) { try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ } }
+            results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: err.message, elapsedMs: Date.now() - tStart });
+            console.warn(`[host-intel-result] status=ERROR host=${target.hostKey} detail="${err.message}"`);
+          }
+
+          if (i < targets.length - 1) await sleep(2000 + randInt(5000));
+        }
+
+        await persistHostReputationStoreAsync();
+        const passed = results.filter((r) => r.ok).length;
+        console.log('[host-intel] Vast cycle complete —', {
+          tested: results.length, passed, failed: results.length - passed,
+        });
       }
-
-      try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ }
-
-      results.push({
-        reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine,
-        ok: gate.ok, detail: gate.detail, elapsedMs: Date.now() - tStart,
-      });
-      const status = gate.ok ? 'OK' : 'FAIL';
-      console.log(`[host-intel-result] status=${status} host=${target.hostKey} line=${target.gpuLine} reason=${target.reason} detail="${gate.detail}" elapsed=${Date.now() - tStart}ms`);
-
-    } catch (err) {
-      if (instanceId) { try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ } }
-      results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: err.message, elapsedMs: Date.now() - tStart });
-      console.warn(`[host-intel-result] status=ERROR host=${target.hostKey} line=${target.gpuLine} reason=${target.reason} detail="${err.message}"`);
     }
+  } else {
+    console.log('[host-intel] Vast disabled in admin config — skip Vast');
+  }
 
-    // Brief pause between tests
-    if (i < targets.length - 1) {
-      await sleep(2000 + randInt(5000));
-    }
+  // ── Clore cycle (optional) ────────────────────────────────────────────
+  if (enabledProviders.includes('clore')) {
+    await runCloreHostIntelligenceCycle({
+      targetPerLine,
+      log: (msg) => console.log(msg),
+    });
+  } else {
+    console.log('[host-intel] Clore disabled in admin config — skip Clore');
   }
 
   const summary2 = getHostIntelligenceSummary();
-  const passed = results.filter((r) => r.ok).length;
-  console.log('[host-intel] Cycle complete —', {
-    candidates: allCandidates.length, targets: targets.length, tested: results.length, passed, failed: results.length - passed,
-    knownGood: summary2.knownGood, totalHosts: summary2.totalHosts,
+  console.log('[host-intel] Cron finished —', {
+    knownGood: summary2.knownGood,
+    totalHosts: summary2.totalHosts,
+    providers: enabledProviders,
   });
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('[host-intel] Fatal:', err);
+  try { await persistHostReputationStoreAsync(); } catch { /* ignore */ }
   process.exit(1);
 });

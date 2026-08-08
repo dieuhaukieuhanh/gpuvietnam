@@ -3,9 +3,11 @@ import { describe, it } from 'node:test';
 
 import {
   RUNTIME_REPLACE_UX_MESSAGE,
+  accumulateBillingGapSeconds,
   evaluateRuntimeAutoReplaceEligibility,
   runtimeAutoReplaceIdempotencyKey,
 } from './runtime-auto-replace-core.js';
+import { calculateNetBillableSeconds } from './settlement-core.js';
 import { shouldKeepBillingSessionOpenOnRuntimeDead } from './billing-session-p0b.js';
 import {
   MACHINE_OPERATION,
@@ -116,5 +118,23 @@ describe('P1 runtime auto-replace policy', () => {
     );
     const policy = getRetryPolicy('runtime_auto_replace');
     assert.equal(policy.maxAttempts, 3);
+  });
+
+  it('accumulates non-billable gap seconds across replace cycles', () => {
+    const t0 = Date.parse('2026-07-24T17:00:00.000Z');
+    const t1 = Date.parse('2026-07-24T17:10:00.000Z'); // 600s gap
+    assert.equal(accumulateBillingGapSeconds(0, t0, t1), 600);
+    assert.equal(accumulateBillingGapSeconds(600, t1, t1 + 120_000), 720);
+    assert.equal(accumulateBillingGapSeconds(100, t1, t0), 100); // ready before start → no add
+  });
+
+  it('settlement net billable excludes replace gap but keeps pre-replace time', () => {
+    // started 17:00, ended 18:00 (=3600s), gap 10 min during replace
+    const net = calculateNetBillableSeconds(
+      '2026-07-24T17:00:00.000Z',
+      '2026-07-24T18:00:00.000Z',
+      600,
+    );
+    assert.equal(net, 3000);
   });
 });

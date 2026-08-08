@@ -3,7 +3,12 @@
  * Provider verify → update projection → detect drift → enqueue repair.
  */
 
-import { getGpuService, getGpuServiceForMachine, openBillableSession } from '@/lib/gpu';
+import {
+  getGpuService,
+  getGpuServiceForMachine,
+  isRuntimeReadyForBilling,
+  openBillableSession,
+} from '@/lib/gpu';
 import { createCorrelationId } from '@/lib/scb-correlation';
 import { isProjectionTrafficReady } from '@/lib/scb-read-path';
 import {
@@ -106,20 +111,35 @@ export async function runProjectionVerificationPipeline(
 
       const projectionMessage =
         typeof liveStatus.message === 'string' ? liveStatus.message : null;
+      const verifiedAtIso = new Date().toISOString();
       const projectionUpdated = syncedMachine?.id
         ? await updateMachineRecord(supabaseAdmin, String(syncedMachine.id), {
-            projection_verified_at: new Date().toISOString(),
+            projection_verified_at: verifiedAtIso,
             projection_message: projectionMessage,
           })
         : null;
 
-      const machineRow = projectionUpdated ?? syncedMachine ?? machine;
+      // Merge so cold/partial SELECT returns cannot drop projection_verified_at
+      // before the RUNTIME_READY billing gate.
+      const machineRow = {
+        ...(machine && typeof machine === 'object' ? machine : {}),
+        ...(syncedMachine && typeof syncedMachine === 'object' ? syncedMachine : {}),
+        ...(projectionUpdated && typeof projectionUpdated === 'object' ? projectionUpdated : {}),
+        projection_verified_at:
+          projectionUpdated?.projection_verified_at ?? verifiedAtIso,
+        projection_message:
+          projectionUpdated?.projection_message ?? projectionMessage,
+      };
       machine = machineRow;
 
       logProjectionVerifyTrace('projection_verified_at after update', pvTrace, {
         machine_id: machineRow?.id != null ? String(machineRow.id) : null,
         projection_verified_at: machineRow?.projection_verified_at ?? null,
         projection_message: machineRow?.projection_message ?? null,
+        traffic_ready: isProjectionTrafficReady(machineRow),
+        runtime_ready_for_billing: isRuntimeReadyForBilling(machineRow, {
+          providerRunningVerified: true,
+        }),
       });
 
       logProjectionVerifyTrace('UPDATE machines affected rows', pvTrace, {
@@ -127,10 +147,13 @@ export async function runProjectionVerificationPipeline(
         machine_id: machineRow?.id != null ? String(machineRow.id) : null,
       });
 
+      // Align with P0-B: endpoint resolved OR projection traffic ready is enough.
+      // Previously required isProjectionTrafficReady only — Comfy up but message/
+      // projection shape mismatch left started_at null forever.
       if (
         liveStatus.status === 'running' &&
         liveStatus.healthOk === true &&
-        isProjectionTrafficReady(machineRow)
+        isRuntimeReadyForBilling(machineRow, { providerRunningVerified: true })
       ) {
         if (machine.subscription_id) {
           await updateSubscriptionServerStatus(

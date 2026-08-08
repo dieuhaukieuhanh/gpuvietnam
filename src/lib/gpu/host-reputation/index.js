@@ -53,7 +53,14 @@ export {
   resolveLatencyBonus,
   applyTimeRecovery,
 } from './host-reputation-score.js';
-export { resetHostReputationStoreForTests, loadHostReputationStoreAsync, listHostReputationRecords } from './host-reputation-store.js';
+export {
+  resetHostReputationStoreForTests,
+  loadHostReputationStoreAsync,
+  persistHostReputationStoreAsync,
+  listHostReputationRecords,
+  pickNewerHostRecord,
+  recordRecency,
+} from './host-reputation-store.js';
 export { resetHostReputationMetrics } from './host-reputation-metrics.js';
 
 /**
@@ -258,22 +265,33 @@ export function rememberHostSuccess(hostKey, meta = {}) {
 }
 
 /**
- * Pull previously-READY hosts from the wider marketplace pool into the shortlist.
- * Price/uptime truncation can drop known-good hosts before reputation ranking runs;
- * this puts them back so the walk tries them first.
+ * Build a pool-first rent walk:
+ *   1) online known-good hosts from the sane marketplace (package-matched pool)
+ *   2) then shortlist "unknown" offers as fallback when pool is empty/exhausted
+ *
+ * Price/uptime truncation can drop known-good hosts from the shortlist; this
+ * pulls them back so Start tries the warm pool before máy lạ.
  *
  * @template {{ offerId?: unknown }} T
  * @param {T[]} ranked Shortlist from price/uptime selection
  * @param {T[]} pool Broader filtered pool (pre-truncation)
  * @param {(offer: T) => string | null} resolveHostKey
  * @param {{ requestId?: string|null; now?: number; maxPins?: number }} [options]
- * @returns {{ offers: T[]; pinned: number }}
+ * @returns {{ offers: T[]; pinned: number; fallbackCount: number; poolEmpty: boolean }}
  */
 export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey, options = {}) {
   loadHostReputationStore();
   const now = options.now ?? Date.now();
+  const rankedList = Array.isArray(ranked) ? ranked : [];
+  const poolList = Array.isArray(pool) ? pool : [];
+
   if (HOST_REPUTATION.knownGoodPinEnabled === false) {
-    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
+    return {
+      offers: rankedList.slice(),
+      pinned: 0,
+      fallbackCount: rankedList.length,
+      poolEmpty: true,
+    };
   }
 
   const maxPins = Math.max(
@@ -281,27 +299,21 @@ export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey,
     Math.floor(
       Number(options.maxPins) > 0
         ? Number(options.maxPins)
-        : HOST_REPUTATION.knownGoodMaxPins || 3,
+        : HOST_REPUTATION.knownGoodMaxPins || 12,
     ),
   );
-  if (maxPins <= 0) {
-    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
-  }
-
-  /** @type {Set<string>} */
-  const rankedKeys = new Set();
-  for (const offer of ranked ?? []) {
-    const key = resolveHostKey(offer);
-    if (key) rankedKeys.add(key);
-  }
 
   /** @type {Array<{ offer: T; hostKey: string; successCount: number; score: number; readyMs: number }>} */
   const pinCandidates = [];
-  for (const offer of pool ?? []) {
+  /** @type {Set<string>} */
+  const seenPinKeys = new Set();
+
+  const considerForPool = (offer) => {
     const hostKey = resolveHostKey(offer);
-    if (!hostKey || rankedKeys.has(hostKey)) continue;
+    if (!hostKey || seenPinKeys.has(hostKey)) return;
     const record = getHostReputationRecord(hostKey, now);
-    if (!record || isHostBlacklisted(record, now) || !isKnownGoodHost(record)) continue;
+    if (!record || isHostBlacklisted(record, now) || !isKnownGoodHost(record)) return;
+    seenPinKeys.add(hostKey);
     pinCandidates.push({
       offer,
       hostKey,
@@ -312,7 +324,11 @@ export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey,
           ? Number(record.lastReadyLatencyMs)
           : Number.POSITIVE_INFINITY,
     });
-  }
+  };
+
+  // Prefer marketplace pool scan (full sane set), then shortlist for any missed keys.
+  for (const offer of poolList) considerForPool(offer);
+  for (const offer of rankedList) considerForPool(offer);
 
   pinCandidates.sort((a, b) => {
     if (b.successCount !== a.successCount) return b.successCount - a.successCount;
@@ -320,17 +336,27 @@ export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey,
     return b.score - a.score;
   });
 
-  const pins = pinCandidates.slice(0, maxPins);
-  if (!pins.length) {
-    return { offers: Array.isArray(ranked) ? ranked.slice() : [], pinned: 0 };
-  }
-
+  const pins = maxPins > 0 ? pinCandidates.slice(0, maxPins) : [];
   /** @type {Set<string>} */
   const pinKeys = new Set(pins.map((row) => row.hostKey));
-  const rest = (ranked ?? []).filter((offer) => {
+
+  // Fallback = shortlist hosts that are not in the pool-first phase (máy lạ).
+  /** @type {T[]} */
+  const fallback = [];
+  /** @type {Set<string>} */
+  const fallbackKeys = new Set();
+  for (const offer of rankedList) {
     const key = resolveHostKey(offer);
-    return !key || !pinKeys.has(key);
-  });
+    if (key && pinKeys.has(key)) continue;
+    if (key && fallbackKeys.has(key)) continue;
+    if (key) {
+      const record = getHostReputationRecord(key, now);
+      // Known-good beyond maxPins stay out of fallback — they were pool overflow.
+      if (record && !isHostBlacklisted(record, now) && isKnownGoodHost(record)) continue;
+      fallbackKeys.add(key);
+    }
+    fallback.push(offer);
+  }
 
   for (const row of pins) {
     const parsed = parseHostKey(row.hostKey);
@@ -352,9 +378,23 @@ export function mergeKnownGoodOffersIntoCandidates(ranked, pool, resolveHostKey,
     );
   }
 
+  if (!pins.length && fallback.length) {
+    logHostReputationEvent(
+      'HOST_SELECTED',
+      {
+        requestId: options.requestId,
+        reason: 'pool_exhausted_fallback',
+        count: fallback.length,
+      },
+      'No online known-good for package — using marketplace fallback',
+    );
+  }
+
   return {
-    offers: [...pins.map((row) => row.offer), ...rest],
+    offers: [...pins.map((row) => row.offer), ...fallback],
     pinned: pins.length,
+    fallbackCount: fallback.length,
+    poolEmpty: pins.length === 0,
   };
 }
 

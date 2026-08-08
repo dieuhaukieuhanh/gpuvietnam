@@ -4,6 +4,11 @@
  * Nên thay máy: đang trong phiên billable OPEN mà GPU chết ngoài ý muốn.
  * Không thay: user đóng / chưa sẵn sàng / không có phiên / hết giờ-hết tiền-policy stop /
  * đang có replace / đã hết retry cho máy chết đó.
+ *
+ * Billing (SCB-aligned):
+ * - Keep same gpu_sessions.id + immutable started_at
+ * - Gap (dead → new Comfy ready) is NOT billable (billing_gap_seconds + clear machine anchor)
+ * - Resume live burn only when new GPU Comfy is healthy (machines.billing_started_at)
  */
 
 export const RUNTIME_REPLACE_UX_MESSAGE =
@@ -34,6 +39,22 @@ export const RUNTIME_REPLACE_UX_MESSAGE =
  */
 export function runtimeAutoReplaceIdempotencyKey(userId, sessionId, oldMachineId) {
   return `runtime_auto_replace:${userId}:${sessionId}:${oldMachineId}`;
+}
+
+/**
+ * Accumulate non-billable gap seconds for one replace cycle.
+ * @param {unknown} previousGapSeconds
+ * @param {number} gapStartedMs
+ * @param {number} readyAtMs
+ * @returns {number}
+ */
+export function accumulateBillingGapSeconds(previousGapSeconds, gapStartedMs, readyAtMs) {
+  const prev = Math.max(0, Math.floor(Number(previousGapSeconds) || 0));
+  const start = Number(gapStartedMs);
+  const ready = Number(readyAtMs);
+  if (!Number.isFinite(start) || !Number.isFinite(ready) || ready <= start) return prev;
+  const add = Math.max(0, Math.floor((ready - start) / 1000));
+  return prev + add;
 }
 
 /**

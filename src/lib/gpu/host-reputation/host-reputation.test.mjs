@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -30,6 +30,9 @@ import {
   resolveCloreHostKey,
   resolveVastHostKey,
   buildHostReputationKey,
+  pickNewerHostRecord,
+  persistHostReputationStoreAsync,
+  listHostReputationRecords,
 } from './index.js';
 import { getHostReputationRecord } from './host-reputation-store.js';
 
@@ -255,11 +258,47 @@ describe('host-reputation selection', () => {
     const resolve = (o) => 'clore-host:' + o.offerId + '|rtx4090_1x';
     const merged = mergeKnownGoodOffersIntoCandidates(ranked, pool, resolve);
     assert.equal(merged.pinned, 1);
+    assert.equal(merged.poolEmpty, false);
+    assert.equal(merged.fallbackCount, 2);
     assert.equal(merged.offers[0].offerId, 'known');
     assert.equal(merged.offers.length, 3);
 
     const result = applyHostReputationToOffers(merged.offers, resolve);
     assert.equal(result.offers[0].offerId, 'known');
+  });
+
+  it('pool-first then marketplace fallback when no known-good online', () => {
+    const ranked = [
+      { offerId: 'cheap', pingMs: 20, uptimePercent: 99, pricePerHour: 0.2 },
+      { offerId: 'mid', pingMs: 25, uptimePercent: 98, pricePerHour: 0.25 },
+    ];
+    const resolve = (o) => 'clore-host:' + o.offerId + '|rtx4090_1x';
+    const merged = mergeKnownGoodOffersIntoCandidates(ranked, ranked, resolve);
+    assert.equal(merged.pinned, 0);
+    assert.equal(merged.poolEmpty, true);
+    assert.equal(merged.fallbackCount, 2);
+    assert.deepEqual(
+      merged.offers.map((o) => o.offerId),
+      ['cheap', 'mid'],
+    );
+  });
+
+  it('keeps known-good ahead of shortlist unknowns (pool then fallback)', () => {
+    rememberHostSuccess('clore-host:known|rtx4090_1x', {
+      gpuLine: 'rtx4090_1x',
+      readyLatencyMs: 40_000,
+    });
+    // known is already inside the shortlist — still must lead the walk
+    const ranked = [
+      { offerId: 'cheap', pingMs: 20, uptimePercent: 99, pricePerHour: 0.2 },
+      { offerId: 'known', pingMs: 80, uptimePercent: 97, pricePerHour: 0.35 },
+    ];
+    const resolve = (o) => 'clore-host:' + o.offerId + '|rtx4090_1x';
+    const merged = mergeKnownGoodOffersIntoCandidates(ranked, ranked, resolve);
+    assert.equal(merged.pinned, 1);
+    assert.equal(merged.offers[0].offerId, 'known');
+    assert.equal(merged.offers[1].offerId, 'cheap');
+    assert.equal(merged.fallbackCount, 1);
   });
 
   it('does not pin blacklisted known-good hosts', () => {
@@ -284,5 +323,66 @@ describe('host-reputation selection', () => {
     );
     assert.equal(merged.pinned, 0);
     assert.equal(merged.offers[0].offerId, 'other');
+  });
+
+  it('pickNewerHostRecord prefers fresher activity', () => {
+    const older = {
+      hostKey: 'vast-host:1|rtx3090',
+      lastSeen: 100,
+      successCount: 5,
+      verificationCount: 5,
+    };
+    const newer = {
+      hostKey: 'vast-host:1|rtx3090',
+      lastSeen: 200,
+      successCount: 1,
+      verificationCount: 1,
+    };
+    assert.equal(pickNewerHostRecord(older, newer), newer);
+    assert.equal(pickNewerHostRecord(newer, older), newer);
+  });
+
+  it('JSON persist merges by key so partial memory cannot wipe peers', async () => {
+    const file = process.env.HOST_REP_STORE_FILE;
+    const now = Date.now();
+    const diskPeer = {
+      hostKey: 'vast-host:disk|rtx3090',
+      provider: 'vast',
+      hostId: 'disk',
+      gpuLine: 'rtx3090',
+      lastSeen: now - 60_000,
+      reputationScore: 60,
+      successCount: 2,
+      failureCount: 0,
+      consecutiveFailures: 0,
+      blacklistUntil: null,
+    };
+
+    // Simulate long-lived process that only knows `mem` in memory:
+    writeFileSync(file, JSON.stringify({ updatedAt: 'x', entries: [] }), 'utf8');
+    rememberHostSuccess('vast-host:mem|rtx4090_1x', {
+      gpuLine: 'rtx4090_1x',
+      readyLatencyMs: 20_000,
+      now,
+    });
+    await persistHostReputationStoreAsync();
+
+    // Another process wrote `disk` peer to the shared JSON file.
+    writeFileSync(
+      file,
+      JSON.stringify({ updatedAt: 'y', entries: [diskPeer] }),
+      'utf8',
+    );
+
+    // Partial memory process persists again — must merge, not wipe `disk`.
+    await persistHostReputationStoreAsync();
+
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    const keys = (saved.entries || []).map((e) => e.hostKey).sort();
+    assert.deepEqual(keys, ['vast-host:disk|rtx3090', 'vast-host:mem|rtx4090_1x']);
+
+    const records = listHostReputationRecords();
+    assert.ok(records.some((r) => r.hostKey === 'vast-host:disk|rtx3090'));
+    assert.ok(records.some((r) => r.hostKey === 'vast-host:mem|rtx4090_1x'));
   });
 });

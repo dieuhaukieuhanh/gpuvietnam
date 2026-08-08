@@ -1,8 +1,10 @@
 /**
  * P1 — Replace dead Runtime while Billing Session stays OPEN.
- * Never Close/settle. Same gpu_sessions.id + started_at.
+ * Never Close/settle. Same gpu_sessions.id + immutable started_at (SCB).
+ * Gap dead→new-Comfy-ready is not billable (billing_gap_seconds + clear machine anchor).
  *
- * Order: keep old projection for UX → rent new → rebind session → destroy old.
+ * Order: keep old projection for UX → rent new → rebind session → destroy old →
+ * resume billing only when new Comfy is healthy.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -23,12 +25,14 @@ import {
 import { buildEndpointFromMachine } from '@/lib/endpoint-utils';
 import {
   RUNTIME_REPLACE_UX_MESSAGE,
+  accumulateBillingGapSeconds,
   evaluateRuntimeAutoReplaceEligibility,
   loadOpenBillableSessionForUser,
 } from './runtime-auto-replace-core.js';
 
 export {
   RUNTIME_REPLACE_UX_MESSAGE,
+  accumulateBillingGapSeconds,
   evaluateRuntimeAutoReplaceEligibility,
   loadOpenBillableSessionForUser,
 };
@@ -82,7 +86,6 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     return { skipped: true, reason: eligibility.reason };
   }
 
-  const billingStartedAt = String(params.billingStartedAt || session.started_at);
   const gpuLine = String(params.gpuLine || 'rtx_4090');
   const planKey = String(params.planKey || 'pro');
   const envName = String(params.envName || session.template || 'ComfyUI');
@@ -95,15 +98,19 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
 
   const previousEndpoint = oldMachine ? buildEndpointFromMachine(oldMachine) : null;
   const now = new Date().toISOString();
+  /** Gap clock starts when we stop live billing on the dead machine. */
+  const gapStartedMs = Date.now();
 
   // 1) Keep old row visible as Runtime DEAD until the new GPU is bound
   //    (destroy-first made Dashboard lose the interrupt banner).
+  //    Clear billing_started_at so live remaining does not burn during the gap.
   if (oldMachine && String(oldMachine.status ?? '') !== 'destroyed') {
     await supabaseAdmin
       .from('machines')
       .update({
         status: 'error',
         updated_at: now,
+        billing_started_at: null,
         projection_message: RUNTIME_REPLACE_UX_MESSAGE,
       })
       .eq('id', oldMachineId);
@@ -124,11 +131,12 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     region: instance.region ?? null,
   });
 
-  // 3) Insert machine linked to SAME billing session
+  // 3) Insert machine linked to SAME billing session but DON'T anchor billing yet.
+  // Billing only resumes when the new GPU is confirmed healthy (step 5).
   const newMachine = await insertMachineRecord(supabaseAdmin, userId, {
     ...machineRow,
     gpu_session_id: sessionId,
-    billing_started_at: billingStartedAt,
+    billing_started_at: null,
     projection_message: RUNTIME_REPLACE_UX_MESSAGE,
     template: envName,
   });
@@ -172,18 +180,36 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
       .neq('status', 'destroyed');
   }
 
-  // 5) Wait until Comfy ready (best-effort)
+  // 5) Wait until Comfy ready — only then resume live billing (SCB RUNTIME_READY).
+  // Do NOT rewrite gpu_sessions.started_at (immutable). Accumulate gap instead.
   let readyMachine = newMachine;
   const gpuService = getGpuServiceForMachine(newMachine) || getGpuService();
   for (let i = 0; i < MAX_READY_POLLS; i++) {
     const live = await resolveLiveMachineStatus(gpuService, readyMachine);
     readyMachine = (await syncMachineFromLiveStatus(supabaseAdmin, readyMachine, live)) || readyMachine;
-    if (live.status === 'running' && live.healthOk !== false) {
+    if (live.status === 'running' && live.healthOk === true) {
+      const readyAt = new Date().toISOString();
+      const readyAtMs = Date.parse(readyAt);
+      const nextGap = accumulateBillingGapSeconds(
+        session.billing_gap_seconds,
+        gapStartedMs,
+        readyAtMs,
+      );
+      await supabaseAdmin
+        .from('gpu_sessions')
+        .update({
+          verified_running_at: readyAt,
+          billing_gap_seconds: nextGap,
+        })
+        .eq('id', sessionId)
+        .eq('status', 'running');
       await supabaseAdmin
         .from('machines')
         .update({
+          billing_started_at: readyAt,
+          projection_verified_at: readyAt,
           projection_message: 'Generate đã sẵn sàng',
-          updated_at: new Date().toISOString(),
+          updated_at: readyAt,
         })
         .eq('id', readyMachine.id);
       break;

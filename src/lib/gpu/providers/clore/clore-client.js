@@ -16,6 +16,8 @@ import {
 } from '../../offer-selection.js';
 import {
   applyHostReputationToOffers,
+  HOST_REPUTATION,
+  loadHostReputationStoreAsync,
   mergeKnownGoodOffersIntoCandidates,
   rememberHostFailure,
   resolveCloreHostKey,
@@ -561,6 +563,7 @@ export class CloreClient {
     let response;
     const __prof = profStart('Clore ' + method + ' ' + path);
     try {
+      init.signal = AbortSignal.timeout(30_000);
       response = await fetch(url, init);
     } catch (error) {
       throw new GPUProviderError('Clore.ai network error: ' + (error instanceof Error ? error.message : String(error)), {
@@ -702,6 +705,8 @@ export class CloreClient {
    * @param {{ relaxedUptime?: boolean; minUptimePercent?: number; maxCandidates?: number }} [options]
    */
   async findRankedOffers(gpuLine, plan, options = {}) {
+    // Reputation SoT is Supabase — await before pool-first ranking.
+    await loadHostReputationStoreAsync();
     const servers = await this.searchOffers();
     const currency = this.currency;
     const enforceUsdConsistency = currency === 'USD-Blockchain';
@@ -789,8 +794,17 @@ export class CloreClient {
         offer.offerId,
         gpuLine,
       );
-    const { offers: withKnownGood, pinned: knownGoodPinned } =
-      mergeKnownGoodOffersIntoCandidates(ranked, afterExclusion, resolveKey);
+    const {
+      offers: withKnownGood,
+      pinned: knownGoodPinned,
+      fallbackCount,
+      poolEmpty,
+    } = mergeKnownGoodOffersIntoCandidates(ranked, afterExclusion, resolveKey);
+    console.info('[clore/findRankedOffers] pool-first walk', {
+      pinned: knownGoodPinned,
+      fallback: fallbackCount,
+      poolEmpty: Boolean(poolEmpty),
+    });
     const { offers: reputationRanked, droppedBlacklisted, usedLeastBadFallback } =
       applyHostReputationToOffers(withKnownGood, resolveKey);
     const priceGuard = applyCloreRankedPriceGuard(reputationRanked);
@@ -803,6 +817,11 @@ export class CloreClient {
         hardEmpty: priceGuard.hardEmpty,
       });
     }
+    const walkLimit = Math.max(
+      3,
+      Math.floor(Number(HOST_REPUTATION.rentWalkMaxCandidates) || 12),
+    );
+    const walkOffers = priceGuard.offers.slice(0, walkLimit);
     console.info('[clore/findRankedOffers] currency filter', {
       currency,
       gpuLine,
@@ -821,15 +840,19 @@ export class CloreClient {
       afterPercentileExclusion: afterExclusion.length,
       ranked: ranked.length,
       knownGoodPinned,
+      fallbackCount,
+      poolEmpty: Boolean(poolEmpty),
       afterHostReputation: reputationRanked.length,
       droppedBlacklisted,
       usedLeastBadFallback,
       priceGuardDropped: priceGuard.dropped,
       afterPriceGuard: priceGuard.offers.length,
+      walkLimit,
+      walkOffers: walkOffers.length,
       priceGuardCapDaily: priceGuard.capDaily,
       priceGuardHardEmpty: priceGuard.hardEmpty,
     });
-    return priceGuard.offers;
+    return walkOffers;
   }
 
   /**
@@ -872,7 +895,7 @@ export class CloreClient {
   async _createInstanceInner(params) {
     if (!isCloreGpuLineSupported(params.gpuLine)) {
       throw new GPUProviderError(
-        `Clore does not support gpuLine ${params.gpuLine} (3090/4090 only)`,
+        `Clore does not support gpuLine ${params.gpuLine} (3090/4090/5090 only)`,
         { retryable: true },
       );
     }

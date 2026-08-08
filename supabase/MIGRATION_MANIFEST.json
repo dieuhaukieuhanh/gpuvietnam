@@ -548,6 +548,16 @@
       "depends_on": [
         "0007"
       ]
+    },
+    {
+      "id": "0055",
+      "file": "supabase/gpu-sessions-billing-gap.sql",
+      "category": "migration",
+      "description": "P1: gpu_sessions.billing_gap_seconds for non-billable auto-replace gaps",
+      "idempotent": true,
+      "depends_on": [
+        "0051"
+      ]
     }
   ],
   "seeds": [

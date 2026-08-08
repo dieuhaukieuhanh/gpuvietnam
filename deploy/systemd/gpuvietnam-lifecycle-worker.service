@@ -16,8 +16,9 @@ Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
 Environment=TMPDIR=/tmp
 # ──────── Provider: Vast-only ────────
 Environment=GPU_VAST_ONLY=true
-# ──────── Image: v3.3 (belt-and-suspenders) ────────
-Environment=GPUVIETNAM_COMFYUI_IMAGE_V3=dieuhaukieuhanh/gpuvietnam-comfyui:v3.3
+# ──────── Image: v3.7 (3090/4090) + v4.4 (5090) ────────
+Environment=GPUVIETNAM_COMFYUI_IMAGE_V3=dieuhaukieuhanh/gpuvietnam-comfyui:v3.7
+Environment=GPUVIETNAM_COMFYUI_IMAGE_V4=dieuhaukieuhanh/gpuvietnam-comfyui:v4.4
 # ──────── Public API URL (cho container gọi boot-event) ────────
 Environment=GPUVIETNAM_PUBLIC_API_URL=https://gpuvietnam.com
 # --experimental-strip-types: worker graph may import .ts helpers (e.g. @/lib/routes)

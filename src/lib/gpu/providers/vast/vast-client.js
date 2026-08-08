@@ -25,6 +25,8 @@ import {
 } from '../../provision-journal.js';
 import {
   applyHostReputationToOffers,
+  HOST_REPUTATION,
+  loadHostReputationStoreAsync,
   mergeKnownGoodOffersIntoCandidates,
   rememberHostFailure,
 } from '../../host-reputation/index.js';
@@ -261,11 +263,18 @@ export function findRankedGPUOffers(gpuType, plan, offers = [], limit = 10) {
         : null,
       gpuLine,
     );
-  const { offers: withKnownGood, pinned: knownGoodPinned } =
-    mergeKnownGoodOffersIntoCandidates(selected, saneOffers, resolveKey);
-  if (knownGoodPinned > 0) {
-    console.info('[vast/findRankedGPUOffers] known-good pins', { pinned: knownGoodPinned });
-  }
+  const {
+    offers: withKnownGood,
+    pinned: knownGoodPinned,
+    fallbackCount,
+    poolEmpty,
+  } = mergeKnownGoodOffersIntoCandidates(selected, saneOffers, resolveKey);
+  console.info('[vast/findRankedGPUOffers] pool-first walk', {
+    pinned: knownGoodPinned,
+    fallback: fallbackCount,
+    poolEmpty: Boolean(poolEmpty),
+    limit,
+  });
   const { offers: reputationRanked } = applyHostReputationToOffers(withKnownGood, resolveKey);
   if (!reputationRanked.length) {
     throw new GPUProviderError(NO_GPU_MESSAGE, { retryable: true });
@@ -595,13 +604,21 @@ export class VastClient {
       return walked.result;
     };
 
-    let candidates = findRankedGPUOffers(params.gpuLine, params.plan, offerList, 3);
+    // Reputation SoT is Supabase — must finish merge before pool-first ranking
+    // (sync load alone races an empty map on Vercel cold start).
+    await loadHostReputationStoreAsync();
+    const walkLimit = Math.max(
+      3,
+      Math.floor(Number(HOST_REPUTATION.rentWalkMaxCandidates) || 12),
+    );
+    let candidates = findRankedGPUOffers(params.gpuLine, params.plan, offerList, walkLimit);
     let rented = await rentFromCandidates(candidates, 'initial');
 
     if (!rented) {
       console.info('[vast/createInstance] All top offers unavailable, refetching offer list...');
       const freshList = await this.searchOffers(params.gpuLine);
-      candidates = findRankedGPUOffers(params.gpuLine, params.plan, freshList, 3);
+      await loadHostReputationStoreAsync();
+      candidates = findRankedGPUOffers(params.gpuLine, params.plan, freshList, walkLimit);
       rented = await rentFromCandidates(candidates, 'refetch');
     }
 

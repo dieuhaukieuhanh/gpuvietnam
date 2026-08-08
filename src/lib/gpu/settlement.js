@@ -16,6 +16,7 @@
 import {
   SETTLEMENT_ERROR_CODE,
   calculateBillableSeconds,
+  calculateNetBillableSeconds,
   computeAvailableEntitlementSeconds,
   capChargeSeconds,
   allocateSettlementCharge,
@@ -37,6 +38,7 @@ export {
   TERMINAL_SETTLEMENT_STATUSES,
   SETTLEABLE_SETTLEMENT_STATUSES,
   calculateBillableSeconds,
+  calculateNetBillableSeconds,
   computeAvailableEntitlementSeconds,
   capChargeSeconds,
   allocateSettlementCharge,
@@ -74,7 +76,7 @@ async function loadSessionForSettlement(supabaseAdmin, sessionId) {
   const { data, error } = await supabaseAdmin
     .from('gpu_sessions')
     .select(
-      'id, user_id, status, started_at, ended_at, settlement_status, settlement_at, settlement_breakdown, verified_destroyed_at, machine_id',
+      'id, user_id, status, started_at, ended_at, settlement_status, settlement_at, settlement_breakdown, verified_destroyed_at, machine_id, close_requested_at, billing_gap_seconds',
     )
     .eq('id', sessionId)
     .maybeSingle();
@@ -187,7 +189,12 @@ export async function skipSessionSettlement(supabaseAdmin, sessionId, reason = '
   const now = new Date().toISOString();
   const breakdown = {
     skip_reason: reason,
-    billable_seconds: calculateBillableSeconds(session.started_at, session.ended_at),
+    billable_seconds: calculateNetBillableSeconds(
+      session.started_at,
+      session.ended_at,
+      session.billing_gap_seconds,
+    ),
+    billing_gap_seconds: Math.max(0, Math.floor(Number(session.billing_gap_seconds) || 0)),
   };
 
   const { error } = await supabaseAdmin
@@ -265,7 +272,11 @@ export async function settleSession(supabaseAdmin, input) {
       sessionId,
       settlementStatus: 'settled',
       breakdown: session.settlement_breakdown ?? null,
-      billableSeconds: calculateBillableSeconds(session.started_at, session.ended_at),
+      billableSeconds: calculateNetBillableSeconds(
+        session.started_at,
+        session.ended_at,
+        session.billing_gap_seconds,
+      ),
       chargedSeconds: Number(session.settlement_breakdown?.charged_seconds ?? 0),
       walletCharge: Number(session.settlement_breakdown?.wallet?.vnd ?? 0),
     };
@@ -277,7 +288,11 @@ export async function settleSession(supabaseAdmin, input) {
       sessionId,
       settlementStatus: 'skipped',
       breakdown: session.settlement_breakdown ?? null,
-      billableSeconds: calculateBillableSeconds(session.started_at, session.ended_at),
+      billableSeconds: calculateNetBillableSeconds(
+        session.started_at,
+        session.ended_at,
+        session.billing_gap_seconds,
+      ),
       chargedSeconds: 0,
       walletCharge: 0,
     };
@@ -297,8 +312,12 @@ export async function settleSession(supabaseAdmin, input) {
     };
   }
 
-  // Zero-billable → skip (non-financial, outside T). Unchanged.
-  const billableSeconds = calculateBillableSeconds(session.started_at, session.ended_at);
+  // Zero-billable → skip (non-financial, outside T). Net of auto-replace gaps.
+  const billableSeconds = calculateNetBillableSeconds(
+    session.started_at,
+    session.ended_at,
+    session.billing_gap_seconds,
+  );
   if (billableSeconds <= 0) {
     return skipSessionSettlement(supabaseAdmin, sessionId, 'zero_billable', { userId });
   }
@@ -362,14 +381,17 @@ export async function settleSession(supabaseAdmin, input) {
     unchargedSeconds = allocation.unchargedSeconds + (capAppliedSeconds ?? 0);
   }
 
-  const breakdown = buildSettlementBreakdown({
-    sessionId,
-    billableSeconds,
-    chargeSeconds: chargedSeconds,
-    unchargedSeconds,
-    capAppliedSeconds,
-    lines: allocationLines,
-  });
+  const breakdown = {
+    ...buildSettlementBreakdown({
+      sessionId,
+      billableSeconds,
+      chargeSeconds: chargedSeconds,
+      unchargedSeconds,
+      capAppliedSeconds,
+      lines: allocationLines,
+    }),
+    billing_gap_seconds: Math.max(0, Math.floor(Number(session.billing_gap_seconds) || 0)),
+  };
 
   // Read CAS guard values OUTSIDE T (SCB 3.4A §9 pre-RPC). These are
   // inputs to the server-side CAS inside T; the RPC's claim guard and

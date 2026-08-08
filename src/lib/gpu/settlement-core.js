@@ -54,6 +54,19 @@ export function calculateBillableSeconds(startedAt, endedAt) {
 }
 
 /**
+ * Net billable after subtracting auto-replace gaps (non-negative).
+ * @param {string|Date|null|undefined} startedAt
+ * @param {string|Date|null|undefined} endedAt
+ * @param {unknown} [billingGapSeconds]
+ * @returns {number}
+ */
+export function calculateNetBillableSeconds(startedAt, endedAt, billingGapSeconds = 0) {
+  const gross = calculateBillableSeconds(startedAt, endedAt);
+  const gap = Math.max(0, Math.floor(Number(billingGapSeconds) || 0));
+  return Math.max(0, gross - gap);
+}
+
+/**
  * Legacy plan-type rank (display/debug only). Burn order no longer uses this —
  * see {@link compareSettlementPlanPriority} (soonest `valid_until` first).
  * @param {Record<string, unknown>} plan
