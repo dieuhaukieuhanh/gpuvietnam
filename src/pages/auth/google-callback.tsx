@@ -50,14 +50,21 @@ export default function GoogleCallbackPage() {
         }
 
         if (authData.session) {
-          // Sync profile
-          fetch('/api/auth/ensure-profile', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${authData.session.access_token}` },
-          }).catch(() => {});
+          setStep('Đang đồng bộ tài khoản...');
 
-          await applySession(authData.session);
-          const dest = (router.query.state as string) || routes.dashboard;
+          // Sync profile + role (phải await để có role trước khi redirect)
+          let role = 'user';
+          try {
+            const profileRes = await fetch('/api/auth/ensure-profile', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${authData.session.access_token}` },
+            });
+            const profileData = await profileRes.json();
+            if (profileData.role) role = profileData.role;
+          } catch { /* fallback */ }
+
+          await applySession(authData.session, { role });
+          const dest = role === 'admin' ? '/admin' : ((router.query.state as string) || routes.dashboard);
           router.replace(dest);
         } else {
           setError('Không tạo được phiên đăng nhập.');
