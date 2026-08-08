@@ -255,6 +255,7 @@ async function main() {
 
       if (gate.ok) {
         rememberHostSuccess(target.hostKey, {
+          gpuLine: target.gpuLine,
           gpuName: gate.gpuName,
           vramGb: gate.vramGb,
           driverVersion: gate.driverVersion,

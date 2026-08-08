@@ -414,6 +414,7 @@ export default async function handler(req, res) {
         // Record result
         if (gate.ok) {
           rememberHostSuccess(target.hostKey, {
+            gpuLine: target.gpuLine,
             gpuName: gate.gpuName,
             vramGb: gate.vramGb,
             driverVersion: gate.driverVersion,
