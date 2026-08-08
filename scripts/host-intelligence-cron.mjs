@@ -268,7 +268,7 @@ async function main() {
         reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine,
         ok: gate.ok, detail: gate.detail, elapsedMs: Date.now() - tStart,
       });
-      console.log(`[host-intel] ${target.reason}: ${target.hostKey} → ${gate.ok ? 'OK' : 'FAIL'}`);
+      console.log(`[host-intel] ${target.reason}: ${target.hostKey}|${target.gpuLine} → ${gate.ok ? 'OK' : 'FAIL'}: ${gate.detail}`);
 
     } catch (err) {
       if (instanceId) { try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ } }
