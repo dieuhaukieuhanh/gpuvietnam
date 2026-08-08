@@ -1,6 +1,9 @@
 /**
- * Close billable gpu_sessions left `running` after the machine is already destroyed.
+ * Close billable/open gpu_sessions left after the machine is already destroyed.
  * Prevents dashboard/start from thinking a session is still live (blocks "Mở máy").
+ *
+ * Safe for keep-open / auto-replace: never closes a session whose machine is still
+ * creating|starting|running|error.
  */
 
 /**
@@ -13,12 +16,13 @@ export async function closeGhostRunningSessionsForUser(supabaseAdmin, userId, op
   const uid = String(userId ?? '').trim();
   if (!uid) return { closedIds: [] };
 
+  // Billable OPEN ghosts (running + started_at) and pending rows bound to a
+  // destroyed machine. Pending with null machine_id is left alone (in-flight start).
   let query = supabaseAdmin
     .from('gpu_sessions')
     .select('id, machine_id, started_at, status')
     .eq('user_id', uid)
-    .eq('status', 'running')
-    .not('started_at', 'is', null);
+    .in('status', ['running', 'pending']);
 
   const machineId = opts.machineId != null ? String(opts.machineId).trim() : '';
   if (machineId) query = query.eq('machine_id', machineId);
@@ -32,7 +36,15 @@ export async function closeGhostRunningSessionsForUser(supabaseAdmin, userId, op
   const closedIds = [];
 
   for (const row of rows) {
+    const status = String(row.status ?? '');
     const mid = row.machine_id != null ? String(row.machine_id) : '';
+
+    // In-flight provision: pending with no machine yet — do not close.
+    if (status === 'pending' && !mid) continue;
+
+    // Only close billable running rows (started_at set) or pending bound to a dead machine.
+    if (status === 'running' && !row.started_at) continue;
+
     let machineDestroyed = !mid;
     if (mid) {
       const { data: machine, error: mErr } = await supabaseAdmin
@@ -62,7 +74,7 @@ export async function closeGhostRunningSessionsForUser(supabaseAdmin, userId, op
       })
       .eq('id', String(row.id))
       .eq('user_id', uid)
-      .eq('status', 'running')
+      .in('status', ['running', 'pending'])
       .select('id')
       .maybeSingle();
     if (cErr) {

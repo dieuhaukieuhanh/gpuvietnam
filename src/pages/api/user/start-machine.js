@@ -148,6 +148,7 @@ function withResumeMeta(body, ctx) {
     subscription: ctx.subscription,
     machine: ctx.machine,
     liveStatus: ctx.liveStatus ?? null,
+    sessionStatus: ctx.sessionStatus ?? null,
   });
   if (decision.duplicateStartPrevented) {
     incrSessionResumeMetric('duplicateStartPrevented');
@@ -423,6 +424,29 @@ async function startMachineHandler(req, res) {
       console.warn('[user/start-machine] ghost session close skipped:', ghostErr);
     }
 
+    /** @type {string | null} */
+    let resumeSessionStatus = null;
+    try {
+      const { data: latestOpenSession } = await supabaseAdmin
+        .from('gpu_sessions')
+        .select('status')
+        .eq('user_id', user.id)
+        .in('status', ['pending', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      resumeSessionStatus =
+        latestOpenSession?.status != null ? String(latestOpenSession.status) : null;
+    } catch (sessionErr) {
+      console.warn('[user/start-machine] load resume sessionStatus skipped:', sessionErr);
+    }
+
+    const attachResume = (body, ctx) =>
+      withResumeMeta(body, {
+        ...ctx,
+        sessionStatus: ctx.sessionStatus ?? resumeSessionStatus,
+      });
+
     let existingMachine = await getActiveMachineForUser(supabaseAdmin, user.id);
     if (existingMachine) {
       gpuService = getGpuServiceForMachine(existingMachine);
@@ -481,7 +505,7 @@ async function startMachineHandler(req, res) {
           syncedMachine,
         );
 
-        return res.status(200).json(withResumeMeta({
+        return res.status(200).json(attachResume({
 
           success: true,
 
@@ -534,7 +558,7 @@ async function startMachineHandler(req, res) {
             machineSessionView,
             syncedMachine,
           );
-          return res.status(200).json(withResumeMeta({
+          return res.status(200).json(attachResume({
             success: true,
             alreadyStarting: true,
             message: 'Đang khởi động máy GPU...',
@@ -718,7 +742,7 @@ async function startMachineHandler(req, res) {
         null,
       );
       const activeProvision = await findActiveUserStartProvision(supabaseAdmin, user.id);
-      return res.status(200).json(withResumeMeta({
+      return res.status(200).json(attachResume({
         success: true,
         alreadyStarting: true,
         message: 'Đang khởi tạo máy GPU. Vui lòng đợi...',
@@ -750,7 +774,7 @@ async function startMachineHandler(req, res) {
           syncedMachine,
         );
 
-        return res.status(200).json(withResumeMeta({
+        return res.status(200).json(attachResume({
 
           success: true,
 
@@ -950,7 +974,7 @@ async function startMachineHandler(req, res) {
         machineSessionView,
         bootMachine,
       );
-      return res.status(200).json(withResumeMeta({
+      return res.status(200).json(attachResume({
         success: true,
         alreadyStarting: true,
         message: 'Đang khởi động máy GPU...',
@@ -1030,7 +1054,7 @@ async function startMachineHandler(req, res) {
         bootMachine,
       );
       const activeProvision = await findActiveUserStartProvision(supabaseAdmin, user.id);
-      return res.status(200).json(withResumeMeta({
+      return res.status(200).json(attachResume({
         success: true,
         alreadyStarting: true,
         message: 'Máy GPU đang chạy hoặc đang khởi động. Không mở thêm máy song song.',

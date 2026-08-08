@@ -85,6 +85,14 @@ export default async function handler(req, res) {
             lifecycleCtx,
           );
         }
+        try {
+          const { closeGhostRunningSessionsForUser } = await import(
+            '@/lib/gpu/session-ghost-close'
+          );
+          await closeGhostRunningSessionsForUser(supabaseAdmin, user.id);
+        } catch (ghostErr) {
+          console.warn('[user/stop-machine] ghost sweep (no machine) failed:', ghostErr);
+        }
         const machineSessionView = resolveMachineSessionView(
           snapshotToMachineRecord({ ...subscription, server_status: 'offline' }, null, user.id),
           { envName: subscription?.env_name ?? null },

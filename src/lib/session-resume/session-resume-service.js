@@ -111,6 +111,16 @@ export async function buildSessionResumeSnapshot(supabaseAdmin, userId, options 
   );
 
   try {
+    // Sweep ghosts before decide — replace orphans must not block allowNewProvision.
+    try {
+      const { closeGhostRunningSessionsForUser } = await import(
+        '../gpu/session-ghost-close.js'
+      );
+      await closeGhostRunningSessionsForUser(supabaseAdmin, userId);
+    } catch (ghostErr) {
+      console.warn('[session-resume] ghost sweep skipped:', ghostErr);
+    }
+
     const subscription = await loadActiveSubscription(supabaseAdmin, userId);
     let machine = await getActiveMachineForUser(supabaseAdmin, userId);
     let gpuService = machine ? getGpuServiceForMachine(machine) : getGpuService();

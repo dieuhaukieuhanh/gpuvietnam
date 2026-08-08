@@ -28,9 +28,18 @@ async function provisionProgressHandler(req, res) {
     .maybeSingle();
 
   const machine = await getActiveMachineForUser(supabaseAdmin, user.id);
+  const { data: openSession } = await supabaseAdmin
+    .from('gpu_sessions')
+    .select('status')
+    .eq('user_id', user.id)
+    .in('status', ['pending', 'running'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const resume = decideResumeFromLoadedState({
     subscription,
     machine,
+    sessionStatus: openSession?.status != null ? String(openSession.status) : null,
   });
 
   const subscriptionId = subscription?.id != null ? String(subscription.id) : null;

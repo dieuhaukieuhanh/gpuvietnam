@@ -71,13 +71,51 @@ describe('decideSessionResume', () => {
     assert.equal(d.allowNewProvision, false);
   });
 
-  it('resumes pending gpu session', () => {
+  it('allows new provision when open session has no live machine (ghost)', () => {
+    const d = decideSessionResume({
+      serverStatus: 'offline',
+      sessionStatus: 'running',
+      machine: null,
+    });
+    assert.equal(d.currentState, RESUME_STATE.OFFLINE);
+    assert.equal(d.shouldResume, false);
+    assert.equal(d.allowNewProvision, true);
+    assert.equal(d.reason, 'ghost_session_reprovision');
+    assert.equal(d.duplicateStartPrevented, false);
+  });
+
+  it('allows new provision for pending session with no machine (ghost)', () => {
     const d = decideSessionResume({
       serverStatus: 'offline',
       sessionStatus: 'pending',
+      machine: null,
     });
-    assert.equal(d.currentState, RESUME_STATE.PROVISIONING);
-    assert.equal(d.shouldResume, true);
+    assert.equal(d.reason, 'ghost_session_reprovision');
+    assert.equal(d.allowNewProvision, true);
+  });
+
+  it('allows new provision when session points at destroyed machine', () => {
+    const d = decideSessionResume({
+      serverStatus: 'offline',
+      sessionStatus: 'running',
+      machine: { id: 'm1', status: 'destroyed' },
+      machineLifecycleStatus: 'destroyed',
+      leaseExpired: true,
+    });
+    assert.equal(d.reason, 'ghost_session_reprovision');
+    assert.equal(d.allowNewProvision, true);
+  });
+
+  it('resumes reconnectable session when a non-destroyed machine row still exists', () => {
+    const d = decideSessionResume({
+      serverStatus: 'offline',
+      sessionStatus: 'pending',
+      machine: { id: 'm1', status: 'offline' },
+      machineLifecycleStatus: 'offline',
+      leaseExpired: true,
+    });
+    assert.equal(d.reason, 'reconnectable_session');
+    assert.equal(d.allowNewProvision, false);
   });
 
   it('maps STOPPING and ERROR', () => {

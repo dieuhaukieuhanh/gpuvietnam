@@ -326,7 +326,26 @@ export default async function handler(req, res) {
     }
 
     const machineRecord = snapshotToMachineRecord(syncedSubscription, activeMachine, user.id);
-    const openBillableSession = await loadOpenBillableSessionForUser(supabaseAdmin, user.id);
+    let openBillableSession = await loadOpenBillableSessionForUser(supabaseAdmin, user.id);
+    // Ghost billable session (no live machine, no replace in flight) — close so poll/start agree.
+    if (openBillableSession && !activeMachine) {
+      const earlyReplace = await findActiveRuntimeAutoReplace(
+        supabaseAdmin,
+        user.id,
+        String(openBillableSession.id),
+      );
+      if (!earlyReplace) {
+        try {
+          const { closeGhostRunningSessionsForUser } = await import(
+            '@/lib/gpu/session-ghost-close'
+          );
+          await closeGhostRunningSessionsForUser(supabaseAdmin, user.id);
+          openBillableSession = await loadOpenBillableSessionForUser(supabaseAdmin, user.id);
+        } catch (ghostErr) {
+          console.warn('[dashboard/me] ghost sweep skipped:', ghostErr);
+        }
+      }
+    }
     const replaceInFlight = openBillableSession
       ? await findActiveRuntimeAutoReplace(
           supabaseAdmin,
@@ -439,7 +458,8 @@ export default async function handler(req, res) {
       subscription: syncedSubscription,
       machine: activeMachine,
       liveStatus: null,
-      sessionStatus: null,
+      // Align with /api/user/session-resume — open billable session drives ghost/reconnect.
+      sessionStatus: openBillableSession?.status ?? null,
     });
 
     return res.status(200).json({

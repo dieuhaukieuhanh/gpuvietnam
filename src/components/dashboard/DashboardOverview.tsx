@@ -2251,18 +2251,18 @@ export default function DashboardOverview({
                   {serverCardPhase === 'running' &&
                     provisionProgress?.tick === 'workspace_restoring' && (
                       <p className="dashboard-workspace-status" style={{ marginTop: 8 }}>
-                        ⏳ Đang khôi phục Workspace
+                        📂 Đang kéo file Workspace về
                         {formatWorkspaceBreakdown(workspaceClassification)
                           ? ` (${formatWorkspaceBytes(workspaceClassification?.totalBytes ?? 0)})`
                           : ''}
-                        ...
+                        — bạn vẫn soạn được; Generate dùng khi GPU sẵn sàng.
                       </p>
                     )}
                   {serverCardPhase === 'running' &&
                     provisionProgress?.tick === 'workspace_failed' && (
                       <div className="dashboard-workspace-restore-failed" style={{ marginTop: 10 }}>
                         <p className="dashboard-workspace-status" style={{ marginBottom: 6 }}>
-                          Khôi phục Workspace thất bại — vẫn mở được ComfyUI.
+                          Khôi phục file Workspace thất bại — bạn vẫn soạn được trong ComfyUI.
                         </p>
                         {formatWorkspaceBreakdown(workspaceClassification) && (
                           <p
@@ -2362,24 +2362,25 @@ export default function DashboardOverview({
                       href={editorEnterUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      title="Mở Workspace để chuẩn bị workflow ngay — GPU đang khởi động"
+                      title="Mở để soạn workflow ngay — Generate chưa sẵn sàng"
                     >
-                      🚀 Vào phòng làm việc
+                      🚀 Vào soạn thảo (chưa gen được)
                     </a>
                   ) : (
                     <button
                       type="button"
                       className="btn btn-success btn-lg"
                       disabled={isOpeningEditor}
-                      title="Mở Workspace để chuẩn bị workflow ngay — GPU đang khởi động"
+                      title="Mở để soạn workflow ngay — Generate chưa sẵn sàng"
                       onClick={() => void openEditorWorkspace()}
                     >
-                      {isOpeningEditor ? '⏳ Đang mở Workspace...' : '🚀 Vào phòng làm việc'}
+                      {isOpeningEditor
+                        ? '⏳ Đang mở Workspace...'
+                        : '🚀 Vào soạn thảo (chưa gen được)'}
                     </button>
                   ))}
                 <p className="dashboard-server-hint" style={{ marginTop: 8, fontSize: 13 }}>
-                  GPU đang khởi động — bạn có thể setup workflow ngay bây giờ.
-                  Khi GPU sẵn sàng, chỉ việc bấm Generate.
+                  Bạn có thể soạn workflow ngay. GPU đang khởi động — Generate sẽ bật khi máy sẵn sàng.
                 </p>
                 {canCancelBoot && (
                   <button
@@ -2421,27 +2422,38 @@ export default function DashboardOverview({
             )}
 
             {serverCardPhase === 'running' && !isMobile && (
-              comfyEnterUrl && machineSessionView?.actions.canOpenComfy ? (
-                <a
-                  className="btn-launch"
-                  href={comfyEnterUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Vào phòng làm việc"
-                >
-                  Vào phòng làm việc
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-launch"
-                  title="Vào phòng làm việc"
-                  disabled={!machineSessionView?.actions.canOpenComfy || isOpeningComfy}
-                  onClick={() => void openComfyUI()}
-                >
-                  {isOpeningComfy ? 'Đang mở ComfyUI...' : 'Vào phòng làm việc'}
-                </button>
-              )
+              <>
+                {comfyEnterUrl && machineSessionView?.actions.canOpenComfy ? (
+                  <a
+                    className="btn-launch"
+                    href={comfyEnterUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={
+                      provisionProgress?.tick === 'workspace_restoring'
+                        ? 'Vào soạn thảo — file Workspace đang được kéo về'
+                        : 'Vào phòng làm việc — Generate đã sẵn sàng'
+                    }
+                  >
+                    Vào phòng làm việc
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-launch"
+                    title="Vào phòng làm việc"
+                    disabled={!machineSessionView?.actions.canOpenComfy || isOpeningComfy}
+                    onClick={() => void openComfyUI()}
+                  >
+                    {isOpeningComfy ? 'Đang mở ComfyUI...' : 'Vào phòng làm việc'}
+                  </button>
+                )}
+                {provisionProgress?.tick === 'workspace_restoring' && (
+                  <p className="dashboard-server-hint" style={{ marginTop: 8, fontSize: 13 }}>
+                    Đang kéo file Workspace về nền — soạn được bình thường; một số file/custom node có thể xuất hiện chậm hơn.
+                  </p>
+                )}
+              </>
             )}
 
             {serverCardPhase === 'idle' && (

@@ -385,6 +385,13 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
     } catch (error) {
       console.warn('[destroy-pipeline] revoke backup tokens (already destroyed) failed:', error);
     }
+    // Unscoped sweep: other ghost sessions (e.g. prior replace orphan) must not block Start.
+    try {
+      const { closeGhostRunningSessionsForUser } = await import('./gpu/session-ghost-close.js');
+      await closeGhostRunningSessionsForUser(supabaseAdmin, userId);
+    } catch (ghostErr) {
+      console.warn('[destroy-pipeline] ghost session sweep (already destroyed) failed:', ghostErr);
+    }
     return {
       destroyed: true,
       outcome: DESTROY_PIPELINE_OUTCOME.ALREADY_DESTROYED,
@@ -777,13 +784,11 @@ export async function runDestroyPipeline(supabaseAdmin, deps, input) {
   await markMachineDestroyed(supabaseAdmin, machine);
   await markSubscriptionOffline(supabaseAdmin, userId);
 
-  // Sweep: a late openBillableSession during stop can leave a second running
-  // session on the destroyed machine and block the next Start.
+  // Unscoped sweep: close all billable/pending ghosts for this user whose machine
+  // is already destroyed (includes orphans from prior auto-replace, not only this row).
   try {
     const { closeGhostRunningSessionsForUser } = await import('./gpu/session-ghost-close.js');
-    await closeGhostRunningSessionsForUser(supabaseAdmin, userId, {
-      machineId: String(machine.id),
-    });
+    await closeGhostRunningSessionsForUser(supabaseAdmin, userId);
   } catch (ghostErr) {
     console.warn('[destroy-pipeline] ghost session sweep failed:', ghostErr);
   }

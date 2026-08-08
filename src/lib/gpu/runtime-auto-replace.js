@@ -183,6 +183,8 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
   // 5) Wait until Comfy ready — only then resume live billing (SCB RUNTIME_READY).
   // Do NOT rewrite gpu_sessions.started_at (immutable). Accumulate gap instead.
   let readyMachine = newMachine;
+  let billingStartedAt =
+    params.billingStartedAt != null ? String(params.billingStartedAt) : null;
   const gpuService = getGpuServiceForMachine(newMachine) || getGpuService();
   for (let i = 0; i < MAX_READY_POLLS; i++) {
     const live = await resolveLiveMachineStatus(gpuService, readyMachine);
@@ -212,6 +214,7 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
           updated_at: readyAt,
         })
         .eq('id', readyMachine.id);
+      billingStartedAt = readyAt;
       break;
     }
     await new Promise((r) => setTimeout(r, READY_POLL_MS));
@@ -241,7 +244,9 @@ export async function completeRuntimeAutoReplace(supabaseAdmin, params) {
     sessionId,
     oldMachineId,
     newMachineId: String(readyMachine.id),
-    billingStartedAt,
+    billingStartedAt:
+      billingStartedAt ??
+      (readyMachine.billing_started_at != null ? String(readyMachine.billing_started_at) : null),
     workUrl: rebind?.workUrl ?? null,
     correlationId,
     planName: params.planName,

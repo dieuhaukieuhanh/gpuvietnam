@@ -74,7 +74,12 @@ export function decideSessionResume(input = {}) {
   } else if (machine && (live === 'starting' || live === 'creating' || isBootingStatus(lifecycle))) {
     decision = base(RESUME_STATE.BOOTING, true, false, 'machine_booting');
   } else if (sessionStatus === 'pending' || sessionStatus === 'running') {
-    decision = base(RESUME_STATE.PROVISIONING, true, false, 'reconnectable_session');
+    // Open session with no live machine = ghost after replace/stop. Do not block Start.
+    if (!machine || lifecycle === 'destroyed') {
+      decision = base(RESUME_STATE.OFFLINE, false, true, 'ghost_session_reprovision');
+    } else {
+      decision = base(RESUME_STATE.PROVISIONING, true, false, 'reconnectable_session');
+    }
   } else if (machine && !leaseExpired) {
     decision = base(RESUME_STATE.BOOTING, true, false, 'existing_machine_row');
   } else {
