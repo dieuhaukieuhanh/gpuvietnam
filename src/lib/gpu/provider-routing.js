@@ -49,6 +49,10 @@ export function isSaladOnlyMode() {
  *   (prevents silent Vast disk-only rents when env/CRLF drops the flag)
  */
 export function isCloreOnlyMode() {
+  // Explicit Vast/Salad-only wins over lifecycle-worker Clore default.
+  if (isEnvFlagTrue('GPU_VAST_ONLY') || isEnvFlagTrue('GPU_SALAD_ONLY')) {
+    return false;
+  }
   if (isEnvFlagTrue('GPU_CLORE_ONLY')) return true;
   if (
     process.env.GPUVIETNAM_LIFECYCLE_WORKER === '1' &&
