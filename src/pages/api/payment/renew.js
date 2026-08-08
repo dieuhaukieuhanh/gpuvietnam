@@ -33,7 +33,7 @@ export default async function handler(req, res) {
         alreadyPending: Boolean(transferResult.alreadyPending),
         message: transferResult.alreadyPending
           ? 'Yêu cầu tái tục đang chờ xác nhận chuyển khoản (tự động duyệt).'
-          : 'Đã ghi nhận tái tục — chuyển khoản đúng mã GD, hệ thống tự duyệt trong vài phút.',
+          : 'Đã ghi nhận tái tục — chuyển khoản đúng mã NV, hệ thống tự duyệt trong vài phút.',
         pending: transferResult.pending,
       });
     }

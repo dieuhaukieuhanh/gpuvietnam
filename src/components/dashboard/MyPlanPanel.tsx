@@ -666,7 +666,7 @@ export default function MyPlanPanel({
             void loadPlans();
           }}
           onPendingSubmitted={() => {
-            setToast('Yêu cầu tái tục đã ghi nhận — chuyển khoản đúng mã GD để hệ thống tự duyệt.');
+            setToast('Yêu cầu tái tục đã ghi nhận — chuyển khoản đúng mã NV để hệ thống tự duyệt.');
           }}
         />
       )}

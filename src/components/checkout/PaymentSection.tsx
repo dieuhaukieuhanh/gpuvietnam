@@ -120,7 +120,7 @@ export default function PaymentSection({ order }: PaymentSectionProps) {
     <div className="payment-section" id="paymentSection">
       <h3>💳 Thanh Toán Chuyển Khoản</h3>
       <p className="subtitle">
-        Tạo yêu cầu để nhận QR + mã GD — chuyển khoản xong hệ thống tự kích hoạt gói.
+        Tạo yêu cầu để nhận QR + mã NV — chuyển khoản xong hệ thống tự kích hoạt gói.
       </p>
 
       {submitError && <div className="error-msg">{submitError}</div>}

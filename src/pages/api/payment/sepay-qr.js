@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     }
 
     const code = parseTransferCode(transferCode) || String(transferCode).trim().toUpperCase();
-    // Nội dung CK / QR des = chỉ mã 4 ký tự (GDxx)
+    // Nội dung CK / QR des = chỉ mã 6 ký tự (NVxxxx)
     const fromOverride =
       typeof descriptionOverride === 'string' ? parseTransferCode(descriptionOverride) : null;
     const description = fromOverride || code;

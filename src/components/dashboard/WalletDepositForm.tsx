@@ -14,6 +14,7 @@ export type DepositPendingData = {
     description: string | null;
     created_at: string;
     shortId: string;
+    transferCode?: string;
   };
   transfer: {
     bankName: string;
@@ -143,8 +144,8 @@ function WalletDepositPendingView({ pending, accessToken, onConfirm }: WalletDep
           <dd>{transfer.accountName}</dd>
           <dt>Số tiền CK</dt>
           <dd>{formatVnd(transfer.amount)}</dd>
-          <dt>Mã GD</dt>
-          <dd className="mono">{transfer.transferCode || `GD${transaction.shortId}`}</dd>
+          <dt>Mã CK</dt>
+          <dd className="mono">{transfer.transferCode || transaction.transferCode}</dd>
         </dl>
       </div>
 

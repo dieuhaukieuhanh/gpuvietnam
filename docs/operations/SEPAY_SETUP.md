@@ -25,12 +25,12 @@ https://gpuvietnam.com/api/payment/sepay-webhook
 
 1. **Công ty → Cấu hình chung → Cấu trúc mã thanh toán**
 2. Đặt:
-   - **Tiền tố:** `GD`
-   - **Độ dài phần sau:** `2`
-   - **Ký tự:** chữ + số (alphanumeric)
+   - **Tiền tố:** `NV`
+   - **Độ dài phần sau:** `4`
+   - **Ký tự:** chỉ số (numeric / digits)
 3. Lưu.
 
-> Nội dung CK ví dụ: `Nguyen Van A GDX7` — SePay trích `code = GDX7`.
+> Nội dung CK ví dụ: `NV4821` — SePay trích `code = NV4821` (6 ký tự, duy nhất theo pending).
 
 ### 2.2 Tạo webhook
 
@@ -41,7 +41,7 @@ https://gpuvietnam.com/api/payment/sepay-webhook
    - URL: `https://gpuvietnam.com/api/payment/sepay-webhook`
 3. **Bước 2 — Tài khoản / bộ lọc**
    - Chọn đúng STK nhận tiền (khớp `SEPAY_ACCOUNT_NUMBER`)
-   - Tiền tố mã: `GD`
+   - Tiền tố mã: `NV`
    - Bật **Chỉ gửi khi có mã thanh toán** (khuyến nghị)
 4. **Bước 3 — Bảo mật**
    - Chọn **HMAC-SHA256**
@@ -87,7 +87,7 @@ Nếu `SEPAY_API_TOKEN` sai → HTTP 502.
 ## 5. Test giao dịch thật (nhỏ)
 
 1. Đăng nhập production → Nạp ví số nhỏ (vd. 50.000đ)
-2. Quét QR / CK **đúng số tiền + đúng nội dung có mã GD**
+2. Quét QR / CK **đúng số tiền + đúng nội dung mã NV####**
 3. Trong vài phút:
    - Ví cộng số dư
    - Bảng `sepay_transactions` có dòng `status = processed`
@@ -97,7 +97,7 @@ Nếu `SEPAY_API_TOKEN` sai → HTTP 502.
 ## 6. Checklist nhanh
 
 - [ ] SQL `0054` đã chạy trên Supabase prod
-- [ ] SePay: cấu trúc mã `GD` + 2 ký tự
+- [ ] SePay: cấu trúc mã `NV` + 4 chữ số
 - [ ] SePay: webhook URL + HMAC = `SEPAY_WEBHOOK_SECRET`
 - [ ] SePay: API token = `SEPAY_API_TOKEN`
 - [ ] Vercel: 4 biến env đã set (webhook / token / STK / cron)
@@ -109,7 +109,7 @@ Nếu `SEPAY_API_TOKEN` sai → HTTP 502.
 | Hiện tượng | Nguyên nhân hay gặp |
 |------------|---------------------|
 | Webhook `invalid_signature` | Secret lệch giữa SePay ↔ Vercel; hoặc body bị parse lại |
-| `no_match` | Nội dung CK thiếu mã `GD**`; hoặc yêu cầu chưa được tạo trước khi CK |
+| `no_match` | Nội dung CK thiếu mã `NV####`; hoặc yêu cầu chưa được tạo trước khi CK; hoặc SePay vẫn cấu hình tiền tố `GD` cũ |
 | `amount_mismatch` | CK thiếu tiền so với số tiền yêu cầu |
 | QR không hiện | Mạng chặn `qr.sepay.vn` — vẫn CK tay theo STK + nội dung |
 | Cron 403 | Thiếu `CRON_SECRET` / không phải Vercel Cron |

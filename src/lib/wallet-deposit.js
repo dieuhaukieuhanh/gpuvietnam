@@ -22,28 +22,38 @@ export function formatDepositDescription(amount) {
   return `Nạp ${Number(amount).toLocaleString('vi-VN')}đ qua chuyển khoản`;
 }
 
-/** Suffix length for wallet GD codes (total = GD + 4 → 6 chars). */
-const TRANSFER_CODE_SUFFIX_LEN = 4;
+/**
+ * Mã CK từ pending deposit: NV#### trong description, hoặc legacy GD + 2 hex UUID.
+ * @param {{ id?: string, description?: string|null }|string|null|undefined} transactionOrId
+ */
+export function extractDepositTransferCode(transactionOrId) {
+  if (!transactionOrId) return null;
+  if (typeof transactionOrId === 'string') {
+    return `GD${shortTransactionId(transactionOrId)}`;
+  }
+  const desc = String(transactionOrId.description || '').toUpperCase();
+  const nv = desc.match(/NV\d{4}/);
+  if (nv) return nv[0];
+  const gd = desc.match(/GD[A-Z0-9]{2}/);
+  if (gd) return gd[0];
+  if (transactionOrId.id) {
+    return `GD${shortTransactionId(transactionOrId.id)}`;
+  }
+  return null;
+}
 
-export function buildDepositTransferNote(transactionId) {
-  const short = String(transactionId)
-    .replace(/-/g, '')
-    .slice(0, TRANSFER_CODE_SUFFIX_LEN)
-    .toUpperCase();
-  return `GD${short}`;
+/** @deprecated Prefer extractDepositTransferCode(transaction) */
+export function buildDepositTransferNote(transactionOrId) {
+  return extractDepositTransferCode(transactionOrId);
 }
 
 export function shortTransactionId(transactionId) {
-  return String(transactionId)
-    .replace(/-/g, '')
-    .slice(0, TRANSFER_CODE_SUFFIX_LEN)
-    .toUpperCase();
+  return String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
 }
 
 export function buildDepositPendingResponse(transaction) {
   const amount = Number(transaction.amount);
-  // Nội dung CK = mã 6 ký tự (GD + 4), không kèm tên khách.
-  const code = buildDepositTransferNote(transaction.id);
+  const code = extractDepositTransferCode(transaction);
   return {
     transaction: {
       id: transaction.id,
@@ -51,7 +61,7 @@ export function buildDepositPendingResponse(transaction) {
       status: transaction.status,
       description: transaction.description,
       created_at: transaction.created_at,
-      shortId: shortTransactionId(transaction.id),
+      shortId: code?.replace(/^NV|^GD/, '') || shortTransactionId(transaction.id),
       transferCode: code,
     },
     transfer: {
@@ -98,8 +108,11 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
   if (profileError) throw profileError;
 
   const currentBalance = Number(profile?.wallet_balance ?? 0);
-  const fullName = profile?.full_name || null;
   const now = new Date().toISOString();
+
+  // Dynamic import tránh circular dependency với sepay.js
+  const { allocateTransferCode } = await import('./sepay.js');
+  const transferCode = await allocateTransferCode(supabaseAdmin);
 
   const { data: tx, error: txError } = await supabaseAdmin
     .from('wallet_transactions')
@@ -109,7 +122,8 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
       amount: validation.amount,
       bonus_amount: 0,
       balance_after: currentBalance,
-      description: formatDepositDescription(validation.amount),
+      // Lưu mã NV vào description để match webhook (không có cột transfer_note)
+      description: `${formatDepositDescription(validation.amount)} ${transferCode}`,
       status: 'pending_deposit',
       updated_at: now,
     })

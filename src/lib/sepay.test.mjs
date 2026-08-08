@@ -7,19 +7,20 @@ import {
   buildVietQrUrl,
   buildTransferDescription,
   normalizeSepayListTransaction,
+  generateTransferCode,
 } from './sepay.js';
-import { buildDepositTransferNote, shortTransactionId } from './wallet-deposit.js';
+import { extractDepositTransferCode } from './wallet-deposit.js';
 
 describe('parseTransferCode', () => {
-  it('extracts GD + 4 alphanumeric (6-char total)', () => {
-    assert.equal(parseTransferCode('Nguyen Van A GDA1B2'), 'GDA1B2');
-    assert.equal(parseTransferCode('gda1b2'), 'GDA1B2');
-    assert.equal(parseTransferCode('TAITUC-ABC123 GDA1B2'), 'GDA1B2');
+  it('extracts NV + 4 digits from transfer content', () => {
+    assert.equal(parseTransferCode('NV4821'), 'NV4821');
+    assert.equal(parseTransferCode('nv4821'), 'NV4821');
+    assert.equal(parseTransferCode('CK NV4821 OK'), 'NV4821');
   });
 
-  it('still accepts legacy 4-char GD codes', () => {
-    assert.equal(parseTransferCode('GDX7'), 'GDX7');
-    assert.equal(parseTransferCode('Khach Hang GDA1'), 'GDA1');
+  it('still parses legacy GD + 2 alphanumeric', () => {
+    assert.equal(parseTransferCode('Nguyen Van A GDX7'), 'GDX7');
+    assert.equal(parseTransferCode('TAITUC-ABC123 GDA1'), 'GDA1');
   });
 
   it('returns null when format missing', () => {
@@ -28,27 +29,34 @@ describe('parseTransferCode', () => {
   });
 });
 
-describe('wallet transfer code length parity', () => {
-  it('matches shortTransactionId used by deposit note — 6 alphanumeric chars', () => {
-    const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-    assert.equal(shortTransactionId(id), 'A1B2');
-    assert.equal(buildDepositTransferNote(id), 'GDA1B2');
-    assert.equal(buildDepositTransferNote(id).length, 6);
-    assert.equal(parseTransferCode(buildDepositTransferNote(id)), 'GDA1B2');
+describe('wallet transfer code', () => {
+  it('reads NV code from deposit description — 6 chars', () => {
+    const tx = {
+      id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+      description: 'Nạp 50.000đ qua chuyển khoản NV4821',
+    };
+    assert.equal(extractDepositTransferCode(tx), 'NV4821');
+    assert.equal(extractDepositTransferCode(tx).length, 6);
+    assert.equal(parseTransferCode(extractDepositTransferCode(tx)), 'NV4821');
+  });
+
+  it('generateTransferCode is NV + 4 digits', () => {
+    const code = generateTransferCode();
+    assert.match(code, /^NV\d{4}$/);
   });
 });
 
 describe('buildTransferDescription / VietQR', () => {
-  it('uses only 6-char GD code (no customer name)', () => {
-    assert.equal(buildTransferDescription('Nguyen Van A', 'GDA1B2'), 'GDA1B2');
-    assert.equal(buildTransferDescription('GD64XY'), 'GD64XY');
+  it('uses only 6-char NV code (no customer name)', () => {
+    assert.equal(buildTransferDescription('Nguyen Van A', 'NV4821'), 'NV4821');
+    assert.equal(buildTransferDescription('NV4821'), 'NV4821');
   });
 
   it('builds qr.sepay.vn URL', () => {
-    const url = buildVietQrUrl({ amount: 100000, description: 'GDA1B2' });
+    const url = buildVietQrUrl({ amount: 100000, description: 'NV4821' });
     assert.match(url, /^https:\/\/qr\.sepay\.vn\/img\?/);
     assert.match(url, /amount=100000/);
-    assert.match(url, /des=GDA1B2/);
+    assert.match(url, /des=NV4821/);
     assert.match(url, /template=qronly/);
   });
 });
@@ -59,12 +67,12 @@ describe('normalizeSepayListTransaction', () => {
       id: 42,
       transferAmount: 50000,
       transferType: 'in',
-      code: 'GDA1B2',
-      content: 'GDA1B2',
+      code: 'NV4821',
+      content: 'NV4821',
     });
     assert.equal(tx.id, 42);
     assert.equal(tx.transferAmount, 50000);
-    assert.equal(tx.code, 'GDA1B2');
+    assert.equal(tx.code, 'NV4821');
   });
 });
 
@@ -83,7 +91,7 @@ describe('verifySepayWebhook', () => {
   });
 
   it('accepts valid sha256=HMAC(timestamp.body) signature', () => {
-    const rawBody = '{"id":1,"transferAmount":100000,"code":"GDA1B2"}';
+    const rawBody = '{"id":1,"transferAmount":100000,"code":"NV4821"}';
     const timestamp = Math.floor(Date.now() / 1000);
     const signature =
       'sha256=' +

@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       transferCode: result?.transferCode ?? null,
       amount: result?.amount ?? null,
       message:
-        'Đã ghi nhận yêu cầu. Chuyển khoản đúng nội dung (mã GD) — hệ thống tự duyệt trong vài phút.',
+        'Đã ghi nhận yêu cầu. Chuyển khoản đúng nội dung (mã NV) — hệ thống tự duyệt trong vài phút.',
     });
   } catch (err) {
     console.error('[payment/confirm]', err);

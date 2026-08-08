@@ -359,7 +359,7 @@ export default function PlanCheckoutPage() {
               {!pendingTransfer ? (
                 <>
                   <p className="subtitle">
-                    Bấm tạo yêu cầu để nhận mã QR + nội dung CK (có mã GD). Sau khi chuyển khoản,
+                    Bấm tạo yêu cầu để nhận mã QR + nội dung CK (mã NV). Sau khi chuyển khoản,
                     hệ thống tự kích hoạt gói.
                   </p>
                   <button

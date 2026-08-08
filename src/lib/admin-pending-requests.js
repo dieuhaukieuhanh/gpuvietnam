@@ -106,7 +106,7 @@ export async function fetchPendingWalletDeposits(supabaseAdmin) {
     user: usersById[tx.user_id] ?? null,
     amount: Number(tx.amount),
     description: tx.description,
-    transfer_note: buildDepositTransferNote(tx.id),
+    transfer_note: buildDepositTransferNote(tx),
   }));
 }
 

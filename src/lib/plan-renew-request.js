@@ -160,7 +160,7 @@ export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { pl
 
   const now = new Date().toISOString();
   const transferCode = await allocateTransferCode(supabaseAdmin);
-  // Nội dung CK = mã 6 ký tự (GDxxxx)
+  // Nội dung CK = mã 6 ký tự (NVxxxx)
   const transferNote = transferCode;
 
   const { data: row, error: insertError } = await supabaseAdmin
