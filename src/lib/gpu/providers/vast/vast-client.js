@@ -873,11 +873,20 @@ export class VastClient {
     if (!trimmed) return [];
 
     const selectFilters = JSON.stringify({ label: { eq: trimmed } });
-    const selectCols = JSON.stringify(['id', 'label', 'actual_status', 'cur_state', 'public_ipaddr']);
+    const selectCols = JSON.stringify([
+      'id',
+      'label',
+      'actual_status',
+      'cur_state',
+      'public_ipaddr',
+      'start_date',
+      'image',
+      'dph_total',
+    ]);
     const query = new URLSearchParams({
       select_filters: selectFilters,
       select_cols: selectCols,
-      limit: '20',
+      limit: '50',
     });
 
     try {

@@ -4,7 +4,8 @@ Requires=gpuvietnam-host-intel.service
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=25min
+# Fire after previous cycle finishes — avoids overlapping oneshot runs that SIGTERM mid-rent.
+OnUnitInactiveSec=25min
 RandomizedDelaySec=360
 AccuracySec=30
 Persistent=true

@@ -12,7 +12,7 @@
 
 import { sendEmail } from '../resend.js';
 
-/** @typedef {'provision_timeout'|'orphan_clore'|'settlement_failed'|'machine_op_stuck'|'recovery_exhausted'|'smoke'} OpsAlertEvent */
+/** @typedef {'provision_timeout'|'orphan_clore'|'orphan_host_intel'|'settlement_failed'|'machine_op_stuck'|'recovery_exhausted'|'smoke'} OpsAlertEvent */
 
 const DEFAULT_OPS_EMAIL = 'dieuhaukieuhanh@gmail.com';
 const DEFAULT_DEDUP_MS = 15 * 60 * 1000;

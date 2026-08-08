@@ -40,6 +40,17 @@ import {
 } from '../src/lib/gpu/host-reputation/host-intelligence-targets.js';
 import { runCloreHostIntelligenceCycle } from '../src/lib/gpu/host-reputation/host-intelligence-clore-run.js';
 import { matchesHostIntelligenceProvider } from '../src/lib/gpu/host-reputation/host-intelligence-inventory.js';
+import {
+  HOST_INTEL_VAST_LABEL,
+  acquireHostIntelLock,
+  releaseHostIntelLock,
+  installHostIntelCleanupHooks,
+  setHostIntelDestroyers,
+  trackHostIntelVastInstance,
+  cleanupTrackedHostIntelLeases,
+  destroyHostIntelLeaseWithRetry,
+  resolveHostIntelProbeMaxMs,
+} from '../src/lib/gpu/host-reputation/host-intel-runtime.js';
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const TEST_IMAGE = process.env.GPU_TEST_IMAGE || 'dieuhaukieuhanh/gpu-test:v1';
@@ -126,6 +137,16 @@ async function searchLineOffers(client, gpuLine) {
 async function main() {
   console.log('[host-intel] VPS cron starting');
 
+  const lock = acquireHostIntelLock();
+  if (!lock.ok) {
+    console.warn(
+      `[host-intel] Another cycle is running (lock holder pid=${lock.holderPid ?? '?'}) — skip overlap`,
+    );
+    return;
+  }
+  installHostIntelCleanupHooks();
+
+  try {
   // 0. Load reputation SoT (JSON + Supabase merge) before any decisions
   await loadHostReputationStoreAsync();
 
@@ -149,6 +170,9 @@ async function main() {
   // ── Vast cycle (optional) ─────────────────────────────────────────────
   if (enabledProviders.includes('vast')) {
     const vastClient = new VastClient();
+    setHostIntelDestroyers({
+      destroyVast: (id) => vastClient.destroyInstance(id),
+    });
     if (!vastClient.apiKey) {
       console.log('[host-intel] Vast enabled but missing VAST_AI_KEY — skip Vast');
     } else {
@@ -207,7 +231,7 @@ async function main() {
           try {
             const comfyPort = TEST_GPU_PORT;
             const rentBody = {
-              label: 'gpuvietnam-host-intel',
+              label: HOST_INTEL_VAST_LABEL,
               image: TEST_IMAGE,
               disk: 20,
               runtype: 'args',
@@ -232,34 +256,51 @@ async function main() {
               results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: 'no instance id' });
               continue;
             }
+            trackHostIntelVastInstance(instanceId);
 
             const liveInstance = rented && typeof rented === 'object' ? rented : null;
-            const gate = await runTestProvisionGate({
-              waitForEndpoint: async () => {
-                // Fail fast on Vast disk-only / GPU struck-through before HTTP looks "ok".
-                try {
-                  const raw = await vastClient.getInstance(instanceId);
-                  const live = unwrapVastInstanceRecord(
-                    raw && typeof raw === 'object'
-                      ? /** @type {Record<string, unknown>} */ (raw)
-                      : null,
-                  );
-                  if (isVastDiskOnlyBilling(live)) {
-                    throw new Error('disk_only_billing (GPU struck through / stopped)');
+            const probeMaxMs = resolveHostIntelProbeMaxMs();
+            const gateTimeoutMs = Math.min(
+              HOST_REPUTATION.testGateTimeoutMs || 90_000,
+              probeMaxMs,
+            );
+            const gate = await Promise.race([
+              runTestProvisionGate({
+                waitForEndpoint: async () => {
+                  // Fail fast on Vast disk-only / GPU struck-through before HTTP looks "ok".
+                  try {
+                    const raw = await vastClient.getInstance(instanceId);
+                    const live = unwrapVastInstanceRecord(
+                      raw && typeof raw === 'object'
+                        ? /** @type {Record<string, unknown>} */ (raw)
+                        : null,
+                    );
+                    if (isVastDiskOnlyBilling(live)) {
+                      throw new Error('disk_only_billing (GPU struck through / stopped)');
+                    }
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    if (/disk_only/i.test(msg)) throw err instanceof Error ? err : new Error(msg);
+                    // getInstance flakiness — continue endpoint poll
                   }
-                } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  if (/disk_only/i.test(msg)) throw err instanceof Error ? err : new Error(msg);
-                  // getInstance flakiness — continue endpoint poll
-                }
-                const resolved = await resolveVastEndpoint(vastClient, instanceId, comfyPort, liveInstance);
-                const url = resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
-                console.log(`[host-intel-debug] endpoint resolution: instanceId=${instanceId} status=${resolved?.status} url=${url}`);
-                return url;
-              },
-              gpuLine: target.gpuLine,
-              timeoutMs: HOST_REPUTATION.testGateTimeoutMs,
-            });
+                  const resolved = await resolveVastEndpoint(vastClient, instanceId, comfyPort, liveInstance);
+                  const url = resolved?.status === 'resolved' ? resolved.endpoint?.url ?? null : null;
+                  console.log(`[host-intel-debug] endpoint resolution: instanceId=${instanceId} status=${resolved?.status} url=${url}`);
+                  return url;
+                },
+                gpuLine: target.gpuLine,
+                timeoutMs: gateTimeoutMs,
+              }),
+              sleep(probeMaxMs).then(() => ({
+                ok: false,
+                detail: `probe_max_ms_exceeded (${probeMaxMs})`,
+                elapsedMs: probeMaxMs,
+                gpuName: null,
+                vramGb: null,
+                driverVersion: null,
+                bootSec: null,
+              })),
+            ]);
 
             if (gate.ok) {
               rememberHostSuccess(target.hostKey, {
@@ -281,7 +322,11 @@ async function main() {
               });
             }
 
-            try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ }
+            await destroyHostIntelLeaseWithRetry(
+              (id) => vastClient.destroyInstance(id),
+              instanceId,
+              'vast',
+            );
 
             results.push({
               reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine,
@@ -289,7 +334,17 @@ async function main() {
             });
             console.log(`[host-intel-result] status=${gate.ok ? 'OK' : 'FAIL'} host=${target.hostKey} line=${target.gpuLine} reason=${target.reason} detail="${gate.detail}" elapsed=${Date.now() - tStart}ms`);
           } catch (err) {
-            if (instanceId) { try { await vastClient.destroyInstance(instanceId); } catch { /* ignore */ } }
+            if (instanceId) {
+              try {
+                await destroyHostIntelLeaseWithRetry(
+                  (id) => vastClient.destroyInstance(id),
+                  instanceId,
+                  'vast',
+                );
+              } catch {
+                /* alert already emitted */
+              }
+            }
             results.push({ reason: target.reason, hostKey: target.hostKey, gpuLine: target.gpuLine, ok: false, detail: err.message, elapsedMs: Date.now() - tStart });
             console.warn(`[host-intel-result] status=ERROR host=${target.hostKey} detail="${err.message}"`);
           }
@@ -324,10 +379,25 @@ async function main() {
     totalHosts: summary2.totalHosts,
     providers: enabledProviders,
   });
+
+  await cleanupTrackedHostIntelLeases({ reason: 'cycle_end' });
+  } finally {
+    releaseHostIntelLock();
+  }
 }
 
 main().catch(async (err) => {
   console.error('[host-intel] Fatal:', err);
-  try { await persistHostReputationStoreAsync(); } catch { /* ignore */ }
+  try {
+    await cleanupTrackedHostIntelLeases({ reason: 'fatal' });
+  } catch {
+    /* ignore */
+  }
+  try {
+    await persistHostReputationStoreAsync();
+  } catch {
+    /* ignore */
+  }
+  releaseHostIntelLock();
   process.exit(1);
 });

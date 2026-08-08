@@ -104,6 +104,7 @@ sudo journalctl -u gpuvietnam-lifecycle-worker -f
 |------|--------|
 | machine_operations drain (30s + kick) | `startMachineOperationBackgroundWorker` |
 | Clore orphan reconcile | `startCloreOrphanReconciliation` |
+| Vast host-intel orphan reconcile | `startVastHostIntelOrphanReconciliation` (label `gpuvietnam-host-intel` only) |
 | Infrastructure reconcile + settlement retry | `executeReconciliation({ repair: true })` every `LIFECYCLE_RECONCILE_INTERVAL_MS` (default 15m) |
 
 ---

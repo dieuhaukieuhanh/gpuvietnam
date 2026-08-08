@@ -18,6 +18,7 @@ Discord/Slack webhook có thể thêm sau; hiện tại chỉ email.
 |-------|---------|
 | `provision_timeout` | Start provision FAIL (timeout / no workstation / rent failed) |
 | `orphan_clore` | Clore orphan order detected |
+| `orphan_host_intel` | Host-intel probe destroy/cleanup failed (or sweeper destroy fail) |
 | `settlement_failed` | Settlement RPC fail |
 | `machine_op_stuck` | Self-heal recovers stale leased/running ops |
 | `recovery_exhausted` | Machine operation → `dead_letter` |

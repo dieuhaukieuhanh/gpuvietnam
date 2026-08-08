@@ -32,6 +32,13 @@ import {
   selectTargetsFair,
 } from './host-intelligence-targets.js';
 import { matchesHostIntelligenceProvider } from './host-intelligence-inventory.js';
+import {
+  HOST_INTEL_CLORE_LABEL,
+  setHostIntelDestroyers,
+  trackHostIntelCloreOrder,
+  destroyHostIntelLeaseWithRetry,
+  resolveHostIntelProbeMaxMs,
+} from './host-intel-runtime.js';
 
 export const CLORE_HOST_INTEL_GPU_LINES = ['rtx3090', 'rtx4090_1x', 'rtx5090_1x'];
 const LINE_TO_PLAN = { rtx3090: 'starter', rtx4090_1x: 'pro', rtx5090_1x: 'studio' };
@@ -137,7 +144,7 @@ async function rentCloreTestHost(client, best, gpuLine) {
       Math.random().toString(36).slice(2, 8) +
       'A1';
 
-  const label = 'gpuvietnam-host-intel-clore';
+  const label = HOST_INTEL_CLORE_LABEL;
   /** @type {Record<string, unknown>} */
   const body = {
     type: 'on-demand',
@@ -231,6 +238,9 @@ export async function runCloreHostIntelligenceCycle(options = {}) {
   await loadHostReputationStoreAsync();
 
   const client = new CloreClient();
+  setHostIntelDestroyers({
+    destroyClore: (id) => client.destroyInstance(id),
+  });
   if (!client.isConfigured()) {
     log('[host-intel-clore] Missing CLORE_API_KEY — skip');
     return {
@@ -347,6 +357,7 @@ export async function runCloreHostIntelligenceCycle(options = {}) {
 
       const rented = await rentCloreTestHost(client, best, target.gpuLine);
       orderId = rented.orderId;
+      trackHostIntelCloreOrder(orderId);
       log(`[host-intel-clore] rented orderId=${orderId} host=${target.hostKey} image=${TEST_IMAGE}`);
 
       const seedOrder =
@@ -355,31 +366,51 @@ export async function runCloreHostIntelligenceCycle(options = {}) {
           : null;
 
       let lastOrder = seedOrder;
-      const gate = await runTestProvisionGate({
-        waitForEndpoint: async () => {
-          try {
-            const live = await client.getOrder(orderId);
-            if (live && typeof live === 'object') {
-              lastOrder = /** @type {Record<string, unknown>} */ (live);
-            }
-          } catch {
-            /* keep lastOrder */
-          }
-          const endpoints = lastOrder
-            ? resolveClorePublicEndpoints(lastOrder, TEST_GPU_PORT)
-            : null;
-          const url = endpoints?.endpointUrl ?? null;
-          log(`[host-intel-clore] endpoint orderId=${orderId} url=${url}`);
-          return url;
-        },
-        gpuLine: target.gpuLine,
-        // Clore http_pub appears before container listen; allow pull + proxy settle.
-        // 5090 hosts often need longer before /health is ready.
-        timeoutMs: Math.max(
+      const probeMaxMs = resolveHostIntelProbeMaxMs();
+      const gateTimeoutMs = Math.min(
+        Math.max(
           HOST_REPUTATION.testGateTimeoutMs || 90_000,
           target.gpuLine === 'rtx5090_1x' ? 180_000 : 120_000,
         ),
-      });
+        probeMaxMs,
+      );
+      const gate = await Promise.race([
+        runTestProvisionGate({
+          waitForEndpoint: async () => {
+            try {
+              const live = await client.getOrder(orderId);
+              if (live && typeof live === 'object') {
+                lastOrder = /** @type {Record<string, unknown>} */ (live);
+              }
+            } catch {
+              /* keep lastOrder */
+            }
+            const endpoints = lastOrder
+              ? resolveClorePublicEndpoints(lastOrder, TEST_GPU_PORT)
+              : null;
+            const url = endpoints?.endpointUrl ?? null;
+            log(`[host-intel-clore] endpoint orderId=${orderId} url=${url}`);
+            return url;
+          },
+          gpuLine: target.gpuLine,
+          // Clore http_pub appears before container listen; allow pull + proxy settle.
+          // 5090 hosts often need longer before /health is ready.
+          timeoutMs: gateTimeoutMs,
+        }),
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              ok: false,
+              detail: `probe_max_ms_exceeded (${probeMaxMs})`,
+              elapsedMs: probeMaxMs,
+              gpuName: null,
+              vramGb: null,
+              driverVersion: null,
+              bootSec: null,
+            });
+          }, probeMaxMs);
+        }),
+      ]);
 
       if (gate.ok) {
         rememberHostSuccess(target.hostKey, {
@@ -402,11 +433,11 @@ export async function runCloreHostIntelligenceCycle(options = {}) {
         });
       }
 
-      try {
-        await client.destroyInstance(orderId);
-      } catch {
-        /* ignore */
-      }
+      await destroyHostIntelLeaseWithRetry(
+        (id) => client.destroyInstance(id),
+        orderId,
+        'clore',
+      );
 
       results.push({
         reason: target.reason,
@@ -423,9 +454,13 @@ export async function runCloreHostIntelligenceCycle(options = {}) {
       const message = err instanceof Error ? err.message : String(err);
       if (orderId) {
         try {
-          await client.destroyInstance(orderId);
+          await destroyHostIntelLeaseWithRetry(
+            (id) => client.destroyInstance(id),
+            orderId,
+            'clore',
+          );
         } catch {
-          /* ignore */
+          /* alert already emitted */
         }
       }
       rememberHostFailure(target.hostKey, {

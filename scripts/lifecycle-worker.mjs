@@ -95,12 +95,16 @@ async function main() {
   const { startCloreOrphanReconciliation } = await import(
     '../src/lib/gpu/providers/clore/clore-orphan-runner.js'
   );
+  const { startVastHostIntelOrphanReconciliation } = await import(
+    '../src/lib/gpu/providers/vast/vast-host-intel-orphan-runner.js'
+  );
   const { executeReconciliation } = await import(
     '../src/lib/infrastructure/reconciliation-run.js'
   );
 
   startMachineOperationBackgroundWorker();
   startCloreOrphanReconciliation();
+  startVastHostIntelOrphanReconciliation();
 
   // Immediate kick so pending provisions do not wait for first 30s tick
   kickMachineOperationWorker(supabaseAdmin, { reason: 'lifecycle_boot' });

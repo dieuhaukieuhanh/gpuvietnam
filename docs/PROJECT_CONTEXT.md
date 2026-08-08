@@ -77,7 +77,7 @@
 | ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
 | Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
-| **Host Intelligence System** | ✅ **2026-08-06** + **Clore cycle 2026-08-08** — VPS `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. Sổ tách `vast-host:*` / `clore-host:*`. Vast + Clore: 3090/4090/**5090** (gpu-test; Clore 5090 timeout gate 180s). Default runtime `providers: { vast: true, clore: false }` — Clore bật qua Admin. Debt: `passRate` chưa cập nhật khi fail. **Không** trong `vercel.json`. |
+| **Host Intelligence System** | ✅ **2026-08-06** + **Clore 2026-08-08** + **orphan guard 2026-08-09** — VPS timer `OnUnitInactiveSec=25m` → cron; lock + SIGTERM cleanup + Vast sweeper (grace 10m, alert `orphan_host_intel`). Docs: `HOST_INTEL_ORPHAN_GUARD.md`. Sổ `vast-host:*` / `clore-host:*`. Default `clore: false`. Debt: passRate-on-fail. **Không** trong `vercel.json`. |
 | **Staging môi trường** | ✅ **Xong** — Vercel staging + Supabase `cczqbuuuyctiqoiruxah` + `gpuvietnam-lifecycle-worker-staging` active; env switch script |
 | **RC6 Scenarios 1–5** | 🟡 Chưa VERIFIED — gate PASS; Vast `PASS_HTTP_READY`; S1 FAIL Clore (không phải RC6); chưa re-run Vast. **Park** — không chặn P0-D prod |
 | **MakeStudio** (Train / Preview / Final) | ⏸️ **Sau MVP** — scaffold UI/API/SQL `0053`/Docker giữ; **không** ưu tiên trước Go-Live |
@@ -719,6 +719,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 | **SePay CK tự động (2026-08 chốt)** | `sepay.js` + `transfer-code.js` + QR + webhook HMAC + SQL `0054`; mã `NVxxxx`; match wallet/gói/renew; cron daily Hobby; ops + test nạp ví thật OK. Runbook `SEPAY_SETUP.md`. |
 | **Auth Email-first + Google + Zalo (2026-08-08)** | Email chính; Google OAuth trực tiếp; Zalo ZNS OTP + Speedsms fallback; disposable email blocklist. |
 | **Host Intelligence — vá + Clore (2026-08-08)** | Persist merge-by-key; fair deficit slots; available = known-good ∩ chợ; Admin card Vast + Clore. Clore cycle **đã wire**, default `clore: false`. Debt: passRate-on-fail. |
+| **Host Intelligence orphan guard (2026-08-09)** | Lock + SIGTERM cleanup + probe TTL; timer `OnUnitInactiveSec`; Vast sweeper grace 10m + alert `orphan_host_intel`. Destroyed live orphan `47189275`. |
 | **gpu-test HOST IPv4 (2026-08-08)** | Bake `HOST=0.0.0.0`; Hub digest `sha256:fd74e09b…`. ComfyUI vẫn `COMFYUI_LISTEN`. |
 | **Provider routing Admin (2026-08-09 prod)** | Hạ tầng SoT enable + priority; `0056`; Vercel Ready; VPS bỏ `GPU_VAST_ONLY` pin. |
 | **Salad adapter (2026-08-05)** | SaladClient + gate; bật qua Admin policy (default off). |

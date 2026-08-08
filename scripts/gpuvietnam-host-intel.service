@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=oneshot
 User=root
 WorkingDirectory=/opt/gpuvietnam
+# Allow SIGTERM cleanup (destroy tracked probe instances) before kill.
+TimeoutStopSec=120
+KillMode=mixed
 ExecStart=/usr/bin/node --import ./scripts/register-src-alias.mjs scripts/host-intelligence-cron.mjs
 Environment=NODE_ENV=production
 Environment=HOME=/opt/gpuvietnam/tmp
