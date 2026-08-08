@@ -1,3 +1,10 @@
+import {
+  allocateTransferCode,
+  extractDepositTransferCode,
+} from './transfer-code.js';
+
+export { extractDepositTransferCode };
+
 export const MIN_WALLET_DEPOSIT = 50_000;
 
 export const WALLET_DEPOSIT_QUICK_AMOUNTS = [100_000, 200_000, 500_000, 1_000_000];
@@ -20,26 +27,6 @@ export const WALLET_DEPOSIT_TYPES = ['deposit'];
 
 export function formatDepositDescription(amount) {
   return `Nạp ${Number(amount).toLocaleString('vi-VN')}đ qua chuyển khoản`;
-}
-
-/**
- * Mã CK từ pending deposit: NV#### trong description, hoặc legacy GD + 2 hex UUID.
- * @param {{ id?: string, description?: string|null }|string|null|undefined} transactionOrId
- */
-export function extractDepositTransferCode(transactionOrId) {
-  if (!transactionOrId) return null;
-  if (typeof transactionOrId === 'string') {
-    return `GD${shortTransactionId(transactionOrId)}`;
-  }
-  const desc = String(transactionOrId.description || '').toUpperCase();
-  const nv = desc.match(/NV\d{4}/);
-  if (nv) return nv[0];
-  const gd = desc.match(/GD[A-Z0-9]{2}/);
-  if (gd) return gd[0];
-  if (transactionOrId.id) {
-    return `GD${shortTransactionId(transactionOrId.id)}`;
-  }
-  return null;
 }
 
 /** @deprecated Prefer extractDepositTransferCode(transaction) */
@@ -110,8 +97,6 @@ export async function createWalletDepositRequest(supabaseAdmin, userId, amount) 
   const currentBalance = Number(profile?.wallet_balance ?? 0);
   const now = new Date().toISOString();
 
-  // Dynamic import tránh circular dependency với sepay.js
-  const { allocateTransferCode } = await import('./sepay.js');
   const transferCode = await allocateTransferCode(supabaseAdmin);
 
   const { data: tx, error: txError } = await supabaseAdmin

@@ -10,14 +10,27 @@
  */
 
 import crypto from 'node:crypto';
-import { extractDepositTransferCode, WALLET_BANK_INFO } from './wallet-deposit.js';
+import { WALLET_BANK_INFO } from './wallet-deposit.js';
+import {
+  SEPAY_PREFIX,
+  allocateTransferCode,
+  buildTransferDescription,
+  extractDepositTransferCode,
+  generateTransferCode,
+  parseTransferCode,
+} from './transfer-code.js';
+
+export {
+  SEPAY_PREFIX,
+  allocateTransferCode,
+  buildTransferDescription,
+  extractDepositTransferCode,
+  generateTransferCode,
+  parseTransferCode,
+};
 
 // ── Config ────────────────────────────────────────────────────────
 
-/** Tiền tố mã CK — khớp cấu hình SePay (Công ty → Cấu trúc mã thanh toán). */
-export const SEPAY_PREFIX = 'NV';
-const CODE_LENGTH = 4;
-const CODE_CHARS = '0123456789';
 /** Reject webhooks whose timestamp drifts more than 5 minutes (SePay anti-replay). */
 const WEBHOOK_MAX_SKEW_SEC = 300;
 
@@ -37,86 +50,6 @@ export function getSepayConfig() {
 export function isSepayConfigured() {
   const config = getSepayConfig();
   return Boolean(config.webhookSecret && config.accountNumber);
-}
-
-// ── Transfer code generation ──────────────────────────────────────
-
-/**
- * Generate a random transfer code: NV + 4 digits.
- * Example: NV4821
- */
-export function generateTransferCode() {
-  let code = '';
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  }
-  return `${SEPAY_PREFIX}${code}`;
-}
-
-/**
- * Parse transfer code from bank content / SePay payload.
- * Primary: NV + 4 digits. Legacy: GD + 2 alphanumeric (pending cũ).
- */
-export function parseTransferCode(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  const cleaned = raw.trim().toUpperCase();
-  const nv = cleaned.match(/NV\d{4}/);
-  if (nv) return nv[0];
-  const gd = cleaned.match(/GD[A-Z0-9]{2}/);
-  return gd ? gd[0] : null;
-}
-
-/**
- * Allocate an NV code not currently used by pending wallet / GPU / renew rows.
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {number} [maxAttempts]
- */
-export async function allocateTransferCode(supabaseAdmin, maxAttempts = 48) {
-  for (let i = 0; i < maxAttempts; i++) {
-    const code = generateTransferCode();
-    const inUse = await isTransferCodeInUse(supabaseAdmin, code);
-    if (!inUse) return code;
-  }
-  // Extremely unlikely — fall back to random even if collision check failed.
-  return generateTransferCode();
-}
-
-/**
- * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin
- * @param {string} transferCode
- */
-async function isTransferCodeInUse(supabaseAdmin, transferCode) {
-  const code = String(transferCode || '').toUpperCase();
-  if (!code) return true;
-
-  const [wallet, subs, renews] = await Promise.all([
-    supabaseAdmin
-      .from('wallet_transactions')
-      .select('id, description')
-      .eq('status', 'pending_deposit')
-      .eq('type', 'deposit')
-      .order('created_at', { ascending: false })
-      .limit(80),
-    supabaseAdmin
-      .from('subscriptions')
-      .select('id, transfer_note')
-      .eq('status', 'pending_payment')
-      .ilike('transfer_note', `%${code}%`)
-      .limit(5),
-    supabaseAdmin
-      .from('plan_renew_requests')
-      .select('id, transfer_note')
-      .eq('status', 'pending')
-      .ilike('transfer_note', `%${code}%`)
-      .limit(5),
-  ]);
-
-  if (subs.data?.length || renews.data?.length) return true;
-
-  for (const tx of wallet.data || []) {
-    if (extractDepositTransferCode(tx) === code) return true;
-  }
-  return false;
 }
 
 // ── HMAC verification ─────────────────────────────────────────────
@@ -528,25 +461,6 @@ export async function generateVietQR({ amount, description, asDataUrl = false } 
       warning: err instanceof Error ? err.message : String(err),
     };
   }
-}
-
-/**
- * Nội dung CK = mã 6 ký tự NVxxxx (xxxx = số). Không kèm tên khách.
- * @param {string} [transferCodeOrName]
- * @param {string} [maybeCode] nếu gọi kiểu cũ (fullName, code) thì lấy code
- */
-export function buildTransferDescription(transferCodeOrName, maybeCode) {
-  const fromSecond = parseTransferCode(maybeCode);
-  if (fromSecond) return fromSecond;
-  const fromFirst = parseTransferCode(transferCodeOrName);
-  if (fromFirst) return fromFirst;
-  if (maybeCode && /^NV\d{4}$/i.test(String(maybeCode).trim())) {
-    return String(maybeCode).trim().toUpperCase();
-  }
-  if (transferCodeOrName && /^NV\d{4}$/i.test(String(transferCodeOrName).trim())) {
-    return String(transferCodeOrName).trim().toUpperCase();
-  }
-  return generateTransferCode();
 }
 
 /**
