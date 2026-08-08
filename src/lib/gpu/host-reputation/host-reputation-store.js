@@ -9,6 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
+import { createClient } from '@supabase/supabase-js';
 import { HOST_REPUTATION } from './host-reputation-config.js';
 import { applyTimeRecovery } from './host-reputation-score.js';
 import { logHostReputationEvent } from './host-reputation-log.js';
@@ -28,8 +29,6 @@ function getSupabaseAdmin() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   try {
-    // Dynamic import to avoid bundling supabase-js on cold paths
-    const { createClient } = require('@supabase/supabase-js');
     _supabaseAdmin = createClient(url, key, { auth: { persistSession: false } });
     return _supabaseAdmin;
   } catch {

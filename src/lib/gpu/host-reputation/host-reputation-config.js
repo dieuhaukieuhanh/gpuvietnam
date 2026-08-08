@@ -4,6 +4,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 function envMs(name, fallback) {
   const raw = Number(process.env[name] ?? fallback);
@@ -129,7 +130,6 @@ function getSupabaseAdminForConfig() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
   try {
-    const { createClient } = require('@supabase/supabase-js');
     _supabaseAdminConfig = createClient(url, key, { auth: { persistSession: false } });
     return _supabaseAdminConfig;
   } catch {
