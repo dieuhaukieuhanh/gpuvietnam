@@ -205,6 +205,18 @@ export function loadHostReputationStore() {
   loadFromJsonFile();
 }
 
+/** Async version — waits for Supabase load. Use in API routes. */
+export async function loadHostReputationStoreAsync() {
+  if (loaded) return;
+  loaded = true;
+  if (useSupabase()) {
+    const ok = await loadFromSupabase();
+    if (!ok) loadFromJsonFile();
+  } else {
+    loadFromJsonFile();
+  }
+}
+
 export function persistHostReputationStore() {
   if (useSupabase()) {
     // Fire-and-forget async persist — don't block the caller

@@ -7,6 +7,7 @@
 import { requireAdmin } from '@/lib/admin-auth';
 import {
   getHostIntelligenceSummary,
+  loadHostReputationStoreAsync,
 } from '@/lib/gpu/host-reputation/index.js';
 import {
   readHostIntelligenceConfigAsync,
@@ -67,6 +68,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       const config = await readHostIntelligenceConfigAsync();
+      await loadHostReputationStoreAsync();
       const summary = getHostIntelligenceSummary();
       return res.status(200).json({ config, summary });
     } catch (err) {
@@ -96,6 +98,7 @@ export default async function handler(req, res) {
         } : {}),
       };
       await writeHostIntelligenceConfigAsync(updated);
+      await loadHostReputationStoreAsync();
       const summary = getHostIntelligenceSummary();
       return res.status(200).json({ config: updated, summary });
     } catch (err) {
