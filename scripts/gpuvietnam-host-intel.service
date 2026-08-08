@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=/root/gpuvietnam
+WorkingDirectory=/opt/gpuvietnam
 ExecStart=/usr/bin/node --import ./scripts/register-src-alias.mjs scripts/host-intelligence-cron.mjs
 Environment=NODE_ENV=production
-EnvironmentFile=/root/gpuvietnam/.env.production
+EnvironmentFile=-/opt/gpuvietnam/.env.production
 StandardOutput=journal
 StandardError=journal
