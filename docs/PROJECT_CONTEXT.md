@@ -77,7 +77,7 @@
 | ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
 | Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
-| **Host Intelligence System** | ✅ **2026-08-06** + **Clore 2026-08-08** + **orphan guard 2026-08-09** — VPS timer `OnUnitInactiveSec=25m` → cron; lock + SIGTERM cleanup + Vast sweeper (grace 10m, alert `orphan_host_intel`). Docs: `HOST_INTEL_ORPHAN_GUARD.md`. Sổ `vast-host:*` / `clore-host:*`. Default `clore: false`. Debt: passRate-on-fail. **Không** trong `vercel.json`. |
+| **Host Intelligence System** | ✅ **2026-08-06** + **Clore 2026-08-08** + **orphan guard 2026-08-09** (`26fb899`, VPS synced) — timer `OnUnitInactiveSec=25m`; lock + SIGTERM cleanup + Vast sweeper (grace 10m, alert `orphan_host_intel`); orphan `47189275` đã hủy. Docs: [`HOST_INTEL_ORPHAN_GUARD.md`](operations/HOST_INTEL_ORPHAN_GUARD.md). Default `clore: false`. Debt: passRate-on-fail. **Không** trong `vercel.json`. |
 | **Staging môi trường** | ✅ **Xong** — Vercel staging + Supabase `cczqbuuuyctiqoiruxah` + `gpuvietnam-lifecycle-worker-staging` active; env switch script |
 | **RC6 Scenarios 1–5** | 🟡 Chưa VERIFIED — gate PASS; Vast `PASS_HTTP_READY`; S1 FAIL Clore (không phải RC6); chưa re-run Vast. **Park** — không chặn P0-D prod |
 | **MakeStudio** (Train / Preview / Final) | ⏸️ **Sau MVP** — scaffold UI/API/SQL `0053`/Docker giữ; **không** ưu tiên trước Go-Live |
@@ -531,7 +531,9 @@ subscriptions ──sync──► user_plan_inventory ◄── manual_hour_gran
 | `docker/slim/scripts/start.sh` | Entrypoint ComfyUI (listen qua env) |
 | `scripts/setup-workstation.sh` | Lọc workflow từ `workflows-stock/` theo env |
 | `scripts/download-models.sh` | Tải checkpoint/upscaler |
-| `scripts/host-intelligence-cron.mjs` | VPS Host Intelligence (Vast ± Clore theo Admin) |
+| `scripts/host-intelligence-cron.mjs` | VPS Host Intelligence (Vast ± Clore theo Admin); lock + SIGTERM cleanup |
+| `scripts/lifecycle-worker.mjs` | P0-A drain + Clore orphan + **Vast host-intel orphan sweeper** |
+| `docs/operations/HOST_INTEL_ORPHAN_GUARD.md` | Orphan guard ops (grace/env/manual cleanup) |
 | `scripts/build/build-makestudio.sh` | Build/push MakeStudio images |
 | `workflows/*.json` | 5 workflow stock (mount + bake vào image) |
 
@@ -719,7 +721,7 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 | **SePay CK tự động (2026-08 chốt)** | `sepay.js` + `transfer-code.js` + QR + webhook HMAC + SQL `0054`; mã `NVxxxx`; match wallet/gói/renew; cron daily Hobby; ops + test nạp ví thật OK. Runbook `SEPAY_SETUP.md`. |
 | **Auth Email-first + Google + Zalo (2026-08-08)** | Email chính; Google OAuth trực tiếp; Zalo ZNS OTP + Speedsms fallback; disposable email blocklist. |
 | **Host Intelligence — vá + Clore (2026-08-08)** | Persist merge-by-key; fair deficit slots; available = known-good ∩ chợ; Admin card Vast + Clore. Clore cycle **đã wire**, default `clore: false`. Debt: passRate-on-fail. |
-| **Host Intelligence orphan guard (2026-08-09)** | Lock + SIGTERM cleanup + probe TTL; timer `OnUnitInactiveSec`; Vast sweeper grace 10m + alert `orphan_host_intel`. Destroyed live orphan `47189275`. |
+| **Host Intelligence orphan guard (2026-08-09)** | `26fb899` → `master` + VPS synced. Lock + SIGTERM cleanup + probe TTL; timer `OnUnitInactiveSec` + `TimeoutStopSec=120`; Vast sweeper grace 10m + alert `orphan_host_intel`. Destroyed live orphan `47189275` (verify listed=0). |
 | **gpu-test HOST IPv4 (2026-08-08)** | Bake `HOST=0.0.0.0`; Hub digest `sha256:fd74e09b…`. ComfyUI vẫn `COMFYUI_LISTEN`. |
 | **Provider routing Admin (2026-08-09 prod)** | Hạ tầng SoT enable + priority; `0056`; Vercel Ready; VPS bỏ `GPU_VAST_ONLY` pin. |
 | **Salad adapter (2026-08-05)** | SaladClient + gate; bật qua Admin policy (default off). |
@@ -745,10 +747,11 @@ npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 
 1. VPS lifecycle worker `active` + `GPU_ALLOW_VAST=true` (không pin `GPU_*_ONLY` trừ break-glass)
 2. Admin Hạ tầng *Provider routing* load/save OK; worker resolve order từ Supabase
-3. Host-intel timer `gpuvietnam-host-intel.timer` active; image `gpu-test:v1` (`HOST=0.0.0.0`)
-4. Migrations 0049 + **0056** (`provider_routing_policy`) applied
-5. Start một lần từ `gpuvietnam.com` → `operationId` → Comfy → Stop sạch
-6. (Tuỳ chọn) `systemctl restart` worker giữa provision — op không mất
+3. Host-intel timer `gpuvietnam-host-intel.timer` active (`OnUnitInactiveSec`); image `gpu-test:v1` (`HOST=0.0.0.0`)
+4. Worker log có `vast.host_intel_orphan` / `ORPHAN_RECONCILE_STARTED` (hoặc PASS); không còn instance label `gpuvietnam-host-intel` quá grace
+5. Migrations 0049 + **0056** (`provider_routing_policy`) applied
+6. Start một lần từ `gpuvietnam.com` → `operationId` → Comfy → Stop sạch
+7. (Tuỳ chọn) `systemctl restart` worker giữa provision — op không mất
 
 **Chat mới — copy nhanh:**
 
@@ -963,4 +966,4 @@ Nền tảng thuê GPU làm AI Art đã **chạy được phần lõi**: khách 
 
 ---
 
-*Tài liệu cập nhật: 2026-08-09 — Staging môi trường ✅ tách khỏi RC6 Scenarios (park); Provider routing Admin prod; P0-D tiếp theo. Chi tiết: `docs/PROGRESS.md`.*
+*Tài liệu cập nhật: 2026-08-09 — Host-intel orphan guard ✅ (`26fb899` + VPS); Staging môi trường ✅ / RC6 park; Provider routing Admin prod; P0-D tiếp theo. Chi tiết: `docs/PROGRESS.md`.*

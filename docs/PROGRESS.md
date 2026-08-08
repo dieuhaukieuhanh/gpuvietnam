@@ -17,7 +17,7 @@
 | Hạng mục | Trạng thái |
 |----------|------------|
 | **Provider routing Admin (Hạ tầng)** | ✅ **Prod 2026-08-09** — SoT bật/tắt + priority Vast/Clore/Salad cho **Start mới** (không cắt phiên đang chạy). DB `0056`, API `/api/admin/provider-routing-policy`, panel Admin. Vercel Ready (`dbfe602`); VPS worker load policy từ Supabase; unit **không** pin `GPU_VAST_ONLY`. Docs: [`PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md). |
-| **Host Intelligence System** | ✅ **2026-08-06** + **vá/Clore 2026-08-08** + **orphan guard 2026-08-09**. Timer `OnUnitInactiveSec=25m` (anti-overlap); single-flight lock; SIGTERM cleanup + probe TTL; lifecycle sweeper Vast label `gpuvietnam-host-intel` (grace 10m, alert `orphan_host_intel`). Docs: [`HOST_INTEL_ORPHAN_GUARD.md`](operations/HOST_INTEL_ORPHAN_GUARD.md). Sổ `vast-host:*` / `clore-host:*`. Clore opt-in Admin. Debt: passRate-on-fail. |
+| **Host Intelligence System** | ✅ **2026-08-06** + **vá/Clore 2026-08-08** + **orphan guard 2026-08-09** (`26fb899` → `master`, VPS synced). Timer `OnUnitInactiveSec=25m`; lock + SIGTERM cleanup + probe TTL; lifecycle sweeper label `gpuvietnam-host-intel` (grace 10m, alert `orphan_host_intel`); đã hủy orphan live `47189275` (listed=0). Docs: [`HOST_INTEL_ORPHAN_GUARD.md`](operations/HOST_INTEL_ORPHAN_GUARD.md). Debt: passRate-on-fail. |
 | **gpu-test HOST=0.0.0.0** | ✅ **2026-08-08** — Bake `HOST=0.0.0.0` trong `docker/test-gpu`; Hub `gpu-test:v1` digest `sha256:fd74e09b…`. ComfyUI/MakeStudio dùng `COMFYUI_LISTEN` (không đổi bake). |
 | **MakeStudio (Train / Preview / Final)** | ⏸️ **Sau MVP** — Scaffold UI + API + SQL `0053` + Docker có sẵn (`/dashboard/makestudio`). **Không** ưu tiên trước Go-Live / Staging RC6. Còn bug snake↔camel, chưa nav, chưa billing/E2E. |
 | **SePay (CK tự động)** | ✅ **2026-08-08 chốt xong** — VietQR + webhook HMAC + match nạp ví/gói/tái tục; mã CK `NVxxxx` (6 ký tự, số); SQL `0054`; cron reconcile daily Hobby; env/webhook prod đã cấu hình; **test nạp ví thật OK**. Tick “đã CK” chỉ đóng UI — không cộng tiền. Ops: [`SEPAY_SETUP.md`](operations/SEPAY_SETUP.md). |
@@ -81,7 +81,7 @@
 > **Staging môi trường:** ✅ xong. **RC6 Scenarios:** 🟡 park — re-run Scenario 1 Vast khi cần; không chặn P0-D.  
 > **SePay:** ✅ **chốt xong** (code + ops + test nạp ví thật; mã `NVxxxx`).  
 > **MakeStudio / LoRA:** ⏸️ **sau MVP** — scaffold giữ, không làm tiếp trước Go-Live.  
-> **Host Intelligence:** Debt passRate-on-fail; đánh giá bật Clore (`providers.clore`); ổn định pool known-good available.  
+> **Host Intelligence:** Orphan guard ✅ (`26fb899` / VPS). Debt còn: passRate-on-fail; đánh giá bật Clore (`providers.clore`); ổn định pool known-good available.  
 > **Không làm ngay:** Dual Run, warm pool, MakeStudio/LoRA.  
 > **Tech debt:** Vast disk-only lọt filter → harden post-rent gate.  
 > **Roadmap dễ hiểu:** xem [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--đang-ở-đâu-còn-làm-gì).
@@ -1192,6 +1192,7 @@ Roadmap dễ hiểu: [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--
 
 ## Đã xong (gần đây)
 
+- [x] **Host Intelligence orphan guard — 2026-08-09** — Commit `26fb899` push `master`; VPS: cron lock + SIGTERM cleanup + probe TTL; timer `OnUnitInactiveSec=25m` + `TimeoutStopSec=120`; lifecycle sweeper `startVastHostIntelOrphanReconciliation` (grace 10m); alert `orphan_host_intel`; hủy orphan `47189275`; verify `listed=0` / `ORPHAN_RECONCILE_PASS`. Docs: [`HOST_INTEL_ORPHAN_GUARD.md`](operations/HOST_INTEL_ORPHAN_GUARD.md)
 - [x] **Provider routing Admin (Hạ tầng) — prod 2026-08-09** — SoT bật/tắt + priority Vast/Clore/Salad cho **Start mới**; không cắt phiên đang chạy; migration `0056` applied; API + panel live trên `gpuvietnam.com`; VPS bỏ pin `GPU_VAST_ONLY` (giữ `GPU_ALLOW_VAST`); env `GPU_*_ONLY` chỉ còn break-glass. Docs: [`PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md)
 - [x] **Auth Hardening P0+P1+P2 (2026-08-02)** — Rate limit 5 endpoints + OTP lock/cooldown/single-use; Middleware JWT verify (Web Crypto HS256); Secure cookie + Security headers (HSTS/CSP/X-Frame/nosniff); Anti-enumeration login; Fix `phone_verified` reset; Password strength client+server + confirm password; Session invalidation on password change; `pending_login_password` TTL 1h; Audit log `auth_audit_log`; Sign-out all devices
 - [x] **P0-A code path** — enqueue `user_start_provision` + VPS `scripts/lifecycle-worker.mjs` + systemd unit; bỏ fire-and-forget provision trên serverless
