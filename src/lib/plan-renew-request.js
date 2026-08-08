@@ -160,8 +160,7 @@ export async function createPlanRenewTransferRequest(supabaseAdmin, userId, { pl
 
   const now = new Date().toISOString();
   const transferCode = await allocateTransferCode(supabaseAdmin);
-  const shortUser = String(userId).replace(/-/g, '').slice(0, 6).toUpperCase();
-  const transferNote = `TAITUC-${shortUser} ${transferCode}`;
+  const transferNote = transferCode;
 
   const { data: row, error: insertError } = await supabaseAdmin
     .from('plan_renew_requests')

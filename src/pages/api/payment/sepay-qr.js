@@ -24,11 +24,12 @@ export default async function handler(req, res) {
     }
 
     const code = parseTransferCode(transferCode) || String(transferCode).trim().toUpperCase();
-    const displayName = (fullName || user?.user_metadata?.full_name || user?.email || 'Khach Hang').trim();
-    const description =
+    const override =
       typeof descriptionOverride === 'string' && descriptionOverride.trim()
         ? descriptionOverride.trim()
-        : `${displayName} ${code}`;
+        : '';
+    // Chỉ dùng mã GD — bỏ tên/Khach Hang để nội dung CK gọn.
+    const description = parseTransferCode(override) || code;
 
     const result = await generateVietQR({
       amount: Number(amount),

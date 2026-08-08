@@ -33,15 +33,16 @@ describe('wallet transfer code length parity', () => {
 });
 
 describe('buildTransferDescription / VietQR', () => {
-  it('builds low-profile description with GD code', () => {
-    assert.equal(buildTransferDescription('Nguyen Van A', 'GDX7'), 'Nguyen Van A GDX7');
+  it('uses GD code only (no customer name prefix)', () => {
+    assert.equal(buildTransferDescription('Nguyen Van A', 'GDX7'), 'GDX7');
+    assert.equal(buildTransferDescription(null, 'GDA1'), 'GDA1');
   });
 
   it('builds qr.sepay.vn URL', () => {
-    const url = buildVietQrUrl({ amount: 100000, description: 'Nguyen Van A GDX7' });
+    const url = buildVietQrUrl({ amount: 100000, description: 'GDX7' });
     assert.match(url, /^https:\/\/qr\.sepay\.vn\/img\?/);
     assert.match(url, /amount=100000/);
-    assert.match(url, /des=Nguyen/);
+    assert.match(url, /des=GDX7/);
     assert.match(url, /template=qronly/);
   });
 });

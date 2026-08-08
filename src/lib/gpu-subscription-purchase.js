@@ -183,22 +183,14 @@ export async function createPendingGpuSubscription(
   const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
 
-  // Ensure SePay can auto-match: transfer_note must contain GD + 2 chars.
+  // Ensure SePay can auto-match: transfer_note = GD + 2 chars only.
   let note = typeof transferNote === 'string' ? transferNote.trim() : '';
   let transferCode = parseTransferCode(note);
   if (!transferCode) {
     transferCode = await allocateTransferCode(supabaseAdmin);
-    const profileName = fullName || null;
-    if (!profileName) {
-      const { data: profile } = await supabaseAdmin
-        .from('users')
-        .select('full_name')
-        .eq('id', userId)
-        .maybeSingle();
-      note = buildTransferDescription(profile?.full_name, transferCode);
-    } else {
-      note = buildTransferDescription(profileName, transferCode);
-    }
+    note = buildTransferDescription(fullName, transferCode);
+  } else {
+    note = transferCode;
   }
 
   const { data, error } = await supabaseAdmin

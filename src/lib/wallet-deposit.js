@@ -31,10 +31,9 @@ export function shortTransactionId(transactionId) {
   return String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
 }
 
-export function buildDepositPendingResponse(transaction, fullName) {
+export function buildDepositPendingResponse(transaction, _fullName) {
   const amount = Number(transaction.amount);
   const code = buildDepositTransferNote(transaction.id);
-  const displayName = (fullName || 'Khach Hang').trim();
   return {
     transaction: {
       id: transaction.id,
@@ -50,7 +49,7 @@ export function buildDepositPendingResponse(transaction, fullName) {
       accountNumber: WALLET_BANK_INFO.accountNumber,
       accountName: WALLET_BANK_INFO.accountName,
       amount,
-      transferContent: `${displayName} ${code}`,
+      transferContent: code,
       transferCode: code,
       expectedMinutes: WALLET_BANK_INFO.expectedApprovalMinutes,
       expectedLabel: '~1–5 phút (tự động)',

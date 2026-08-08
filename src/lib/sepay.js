@@ -530,25 +530,24 @@ export async function generateVietQR({ amount, description, asDataUrl = false } 
 }
 
 /**
- * Build transfer description in low-profile format.
- * "{Full Name} GD{code}"
+ * Build transfer description — chỉ mã GD (SePay parse theo prefix).
+ * @param {string|null|undefined} _fullName unused (giữ signature cũ)
+ * @param {string} [transferCode]
  */
-export function buildTransferDescription(fullName, transferCode) {
-  const name = (fullName || 'Khach Hang').trim();
-  const code = transferCode || generateTransferCode();
-  return `${name} ${code}`;
+export function buildTransferDescription(_fullName, transferCode) {
+  const code = parseTransferCode(transferCode) || transferCode || generateTransferCode();
+  return code;
 }
 
 /**
  * Build bank transfer info block for API responses / UI.
  * @param {{ amount: number, transferCode: string, fullName?: string|null, description?: string|null }} params
  */
-export function buildSepayTransferInfo({ amount, transferCode, fullName, description }) {
+export function buildSepayTransferInfo({ amount, transferCode, description }) {
   const config = getSepayConfig();
   const code = parseTransferCode(transferCode) || transferCode;
-  const content =
-    (description && String(description).trim()) ||
-    buildTransferDescription(fullName, code);
+  const fromDesc = description ? parseTransferCode(description) : null;
+  const content = fromDesc || code;
   return {
     bankName: WALLET_BANK_INFO.bankName,
     accountNumber: config.accountNumber,
