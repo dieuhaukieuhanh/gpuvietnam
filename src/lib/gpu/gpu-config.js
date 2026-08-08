@@ -182,10 +182,11 @@ export const PROVIDER_ROUTING = {
 };
 
 /**
- * Clore GPU lines only — 5090/Studio + retired dual-4090 excluded.
+ * Clore GPU lines (Start + Host Intelligence): 3090 / 4090 / 5090.
+ * Studio/5090 uses image v4 + longer test-gate timeout; dual-4090 retired.
  * @type {ReadonlySet<string>}
  */
-export const CLORE_SUPPORTED_GPU_LINES = new Set(['rtx3090', 'rtx4090_1x']);
+export const CLORE_SUPPORTED_GPU_LINES = new Set(['rtx3090', 'rtx4090_1x', 'rtx5090_1x']);
 
 /**
  * @param {string | null | undefined} gpuLine

@@ -76,7 +76,7 @@
 | ComfyUI transparent reconnect | ✅ Update upstream giữ nguyên workUrl khi auto-replace |
 | Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
-| **Host Intelligence System** | ✅ **2026-08-06** + **Clore cycle 2026-08-08** — VPS `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. Sổ tách `vast-host:*` / `clore-host:*`. Vast: 3090/4090/5090; Clore: 3090/4090 (gpu-test). Default runtime `providers: { vast: true, clore: false }` — Clore bật qua Admin. Debt: `passRate` chưa cập nhật khi fail. **Không** trong `vercel.json`. |
+| **Host Intelligence System** | ✅ **2026-08-06** + **Clore cycle 2026-08-08** — VPS `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. Sổ tách `vast-host:*` / `clore-host:*`. Vast + Clore: 3090/4090/**5090** (gpu-test; Clore 5090 timeout gate 180s). Default runtime `providers: { vast: true, clore: false }` — Clore bật qua Admin. Debt: `passRate` chưa cập nhật khi fail. **Không** trong `vercel.json`. |
 | **Staging Environment (RC6 Verify)** | 🟡 **2026-08-05** — 4-layer precondition gate PASS; Vast readiness `PASS_HTTP_READY`; Scenario 1 FAIL (Clore provider, không phải RC6); Scenarios 2-5 BLOCKED |
 | **MakeStudio** (Train / Preview / Final) | ⏸️ **Sau MVP** — scaffold UI/API/SQL `0053`/Docker giữ; **không** ưu tiên trước Go-Live |
 | **LoRA Training** | ⏸️ **Sau MVP** (đi cùng MakeStudio) — lib/Docker/SQL có; chưa wire provision |
@@ -315,14 +315,14 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 |---------|---------|-----|------------------|
 | Starter | `rtx3090` | RTX 3090 | Clore + Vast |
 | Pro | `rtx4090_1x` | RTX 4090 | Clore + Vast |
-| Studio | `rtx5090_1x` | 1× RTX 5090 | **Vast-oriented** (Clore line không hỗ trợ 5090) |
+| Studio | `rtx5090_1x` | 1× RTX 5090 | Clore + Vast (image `:v4.x`; Clore gate timeout dài hơn) |
 
 **Routing provider (thực tế code + ops):**
 
 | Ngữ cảnh | Attempt order |
 |----------|---------------|
 | VPS lifecycle (Go-Live / P0-A) | **`GPU_VAST_ONLY=true`** → chỉ Vast |
-| `GPU_CLORE_ONLY` / worker default không allow Vast | chỉ Clore (5090 → fallback Salad→Vast) |
+| `GPU_CLORE_ONLY` / worker default không allow Vast | chỉ Clore (3090/4090/5090 qua `CLORE_SUPPORTED_GPU_LINES`) |
 | `GPU_SALAD_ONLY` | chỉ Salad |
 | Không set flag (code default) | **salad → vast → clore** |
 | `PROVIDER_ROUTING.sequence` (rotation cursor) | vast → clore → salad |

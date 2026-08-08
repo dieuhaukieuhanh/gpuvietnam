@@ -88,7 +88,7 @@ export function failoverProvider(providerId) {
 
 /**
  * Ordered attempt list: Salad → Vast → Clore failover chain (unless forced).
- * Clore is only eligible for 3090 / 4090 — never 5090/Studio.
+ * Clore eligible for 3090 / 4090 / 5090 (`CLORE_SUPPORTED_GPU_LINES` in gpu-config).
  * Set GPU_SALAD_ONLY=true to force Salad-only.
  * Set GPU_CLORE_ONLY=true to force Clore-only on supported lines.
  * Set GPU_VAST_ONLY=true to force Vast-only.

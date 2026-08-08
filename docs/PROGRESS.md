@@ -15,7 +15,7 @@
 
 | Hạng mục | Trạng thái |
 |----------|------------|
-| **Host Intelligence System** | ✅ **2026-08-06** + **vá/Clore 2026-08-08**. **Scheduler:** systemd `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. **Không** trong `vercel.json`. Sổ `vast-host:*` / `clore-host:*`. Vast: 3090/4090/5090. Clore cycle **đã wire** (Discover/Recheck/BadRetry + Admin card); default `providers.clore=false` — bật qua Admin. Available = known-good ∩ chợ. Fair deficit slots. Debt: passRate-on-fail. |
+| **Host Intelligence System** | ✅ **2026-08-06** + **vá/Clore 2026-08-08**. **Scheduler:** systemd `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. **Không** trong `vercel.json`. Sổ `vast-host:*` / `clore-host:*`. Vast + Clore: 3090/4090/**5090** (Clore 5090 gate 180s). Clore cycle **đã wire**; default `providers.clore=false` — bật qua Admin. Available = known-good ∩ chợ. Fair deficit slots. Debt: passRate-on-fail. |
 | **gpu-test HOST=0.0.0.0** | ✅ **2026-08-08** — Bake `HOST=0.0.0.0` trong `docker/test-gpu`; Hub `gpu-test:v1` digest `sha256:fd74e09b…`. ComfyUI/MakeStudio dùng `COMFYUI_LISTEN` (không đổi bake). |
 | **MakeStudio (Train / Preview / Final)** | ⏸️ **Sau MVP** — Scaffold UI + API + SQL `0053` + Docker có sẵn (`/dashboard/makestudio`). **Không** ưu tiên trước Go-Live / Staging RC6. Còn bug snake↔camel, chưa nav, chưa billing/E2E. |
 | **SePay (CK tự động)** | ✅ **2026-08-08 chốt xong** — VietQR + webhook HMAC + match nạp ví/gói/tái tục; mã CK `NVxxxx` (6 ký tự, số); SQL `0054`; cron reconcile daily Hobby; env/webhook prod đã cấu hình; **test nạp ví thật OK**. Tick “đã CK” chỉ đóng UI — không cộng tiền. Ops: [`SEPAY_SETUP.md`](operations/SEPAY_SETUP.md). |
