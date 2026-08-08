@@ -20,11 +20,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Thiếu authorization code.' });
     }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
-      return res.status(500).json({ error: 'Thiếu cấu hình Google OAuth (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).' });
+      return res.status(500).json({ error: 'Thiếu cấu hình Google OAuth. Cần NEXT_PUBLIC_GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET trên Vercel Production.' });
     }
 
     // Xác định redirect_uri: ưu tiên từ client, fallback về production
