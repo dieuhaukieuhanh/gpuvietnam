@@ -1094,7 +1094,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 
 - [ ] Cấu hình `SPEEDSMS_ACCESS_TOKEN` + QR thanh toán thật
 - [x] Custom SMTP Supabase (email hiển thị GPUVietnam) — Resend SMTP với `notify@gpuvietnam.com`
-- [ ] Email/notify Admin khi có yêu cầu CK mới
+- [x] Email/notify Admin khi có yêu cầu CK mới — API route `/api/notify/payment` + Resend
 - [ ] `server_status`: `provisioning` → `online` (hạ tầng GPU)
 - [ ] Model: nút **Dùng ngay** → mount/load ComfyUI thật
 - [ ] Workflow: upload JSON + nút **Chạy** / **Sửa** → tích hợp ComfyUI

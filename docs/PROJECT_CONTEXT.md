@@ -385,6 +385,7 @@ POST /api/user/change-environment
 - **Supabase Custom SMTP** qua Resend: `smtp.resend.com:587`, sender `GPUVietnam <notify@gpuvietnam.com>`.
 - API route `/api/notify/payment` (server-side) gửi thông báo KH mới cho admin.
 - Utility `src/lib/resend.js` — `sendEmail()`, `sendPaymentNotification()`.
+- ✅ **Verified 2026-08-08:** Production test gửi email thành công từ `notify@gpuvietnam.com` qua Resend.
 
 **Không dùng** trigger `on_auth_user_created` — profile sync trong API register (`supabase/fix-trigger.sql`).
 
