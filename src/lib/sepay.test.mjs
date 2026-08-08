@@ -11,10 +11,15 @@ import {
 import { buildDepositTransferNote, shortTransactionId } from './wallet-deposit.js';
 
 describe('parseTransferCode', () => {
-  it('extracts GD + 2 alphanumeric from transfer content', () => {
-    assert.equal(parseTransferCode('Nguyen Van A GDX7'), 'GDX7');
-    assert.equal(parseTransferCode('gdx7'), 'GDX7');
-    assert.equal(parseTransferCode('TAITUC-ABC123 GDA1'), 'GDA1');
+  it('extracts GD + 4 alphanumeric (6-char total)', () => {
+    assert.equal(parseTransferCode('Nguyen Van A GDA1B2'), 'GDA1B2');
+    assert.equal(parseTransferCode('gda1b2'), 'GDA1B2');
+    assert.equal(parseTransferCode('TAITUC-ABC123 GDA1B2'), 'GDA1B2');
+  });
+
+  it('still accepts legacy 4-char GD codes', () => {
+    assert.equal(parseTransferCode('GDX7'), 'GDX7');
+    assert.equal(parseTransferCode('Khach Hang GDA1'), 'GDA1');
   });
 
   it('returns null when format missing', () => {
@@ -24,26 +29,26 @@ describe('parseTransferCode', () => {
 });
 
 describe('wallet transfer code length parity', () => {
-  it('matches shortTransactionId used by deposit note — 4 alphanumeric chars', () => {
+  it('matches shortTransactionId used by deposit note — 6 alphanumeric chars', () => {
     const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-    assert.equal(shortTransactionId(id), 'A1');
-    assert.equal(buildDepositTransferNote(id), 'GDA1');
-    assert.equal(buildDepositTransferNote(id).length, 4);
-    assert.equal(parseTransferCode(buildDepositTransferNote(id)), 'GDA1');
+    assert.equal(shortTransactionId(id), 'A1B2');
+    assert.equal(buildDepositTransferNote(id), 'GDA1B2');
+    assert.equal(buildDepositTransferNote(id).length, 6);
+    assert.equal(parseTransferCode(buildDepositTransferNote(id)), 'GDA1B2');
   });
 });
 
 describe('buildTransferDescription / VietQR', () => {
-  it('uses only 4-char GD code (no customer name)', () => {
-    assert.equal(buildTransferDescription('Nguyen Van A', 'GDX7'), 'GDX7');
-    assert.equal(buildTransferDescription('GD64'), 'GD64');
+  it('uses only 6-char GD code (no customer name)', () => {
+    assert.equal(buildTransferDescription('Nguyen Van A', 'GDA1B2'), 'GDA1B2');
+    assert.equal(buildTransferDescription('GD64XY'), 'GD64XY');
   });
 
   it('builds qr.sepay.vn URL', () => {
-    const url = buildVietQrUrl({ amount: 100000, description: 'Nguyen Van A GDX7' });
+    const url = buildVietQrUrl({ amount: 100000, description: 'GDA1B2' });
     assert.match(url, /^https:\/\/qr\.sepay\.vn\/img\?/);
     assert.match(url, /amount=100000/);
-    assert.match(url, /des=Nguyen/);
+    assert.match(url, /des=GDA1B2/);
     assert.match(url, /template=qronly/);
   });
 });
@@ -54,12 +59,12 @@ describe('normalizeSepayListTransaction', () => {
       id: 42,
       transferAmount: 50000,
       transferType: 'in',
-      code: 'GDA1',
-      content: 'Khach Hang GDA1',
+      code: 'GDA1B2',
+      content: 'GDA1B2',
     });
     assert.equal(tx.id, 42);
     assert.equal(tx.transferAmount, 50000);
-    assert.equal(tx.code, 'GDA1');
+    assert.equal(tx.code, 'GDA1B2');
   });
 });
 
@@ -78,7 +83,7 @@ describe('verifySepayWebhook', () => {
   });
 
   it('accepts valid sha256=HMAC(timestamp.body) signature', () => {
-    const rawBody = '{"id":1,"transferAmount":100000,"code":"GDA1"}';
+    const rawBody = '{"id":1,"transferAmount":100000,"code":"GDA1B2"}';
     const timestamp = Math.floor(Date.now() / 1000);
     const signature =
       'sha256=' +

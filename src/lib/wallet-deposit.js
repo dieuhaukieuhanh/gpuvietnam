@@ -22,18 +22,27 @@ export function formatDepositDescription(amount) {
   return `Nạp ${Number(amount).toLocaleString('vi-VN')}đ qua chuyển khoản`;
 }
 
+/** Suffix length for wallet GD codes (total = GD + 4 → 6 chars). */
+const TRANSFER_CODE_SUFFIX_LEN = 4;
+
 export function buildDepositTransferNote(transactionId) {
-  const short = String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
+  const short = String(transactionId)
+    .replace(/-/g, '')
+    .slice(0, TRANSFER_CODE_SUFFIX_LEN)
+    .toUpperCase();
   return `GD${short}`;
 }
 
 export function shortTransactionId(transactionId) {
-  return String(transactionId).replace(/-/g, '').slice(0, 2).toUpperCase();
+  return String(transactionId)
+    .replace(/-/g, '')
+    .slice(0, TRANSFER_CODE_SUFFIX_LEN)
+    .toUpperCase();
 }
 
 export function buildDepositPendingResponse(transaction) {
   const amount = Number(transaction.amount);
-  // Nội dung CK = mã 4 ký tự (GD + 2), không kèm tên khách.
+  // Nội dung CK = mã 6 ký tự (GD + 4), không kèm tên khách.
   const code = buildDepositTransferNote(transaction.id);
   return {
     transaction: {

@@ -6,7 +6,7 @@
  * - processSepayWebhook(): full webhook handler (dedup → match → approve)
  * - generateVietQR(): VietQR image URL (qr.sepay.vn)
  * - listSepayTransactions(): pull missed webhooks (API v1)
- * - allocateTransferCode(): unique GD + 2 chars among pending rows
+ * - allocateTransferCode(): unique GD + 4 chars among pending rows
  */
 
 import crypto from 'node:crypto';
@@ -15,7 +15,8 @@ import { shortTransactionId, WALLET_BANK_INFO } from './wallet-deposit.js';
 // ── Config ────────────────────────────────────────────────────────
 
 export const SEPAY_PREFIX = 'GD';
-const CODE_LENGTH = 2;
+/** Suffix length → total code is GD + 4 = 6 chars (e.g. GDA1B2). */
+const CODE_LENGTH = 4;
 const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 /** Reject webhooks whose timestamp drifts more than 5 minutes (SePay anti-replay). */
 const WEBHOOK_MAX_SKEW_SEC = 300;
@@ -41,8 +42,8 @@ export function isSepayConfigured() {
 // ── Transfer code generation ──────────────────────────────────────
 
 /**
- * Generate a random transfer code: GD + 2 alphanumeric chars.
- * Example: GDX7
+ * Generate a random transfer code: GD + 4 alphanumeric chars.
+ * Example: GDA1B2
  */
 export function generateTransferCode() {
   let code = '';
@@ -54,14 +55,16 @@ export function generateTransferCode() {
 
 /**
  * Parse a Sepay-extracted code from transfer content.
- * Sepay config: prefix "GD", suffix 2 chars, alphanumeric.
+ * Prefers 6-char GDxxxx; still accepts legacy 4-char GDxx for pending rows.
  * Returns null if format doesn't match.
  */
 export function parseTransferCode(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const cleaned = raw.trim().toUpperCase();
-  const match = cleaned.match(/GD([A-Z0-9]{2})/);
-  return match ? match[0] : null;
+  const match6 = cleaned.match(/GD([A-Z0-9]{4})/);
+  if (match6) return match6[0];
+  const match4 = cleaned.match(/GD([A-Z0-9]{2})(?![A-Z0-9])/);
+  return match4 ? match4[0] : null;
 }
 
 /**
@@ -113,9 +116,18 @@ async function isTransferCodeInUse(supabaseAdmin, transferCode) {
 
   const suffix = code.slice(SEPAY_PREFIX.length);
   for (const tx of wallet.data || []) {
-    if (shortTransactionId(tx.id) === suffix) return true;
+    if (walletSuffixMatches(tx.id, suffix)) return true;
   }
   return false;
+}
+
+/** Match wallet UUID prefix against GD suffix (4-char new, 2-char legacy). */
+function walletSuffixMatches(transactionId, codeSuffix) {
+  const hex = String(transactionId).replace(/-/g, '').toUpperCase();
+  const suffix = String(codeSuffix || '').toUpperCase();
+  if (!suffix) return false;
+  if (hex.slice(0, suffix.length) === suffix) return true;
+  return shortTransactionId(transactionId) === suffix;
 }
 
 // ── HMAC verification ─────────────────────────────────────────────
@@ -183,7 +195,7 @@ async function findPendingWalletDeposit(supabaseAdmin, transferCode) {
 
   const codeSuffix = transferCode.slice(SEPAY_PREFIX.length);
   for (const tx of data) {
-    if (shortTransactionId(tx.id) === codeSuffix) {
+    if (walletSuffixMatches(tx.id, codeSuffix)) {
       return { type: 'wallet_deposit', row: tx, expectedAmount: Number(tx.amount) };
     }
   }
@@ -530,7 +542,7 @@ export async function generateVietQR({ amount, description, asDataUrl = false } 
 }
 
 /**
- * Nội dung CK = mã giao dịch 4 ký tự (GD + 2 chữ/số). Không kèm tên khách.
+ * Nội dung CK = mã giao dịch 6 ký tự (GD + 4 chữ/số). Không kèm tên khách.
  * @param {string} [transferCodeOrName]
  * @param {string} [maybeCode] nếu gọi kiểu cũ (fullName, code) thì lấy code
  */
@@ -539,10 +551,10 @@ export function buildTransferDescription(transferCodeOrName, maybeCode) {
   if (fromSecond) return fromSecond;
   const fromFirst = parseTransferCode(transferCodeOrName);
   if (fromFirst) return fromFirst;
-  if (maybeCode && /^[A-Z0-9]{4}$/i.test(String(maybeCode).trim())) {
+  if (maybeCode && /^GD[A-Z0-9]{2,4}$/i.test(String(maybeCode).trim())) {
     return String(maybeCode).trim().toUpperCase();
   }
-  if (transferCodeOrName && /^GD[A-Z0-9]{2}$/i.test(String(transferCodeOrName).trim())) {
+  if (transferCodeOrName && /^GD[A-Z0-9]{2,4}$/i.test(String(transferCodeOrName).trim())) {
     return String(transferCodeOrName).trim().toUpperCase();
   }
   return generateTransferCode();

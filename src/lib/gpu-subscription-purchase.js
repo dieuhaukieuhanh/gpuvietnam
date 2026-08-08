@@ -183,7 +183,7 @@ export async function createPendingGpuSubscription(
   const expiresAt = computeExpiresAt(pricing.validityDays);
   const now = new Date().toISOString();
 
-  // SePay auto-match: transfer_note = mã 4 ký tự (GDxx), không kèm tên.
+  // SePay auto-match: transfer_note = mã 6 ký tự (GDxxxx), không kèm tên.
   let note = typeof transferNote === 'string' ? transferNote.trim() : '';
   let transferCode = parseTransferCode(note);
   if (!transferCode) {
