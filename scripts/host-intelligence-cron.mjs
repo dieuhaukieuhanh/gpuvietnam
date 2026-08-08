@@ -198,19 +198,26 @@ async function main() {
 
   console.log(`[host-intel] Available known-good per line: 3090=${availablePerLine['rtx3090']??0} 4090=${availablePerLine['rtx4090_1x']??0} 5090=${availablePerLine['rtx5090_1x']??0} (pool total: ${summary.knownGood??0})`);
 
-  let testCount = 1 + randInt(MAX_TEST_PER_CYCLE);
-  if (belowTarget.length > 0) {
-    testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
-    console.log(`[host-intel] Pool below target: ${belowTarget.join(', ')}, testing up to ${testCount}`);
-  }
+  // Filter candidates to only GPU lines below target (don't waste money on lines already full)
+  const belowTargetSet = new Set(belowTarget);
+  const candidatesNeeded = allCandidates.filter((c) => belowTargetSet.has(c.gpuLine));
+  console.log(`[host-intel] Candidates: total=${allCandidates.length} needed=${candidatesNeeded.length} (below lines: ${belowTarget.join(', ')||'none'})`);
 
-  if (allCandidates.length === 0) {
-    console.log('[host-intel] No marketplace offers found');
+  if (belowTarget.length === 0) {
+    console.log('[host-intel] All GPU lines at or above target — skipping this cycle');
     return;
   }
 
-  // 5. Select targets
-  const targets = selectTargets(allCandidates, testCount);
+  let testCount = MAX_TEST_PER_CYCLE + randInt(MAX_TEST_BELOW_TARGET - MAX_TEST_PER_CYCLE + 1);
+  console.log(`[host-intel] Pool below target: ${belowTarget.join(', ')}, testing up to ${testCount}`);
+
+  if (candidatesNeeded.length === 0) {
+    console.log('[host-intel] No candidates available for lines below target');
+    return;
+  }
+
+  // 5. Select targets from candidates needed
+  const targets = selectTargets(candidatesNeeded, testCount);
   if (targets.length === 0) {
     console.log('[host-intel] No hosts need testing this cycle');
     return;
