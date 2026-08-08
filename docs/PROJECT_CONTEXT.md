@@ -78,7 +78,8 @@
 | Server-side boot events | ✅ Worker ghi thẳng `runtime_boot_events` |
 | Dual Run / warm pool | ❌ sau MVP / sau P0-A..D |
 | **Host Intelligence System** | ✅ **2026-08-06** + **Clore cycle 2026-08-08** — VPS `gpuvietnam-host-intel.timer` (25 phút) → `scripts/host-intelligence-cron.mjs`. Sổ tách `vast-host:*` / `clore-host:*`. Vast + Clore: 3090/4090/**5090** (gpu-test; Clore 5090 timeout gate 180s). Default runtime `providers: { vast: true, clore: false }` — Clore bật qua Admin. Debt: `passRate` chưa cập nhật khi fail. **Không** trong `vercel.json`. |
-| **Staging Environment (RC6 Verify)** | 🟡 **2026-08-05** — 4-layer precondition gate PASS; Vast readiness `PASS_HTTP_READY`; Scenario 1 FAIL (Clore provider, không phải RC6); Scenarios 2-5 BLOCKED |
+| **Staging môi trường** | ✅ **Xong** — Vercel staging + Supabase `cczqbuuuyctiqoiruxah` + `gpuvietnam-lifecycle-worker-staging` active; env switch script |
+| **RC6 Scenarios 1–5** | 🟡 Chưa VERIFIED — gate PASS; Vast `PASS_HTTP_READY`; S1 FAIL Clore (không phải RC6); chưa re-run Vast. **Park** — không chặn P0-D prod |
 | **MakeStudio** (Train / Preview / Final) | ⏸️ **Sau MVP** — scaffold UI/API/SQL `0053`/Docker giữ; **không** ưu tiên trước Go-Live |
 | **LoRA Training** | ⏸️ **Sau MVP** (đi cùng MakeStudio) — lib/Docker/SQL có; chưa wire provision |
 | **SePay (CK tự động)** | ✅ **2026-08-08 chốt xong** — VietQR + webhook HMAC + match nạp ví / mua gói / tái tục; mã CK `NVxxxx`; SQL `0054`; cron reconcile daily (Hobby); ops prod + test nạp ví thật OK; tick “đã CK” chỉ đóng UI |
@@ -698,8 +699,8 @@ Giá marketing mặc định (tham chiếu seed — **không** sửa giá live t
 ### ⏳ Đang / chờ (ưu tiên)
 
 - **Go-Live:** **P0-D** E2E khách thật
-- **Staging RC6:** Scenario 1 lại trên Vast → 2–5 → VERIFIED → promote
 - Host-intel debt: passRate-on-fail; mở Clore qua Admin *Provider routing* khi sẵn sàng
+- (Park) RC6 Scenarios — re-run S1 trên Vast khi cần verify SES-1 lại
 
 ### ❌ Chưa / sau MVP
 
@@ -754,7 +755,7 @@ npm run convert      # Tái tạo pages từ HTML gốc (thư mục cha)
 Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
 SCB 4.0 + ADR-005 freeze. Go-Live: P0-A..C ✅ → Provider routing Admin ✅ → P0-D E2E.
 Start SoT = Admin Hạ tầng provider_routing_policy (default Vast). Host Intel Vast on / Clore opt-in. Image :v3.7/:v4.4.
-Ưu tiên: P0-D + Staging RC6. SePay ✅. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool.
+Ưu tiên: P0-D. Staging môi trường ✅; RC6 Scenarios park. SePay ✅. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool.
 ```
 
 ---
@@ -795,16 +796,22 @@ Staging là môi trường test **độc lập hoàn toàn** với Production, �
 | 🟡 **Cân nhắc** | Dashboard logic, admin panel, backup flow | Thay đổi cách tính giờ hiển thị, sửa query KH |
 | 🟢 **Không cần** | CSS/copy, static pages, UI component đơn lẻ | Sửa màu, đổi chữ, thêm FAQ |
 
-**Trạng thái hiện tại (2026-08-05):**
-- 4-layer precondition gate: **PASS** (Code, Deployment, Database, Execution Infrastructure)
-- Vast readiness: **PASS_HTTP_READY**
-- Scenario 1 (Clean Start): **FAIL** — lỗi Clore Proxy Not Found, **không phải lỗi RC6**
-- Scenarios 2-5: **BLOCKED** (stop-on-fail)
+**Trạng thái (cập nhật 2026-08-09):**
+
+| Hạng mục | Status |
+|----------|--------|
+| **Môi trường Staging** (Vercel + Supabase + worker-staging + env switch) | ✅ **Xong** — đủ dùng để test an toàn |
+| Precondition gate 4 lớp | ✅ PASS |
+| Vast readiness probe | ✅ `PASS_HTTP_READY` |
+| RC6 Scenario 1 Clean Start | 🟡 FAIL lịch sử trên Clore; **chưa** re-run trên Vast |
+| RC6 Scenarios 2–5 | ⬜ chưa mở (stop-on-fail) |
+| `RC6 VERIFIED` | ❌ chưa — **park**, không chặn Go-Live P0-D trên production |
 
 **Docs liên quan:**
 - [`docs/investigations/2026-07-25-rc6-staging-environment-plan.md`](investigations/2026-07-25-rc6-staging-environment-plan.md) — Kế hoạch thiết lập
 - [`docs/verification/2026-07-25-rc6-staging-verification.md`](verification/2026-07-25-rc6-staging-verification.md) — Giao thức verify 5 scenario
 - [`docs/investigations/2026-07-26-staging-vast-readiness.md`](investigations/2026-07-26-staging-vast-readiness.md) — Probe Vast readiness
+- [`docs/investigations/2026-07-26-rc6-scenario1-clore-proxy-not-found.md`](investigations/2026-07-26-rc6-scenario1-clore-proxy-not-found.md) — S1 FAIL (Clore)
 
 ### LoRA Training (⏸️ sau MVP)
 
@@ -862,21 +869,22 @@ Nền tảng thuê GPU làm AI Art đã **chạy được phần lõi**: khách 
 - Đổi máy GPU mà tab làm việc không cần F5
 
 **Còn phải làm**
-- **P0-B T11:** chạy full proof GPU (`scripts/p0b-t11-billing-proof.mjs`) — harness + unit gate đã có; runbook [`P0B_T11_BILLING_PROOF.md`](operations/P0B_T11_BILLING_PROOF.md)
-- Cảnh báo khi hệ thống lỗi (ops) — P0-C
-- Chạy thử trọn vẹn như khách thật — P0-D
+- Chạy thử trọn vẹn như khách thật — **P0-D**
 
-**Chưa làm ngay:** chạy song song 2 GPU (Dual Run), giữ sẵn máy ấm (warm pool).
+**Đã xong thêm (Go-Live):** P0-B T11 billing ✅ · P0-C alerts ✅ · Provider routing Admin ✅
 
-### 2. Môi trường thử (Staging) trước khi đẩy Production
+**Chưa làm ngay:** Dual Run, warm pool.
+
+### 2. Môi trường thử (Staging) — ✅ môi trường xong
 
 **Đã xong**
-- Có môi trường thử tách khỏi production
-- Công cụ chuyển nhanh staging ↔ production
+- Vercel staging + Supabase staging + worker-staging active (tách production)
+- Công cụ chuyển nhanh staging ↔ production (`switch-env.ps1`)
+- Gate 4 lớp PASS; Vast readiness `PASS_HTTP_READY`
 
-**Còn phải làm**
-- Chạy lại bộ kịch bản kiểm thử (Scenario 1→5) trên Vast
-- Pass hết rồi mới đưa bản vá lên production
+**Park (không chặn Go-Live P0-D)**
+- Bộ kịch bản RC6 Scenario 1→5 chưa VERIFIED (S1 từng FAIL trên Clore; chưa re-run Vast)
+- Chỉ mở lại khi cần chứng minh SES-1 / patch RC6 trên staging
 
 ### 3. Thanh toán chuyển khoản tự động (SePay) — ✅ chốt
 
@@ -947,11 +955,11 @@ Nền tảng thuê GPU làm AI Art đã **chạy được phần lõi**: khách 
 ### Thứ tự nên làm (thực tế)
 
 1. ~~P0-A..C + Provider routing Admin~~ ✅ → **P0-D** E2E khách thật
-2. Staging RC6 — Scenario 1 trên Vast → 2–5 → VERIFIED
+2. ~~Staging môi trường~~ ✅ — RC6 Scenarios park (không chặn P0-D)
 3. ~~SePay~~ ✅ chốt
 4. ~~MakeStudio / LoRA~~ ⏸️ sau MVP
 5. Host Intelligence tinh chỉnh + Dashboard stub
 
 ---
 
-*Tài liệu cập nhật: 2026-08-09 — Provider routing Admin prod; P0-A..C ✅; P0-D tiếp theo. Chi tiết: `docs/PROGRESS.md`.*
+*Tài liệu cập nhật: 2026-08-09 — Staging môi trường ✅ tách khỏi RC6 Scenarios (park); Provider routing Admin prod; P0-D tiếp theo. Chi tiết: `docs/PROGRESS.md`.*

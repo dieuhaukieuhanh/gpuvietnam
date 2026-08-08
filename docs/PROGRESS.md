@@ -41,7 +41,8 @@
 | **ComfyUI transparent reconnect** | ✅ Update upstream_url giữ nguyên workUrl khi auto-replace — tab không cần F5 |
 | **Image v3.7 (Starter/Pro)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; ffmpeg + filmmaker scripts + frame-quality-check; 20 GB compressed; VPS active |
 | **Image v4.4 (Studio/5090)** | ✅ IPv6 dual-stack + `COMFYUI_LISTEN` env var; đầy đủ tính năng; 24 GB compressed; code default đã là v4.4 |
-| **Staging Environment Audit** | 🟡 **2026-08-05** — Đã audit toàn bộ trạng thái: 4-layer gate PASS, Vast readiness `PASS_HTTP_READY`, Scenario 1 FAIL (Clore provider — không phải RC6), 2-5 BLOCKED. Đã tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1`. `.env.local` đã khôi phục về Production. |
+| **Staging môi trường** | ✅ **Xong** — Vercel staging + Supabase `cczqbuuuyctiqoiruxah` + worker-staging **active**; `.env.staging`/`.env.production` + `switch-env.ps1`. |
+| **RC6 Scenarios 1–5** | 🟡 Chưa VERIFIED — gate PASS; Vast `PASS_HTTP_READY`; S1 FAIL Clore (không phải RC6); chưa re-run Vast. **Park** — không chặn P0-D. |
 | **LoRA Training** | ⏸️ **Sau MVP** (đi cùng MakeStudio) — lib + Docker + SQL có; API chưa wire `startLoraTraining`; SQL chưa manifest. |
 | **Environment Switching** | ✅ **2026-08-05** — `.env.staging` / `.env.production` + `scripts/switch-env.ps1` |
 | **Auth Refactor — Email First** | ✅ **2026-08-08** — Email chính, SĐT phụ (Dashboard). Disposable blocklist 150+. Rollback upsert → không orphan Auth user. |
@@ -77,7 +78,7 @@
 
 > **Go-Live ngay:** P0-D E2E khách.  
 > **Đã xong nền:** P0-A..C ✅, Provider routing Admin ✅ (prod), session continuity, auto-replace, filmmaker, Host Intel, Auth email-first/Google/Zalo, SePay.  
-> **Staging RC6:** Scenario 1 trên Vast → 2–5 → VERIFIED → promote.  
+> **Staging môi trường:** ✅ xong. **RC6 Scenarios:** 🟡 park — re-run Scenario 1 Vast khi cần; không chặn P0-D.  
 > **SePay:** ✅ **chốt xong** (code + ops + test nạp ví thật; mã `NVxxxx`).  
 > **MakeStudio / LoRA:** ⏸️ **sau MVP** — scaffold giữ, không làm tiếp trước Go-Live.  
 > **Host Intelligence:** Debt passRate-on-fail; đánh giá bật Clore (`providers.clore`); ổn định pool known-good available.  
@@ -1140,10 +1141,13 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 - [x] Provider routing Admin (Hạ tầng SoT) — prod 2026-08-09 ([`PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md))
 - [ ] P0-D E2E khách thật
 
-**Ưu tiên — Staging & RC6:**
-- [x] Audit Staging + env switch (2026-08-05)
-- [ ] Scenario 1 Clean Start trên Vast
-- [ ] Scenarios 2–5 → `RC6 VERIFIED` → promote Production
+**Staging môi trường — ✅ xong:**
+- [x] Vercel staging + Supabase staging + `gpuvietnam-lifecycle-worker-staging` active
+- [x] Env switch + audit 2026-08-05; gate 4 lớp PASS; Vast readiness `PASS_HTTP_READY`
+
+**RC6 Scenarios (park — không chặn P0-D):**
+- [ ] Scenario 1 Clean Start re-run trên **Vast** (lịch sử FAIL Clore Proxy Not Found)
+- [ ] Scenarios 2–5 → `RC6 VERIFIED` (khi cần verify SES-1 lại)
 
 **Ưu tiên — SePay:** ✅ **chốt xong**
 - [x] Lib + QR + webhook + SQL `0054` + WalletDepositForm QR
@@ -1180,7 +1184,8 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | **P0-C** alerts | ✅ email (Resend) — 5 event → `dieuhaukieuhanh@gmail.com` |
 | Provider routing Admin | ✅ **Prod** 2026-08-09 — SoT Hạ tầng (`0056`); Vercel `dbfe602` Ready; VPS policy từ Supabase |
 | **P0-D** E2E khách | ⬜ |
-| Staging RC6 Scenarios 1–5 | 🟡 gate/Vast ready; Scenario 1 chưa PASS trên Vast |
+| Staging môi trường | ✅ Vercel + Supabase + worker-staging active + env switch |
+| RC6 Scenarios 1–5 | 🟡 chưa VERIFIED (S1 Clore FAIL lịch sử; chưa re-run Vast) — park, không chặn P0-D |
 
 Chi tiết worker: [`docs/operations/LIFECYCLE_WORKER.md`](operations/LIFECYCLE_WORKER.md).  
 Roadmap dễ hiểu: [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--đang-ở-đâu-còn-làm-gì).
@@ -1272,7 +1277,7 @@ Roadmap dễ hiểu: [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--
 Tiếp tục GPUVietnam. Đọc docs/PROJECT_CONTEXT.md + docs/PROGRESS.md + docs/operations/LIFECYCLE_WORKER.md.
 SCB 4.0 + ADR-005 freeze. Go-Live: P0-A..C ✅ → Provider routing Admin ✅ → P0-D E2E.
 Start SoT = Admin Hạ tầng provider_routing_policy (default Vast). Host Intel Vast on / Clore opt-in. Image :v3.7 / :v4.4.
-Ưu tiên: P0-D + Staging RC6. SePay ✅ chốt. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool trừ owner mở.
+Ưu tiên: P0-D. Staging môi trường ✅; RC6 Scenarios park. SePay ✅. MakeStudio/LoRA ⏸️ sau MVP. Không Dual Run/warm pool trừ owner mở.
 Roadmap dễ hiểu: PROJECT_CONTEXT §21.
 ```
 
