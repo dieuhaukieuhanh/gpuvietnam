@@ -9,6 +9,10 @@ User=root
 WorkingDirectory=/opt/gpuvietnam
 ExecStart=/usr/bin/node --import ./scripts/register-src-alias.mjs scripts/host-intelligence-cron.mjs
 Environment=NODE_ENV=production
-EnvironmentFile=-/opt/gpuvietnam/.env.production
+Environment=HOME=/opt/gpuvietnam/tmp
+Environment=XDG_CACHE_HOME=/opt/gpuvietnam/tmp/cache
+Environment=TMPDIR=/tmp
+EnvironmentFile=-/etc/gpuvietnam/lifecycle.env
+Environment=GPUVIETNAM_PUBLIC_API_URL=https://gpuvietnam.com
 StandardOutput=journal
 StandardError=journal
