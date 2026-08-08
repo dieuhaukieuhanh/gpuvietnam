@@ -57,6 +57,7 @@
 |----------|------------|
 | Next.js app (marketing + auth + checkout + dashboard + admin) | ✅ Production (`gpuvietnam.com`) |
 | **Auth Hardening (P0+P1+P2)** | ✅ **2026-08-02** — Rate limit, JWT middleware, secure cookie/headers, anti-enumeration, OTP lock, password strength, audit log, sign-out all |
+| **Auth Refactor — Email First + Google OAuth** | ✅ **2026-08-08** — Email là chính, SĐT là phụ. Google OAuth trực tiếp (không qua Supabase redirect). Zalo ZNS OTP. Chặn email rác 150+ domain. |
 | Supabase Auth + migrations (kể cả P0-A 0049 + auth-audit-log 0052) | ✅ |
 | Ví Nạp Trước, mua gói, tái tục, trial 3h | ✅ |
 | GPUService + Vast + Clore + **Salad** (backup) adapters | ✅ |

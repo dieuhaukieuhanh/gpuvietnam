@@ -37,6 +37,10 @@
 | **Staging Environment Audit** | 🟡 **2026-08-05** — Đã audit toàn bộ trạng thái: 4-layer gate PASS, Vast readiness `PASS_HTTP_READY`, Scenario 1 FAIL (Clore provider — không phải RC6), 2-5 BLOCKED. Đã tạo `.env.staging` + `.env.production` + script `scripts/switch-env.ps1`. `.env.local` đã khôi phục về Production. |
 | **LoRA Training** | 🟡 **WIP (2026-08-04)** — `src/lib/lora-train/` + SQL + `docker/lora-train/` đã có; 3 file API route (`[id].js`, `download.js`, `create.js`) đang viết dở: import `@/lib/supabase-route-client.js` chưa tồn tại, sai auth pattern. File untracked — build sẽ fail. |
 | **Environment Switching** | ✅ **2026-08-05** — 2 file môi trường `.env.staging` / `.env.production` + script `scripts/switch-env.ps1` |
+| **Auth Refactor — Email First** | ✅ **2026-08-08** — Email là chính (bắt buộc), SĐT là phụ (thêm sau trong Dashboard). Xác thực email qua Supabase verification. Chặn 150+ domain email rác (mailinator, yopmail...). Mật khẩu tự tạo hiển thị 1 lần cho user copy. Rollback nếu upsert thất bại → không orphan user. |
+| **Google OAuth** | ✅ **2026-08-08** — Đăng ký/đăng nhập 1 click qua Google, consent screen hiển thị `gpuvietnam.com` (OAuth trực tiếp, không qua Supabase redirect). Trigger DB auto tạo `public.users`. Callback page + API code exchange. |
+| **Zalo ZNS OTP** | ✅ **2026-08-08** — Gửi OTP qua Zalo Notification Service trước, fallback SMS Speedsms. Tách OTP khỏi flow đăng ký: SĐT xác thực trong Dashboard để mở khóa nhận khuyến mại tự động. Admin luôn có quyền override cộng KM thủ công. |
+| **Auth Docs Update** | ✅ **2026-08-08** — Cập nhật PROGRESS.md + PROJECT_CONTEXT.md phản ánh flow auth mới |
 
 ## Thay đổi gần đây (2026-07)
 
@@ -374,13 +378,16 @@ VAST_SSH_PRIVATE_KEY_PATH=C:/Users/Lenovo/.ssh/id_rsa
 
 **Redirect admin:** Tài khoản `role = admin` sau đăng nhập → `/admin` (API login trả `redirect`). Menu header Admin riêng (không Dashboard/Cài đặt/Bộ nhớ KH). Lib: `post-login-redirect.ts`, `user-role.js` (`syncUserRoleOnLogin`, `ADMIN_EMAILS`), `GET /api/auth/me`.
 
-## Luồng Auth ✅ (Hardened 2026-08-02)
+## Luồng Auth ✅ (Refactored 2026-08-08)
 
 ```
-/register → POST /api/register → /verify-otp → POST /api/otp/verify → session
-/login → POST /api/auth/login → redirect /admin (admin) hoặc /dashboard (user)
+/register → POST /api/register → email verify → login → /dashboard
+                  └─ Google OAuth → /auth/google-callback → /dashboard (1 click)
+/login → POST /api/auth/login → redirect /admin hoặc /dashboard
 /quen-mat-khau → POST /api/auth/forgot-password → email reset
 /dat-lai-mat-khau → đặt mật khẩu mới (link từ email)
+
+SĐT: Dashboard Cài đặt → Thêm SĐT → OTP Zalo/SMS → mở khóa khuyến mại
 ```
 
 ### Hardening (2026-08-02)
