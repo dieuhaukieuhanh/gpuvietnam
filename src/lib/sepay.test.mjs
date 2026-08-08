@@ -42,6 +42,7 @@ describe('buildTransferDescription / VietQR', () => {
     assert.match(url, /^https:\/\/qr\.sepay\.vn\/img\?/);
     assert.match(url, /amount=100000/);
     assert.match(url, /des=Nguyen/);
+    assert.match(url, /template=qronly/);
   });
 });
 

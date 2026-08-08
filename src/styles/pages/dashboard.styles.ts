@@ -665,9 +665,10 @@ export const styles = `:root {
         }
         .wallet-deposit-pending-main {
             display: grid;
-            grid-template-columns: 108px minmax(0, 1fr);
-            gap: 10px;
+            grid-template-columns: 168px minmax(0, 1fr);
+            gap: 12px;
             margin-bottom: 10px;
+            align-items: stretch;
         }
         .wallet-deposit-pending-qr {
             display: flex;
@@ -675,15 +676,26 @@ export const styles = `:root {
             align-items: center;
             justify-content: center;
             gap: 4px;
-            min-height: 108px;
-            padding: 8px;
-            background: var(--bg-secondary);
-            border: 1px dashed var(--border);
+            width: 168px;
+            min-height: 168px;
+            max-height: 200px;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid var(--border);
             border-radius: var(--radius-md);
             font-size: 10px;
             color: var(--text-secondary);
             text-align: center;
             line-height: 1.3;
+            overflow: hidden;
+        }
+        .wallet-deposit-pending-qr-img {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-width: 148px;
+            max-height: 148px;
+            object-fit: contain;
         }
         .wallet-deposit-pending-qr-icon {
             font-size: 22px;
@@ -787,9 +799,17 @@ export const styles = `:root {
                 grid-template-columns: 1fr;
             }
             .wallet-deposit-pending-qr {
-                min-height: 64px;
-                flex-direction: row;
+                width: 100%;
+                max-width: 220px;
+                min-height: 180px;
+                max-height: 220px;
+                margin: 0 auto;
+                flex-direction: column;
                 justify-content: center;
+            }
+            .wallet-deposit-pending-qr-img {
+                max-width: 160px;
+                max-height: 160px;
             }
             .wallet-deposit-pending-foot {
                 flex-direction: column;

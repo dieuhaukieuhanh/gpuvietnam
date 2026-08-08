@@ -479,7 +479,8 @@ export function buildVietQrUrl({ amount, description } = {}) {
     bank: config.bankCode,
     amount: String(Math.max(0, Math.floor(Number(amount) || 0))),
     des: String(description || '').slice(0, 100),
-    template: 'compact',
+    // qronly = chỉ mã QR (không banner SePay/NH cao) — fit modal nạp ví
+    template: 'qronly',
   });
   return `https://qr.sepay.vn/img?${params.toString()}`;
 }
