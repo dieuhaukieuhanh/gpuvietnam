@@ -363,8 +363,9 @@ export default async function handler(req, res) {
           target_state: 'running',
           env: {
             [`-p ${comfyPort}:${comfyPort}`]: '1',
+            HOST: '0.0.0.0',    // IPv4 — Vast hosts may not have IPv6
+            PORT: String(comfyPort),
             COMFYUI_PORT: String(comfyPort),
-            COMFYUI_LISTEN: '0.0.0.0',
           },
         };
 
