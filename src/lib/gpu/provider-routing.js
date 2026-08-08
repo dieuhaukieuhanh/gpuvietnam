@@ -14,6 +14,11 @@ import {
   decideRetryPolicy,
   shouldRetryAnotherProvider,
 } from '../provider-retry-policy/index.js';
+import {
+  getProviderRoutingPolicySync,
+  loadProviderRoutingPolicyAsync,
+  isProviderEnabledInPolicy,
+} from './provider-routing-policy.js';
 
 /** @type {number} */
 let routingCursor = 0;
@@ -29,13 +34,14 @@ export function isEnvFlagTrue(name) {
 }
 
 /**
- * Provider-only routing flags.
+ * Emergency env overrides (ops break-glass).
+ * Normal routing uses Admin `provider_routing_policy` (Hạ tầng tab).
  *
- * Priority: GPU_VAST_ONLY > GPU_CLORE_ONLY > GPU_SALAD_ONLY > lifecycle worker defaults.
+ * Priority when set: GPU_VAST_ONLY > GPU_CLORE_ONLY > GPU_SALAD_ONLY > Admin policy.
  */
 
 /**
- * Salad-only routing:
+ * Salad-only routing (emergency env):
  * - GPU_SALAD_ONLY=true → always
  */
 export function isSaladOnlyMode() {
@@ -43,24 +49,23 @@ export function isSaladOnlyMode() {
 }
 
 /**
- * Clore-only routing:
- * - GPU_CLORE_ONLY=true → always
- * - Lifecycle worker (VPS) → Clore-only by default unless GPU_ALLOW_VAST=true
- *   (prevents silent Vast disk-only rents when env/CRLF drops the flag)
+ * Clore-only routing (emergency env only).
+ * Lifecycle-worker default Clore-only removed — Admin policy is SoT.
  */
 export function isCloreOnlyMode() {
-  // Explicit Vast/Salad-only wins over lifecycle-worker Clore default.
   if (isEnvFlagTrue('GPU_VAST_ONLY') || isEnvFlagTrue('GPU_SALAD_ONLY')) {
     return false;
   }
-  if (isEnvFlagTrue('GPU_CLORE_ONLY')) return true;
-  if (
-    process.env.GPUVIETNAM_LIFECYCLE_WORKER === '1' &&
-    !isEnvFlagTrue('GPU_ALLOW_VAST')
-  ) {
-    return true;
-  }
-  return false;
+  return isEnvFlagTrue('GPU_CLORE_ONLY');
+}
+
+/** @returns {boolean} */
+export function hasEmergencyProviderEnv() {
+  return (
+    isEnvFlagTrue('GPU_VAST_ONLY') ||
+    isEnvFlagTrue('GPU_CLORE_ONLY') ||
+    isEnvFlagTrue('GPU_SALAD_ONLY')
+  );
 }
 
 /**
@@ -87,12 +92,15 @@ export function failoverProvider(providerId) {
 }
 
 /**
- * Ordered attempt list: Salad → Vast → Clore failover chain (unless forced).
- * Clore eligible for 3090 / 4090 / 5090 (`CLORE_SUPPORTED_GPU_LINES` in gpu-config).
- * Set GPU_SALAD_ONLY=true to force Salad-only.
- * Set GPU_CLORE_ONLY=true to force Clore-only on supported lines.
- * Set GPU_VAST_ONLY=true to force Vast-only.
- * @param {'clore'|'vast'|'salad'|string | { forcedPrimary?: string; gpuLine?: string | null }} [forcedPrimaryOrOptions]
+ * Ordered attempt list for a NEW rent (Start / replace rent).
+ *
+ * 1) Emergency env (GPU_*_ONLY) if set
+ * 2) Else Admin provider_routing_policy (enable + priority)
+ * 3) Clore filtered when gpuLine not in CLORE_SUPPORTED_GPU_LINES
+ *
+ * Does not affect machines already running.
+ *
+ * @param {'clore'|'vast'|'salad'|string | { forcedPrimary?: string; gpuLine?: string | null; policy?: import('./provider-routing-policy.js').ProviderRoutingPolicy }} [forcedPrimaryOrOptions]
  * @param {{ gpuLine?: string | null }} [maybeOptions]
  * @returns {Array<'clore'|'vast'|'salad'>}
  */
@@ -101,6 +109,8 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
   let forcedPrimary;
   /** @type {string | null | undefined} */
   let gpuLine;
+  /** @type {import('./provider-routing-policy.js').ProviderRoutingPolicy | undefined} */
+  let policyOverride;
   if (
     forcedPrimaryOrOptions &&
     typeof forcedPrimaryOrOptions === 'object' &&
@@ -108,6 +118,7 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
   ) {
     forcedPrimary = forcedPrimaryOrOptions.forcedPrimary;
     gpuLine = forcedPrimaryOrOptions.gpuLine;
+    policyOverride = forcedPrimaryOrOptions.policy;
   } else {
     forcedPrimary = /** @type {string|undefined} */ (forcedPrimaryOrOptions);
     gpuLine = maybeOptions?.gpuLine;
@@ -116,20 +127,19 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
   const cloreAllowed = isCloreGpuLineSupported(gpuLine);
 
   /** @param {Array<'clore'|'vast'|'salad'>} order */
-  const filterOrder = (order) => {
+  const dropUnsupportedClore = (order) => {
     if (cloreAllowed) return order;
-    const filtered = order.filter((p) => p !== 'clore');
-    return filtered.length ? filtered : ['salad', 'vast'];
+    return order.filter((p) => p !== 'clore');
   };
 
-  // Explicit provider-only modes.
+  // ── Emergency env break-glass ──
   if (isEnvFlagTrue('GPU_SALAD_ONLY')) {
     return ['salad'];
   }
   if (isEnvFlagTrue('GPU_VAST_ONLY')) {
     return ['vast'];
   }
-  if (isCloreOnlyMode()) {
+  if (isEnvFlagTrue('GPU_CLORE_ONLY')) {
     if (!cloreAllowed) {
       logger('provider').warn(
         {
@@ -137,12 +147,18 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
           gpuLine: gpuLine != null ? String(gpuLine) : null,
           phase: 'SKIP',
         },
-        'Clore-only ignored for unsupported Clore gpuLine; using Salad→Vast',
+        'GPU_CLORE_ONLY ignored for unsupported Clore gpuLine; using Vast',
       );
-      return ['salad', 'vast'];
+      return ['vast'];
     }
     return ['clore'];
   }
+
+  // ── Admin policy SoT ──
+  const policy = policyOverride ?? getProviderRoutingPolicySync();
+  let order = policy.priority.filter((p) => isProviderEnabledInPolicy(policy, p));
+  order = dropUnsupportedClore(order);
+
   if (forcedPrimary === 'clore' || forcedPrimary === 'vast' || forcedPrimary === 'salad') {
     if (forcedPrimary === 'clore' && !cloreAllowed) {
       logger('provider').warn(
@@ -151,14 +167,36 @@ export function resolveProviderAttemptOrder(forcedPrimaryOrOptions, maybeOptions
           gpuLine: gpuLine != null ? String(gpuLine) : null,
           phase: 'SKIP',
         },
-        'forceProvider=clore ignored for unsupported Clore gpuLine; using Salad→Vast',
+        'forceProvider=clore ignored for unsupported Clore gpuLine',
       );
-      return ['salad', 'vast'];
+    } else if (isProviderEnabledInPolicy(policy, forcedPrimary) || hasEmergencyProviderEnv()) {
+      const rest = order.filter((p) => p !== forcedPrimary);
+      order = dropUnsupportedClore([/** @type {'clore'|'vast'|'salad'} */ (forcedPrimary), ...rest]);
     }
-    return filterOrder([forcedPrimary, failoverProvider(forcedPrimary)]);
   }
-  // Default: Salad primary (cheapest, largest supply), Vast failover, Clore backup.
-  return filterOrder(['salad', 'vast', 'clore']);
+
+  if (order.length === 0) {
+    logger('provider').warn(
+      { operation: 'provider.routing', phase: 'EMPTY' },
+      'No providers enabled in policy — falling back to Vast',
+    );
+    return ['vast'];
+  }
+  return order;
+}
+
+/**
+ * Refresh policy cache then resolve (call at Start / new rent).
+ * @param {{ forcedPrimary?: string; gpuLine?: string | null }} [options]
+ * @returns {Promise<Array<'clore'|'vast'|'salad'>>}
+ */
+export async function resolveProviderAttemptOrderAsync(options = {}) {
+  const policy = await loadProviderRoutingPolicyAsync();
+  return resolveProviderAttemptOrder({
+    forcedPrimary: options.forcedPrimary,
+    gpuLine: options.gpuLine,
+    policy,
+  });
 }
 
 /**

@@ -1166,6 +1166,7 @@ Bước 2 — Thông tin chuyển khoản (modal rộng 640px, bố cục ngang,
 | **P0-A** Vast-only (`GPU_VAST_ONLY` + `GPU_ALLOW_VAST`) + smoke Phase F.2 | ✅ **7/7 PASS** |
 | **P0-B** T11 billing E2E | ✅ **PASS** 2026-08-08 — `tmp/p0b-t11-1786206245215.json` |
 | **P0-C** alerts | ✅ email (Resend) — 5 event → `dieuhaukieuhanh@gmail.com` |
+| Provider routing Admin | ✅ Hạ tầng SoT (`provider_routing_policy` / 0056) — NEW Start only |
 | **P0-D** E2E khách | ⬜ |
 | Staging RC6 Scenarios 1–5 | 🟡 gate/Vast ready; Scenario 1 chưa PASS trên Vast |
 
@@ -1174,6 +1175,7 @@ Roadmap dễ hiểu: [`PROJECT_CONTEXT.md` §21](PROJECT_CONTEXT.md#21-roadmap--
 
 ## Đã xong (gần đây)
 
+- [x] **Provider routing Admin (Hạ tầng)** — SoT bật/tắt + priority Vast/Clore/Salad cho **Start mới**; không cắt phiên đang chạy; migration `0056`; API `/api/admin/provider-routing-policy`; env `GPU_*_ONLY` vẫn break-glass. Docs: [`PROVIDER_ROUTING_POLICY.md`](operations/PROVIDER_ROUTING_POLICY.md)
 - [x] **Auth Hardening P0+P1+P2 (2026-08-02)** — Rate limit 5 endpoints + OTP lock/cooldown/single-use; Middleware JWT verify (Web Crypto HS256); Secure cookie + Security headers (HSTS/CSP/X-Frame/nosniff); Anti-enumeration login; Fix `phone_verified` reset; Password strength client+server + confirm password; Session invalidation on password change; `pending_login_password` TTL 1h; Audit log `auth_audit_log`; Sign-out all devices
 - [x] **P0-A code path** — enqueue `user_start_provision` + VPS `scripts/lifecycle-worker.mjs` + systemd unit; bỏ fire-and-forget provision trên serverless
 - [x] **VPS Clore-only chốt** — `Environment=GPU_CLORE_ONLY=true` trên unit + verify environ (2026-07-24)

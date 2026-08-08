@@ -205,68 +205,73 @@ describe('provider-routing', () => {
     resetProviderRoutingCursor(0);
   });
 
-  it('rotates Vast x4 then Clore', () => {
+  it('cycles PROVIDER_ROUTING.sequence (legacy cursor; Start uses Admin policy)', () => {
     const seq = Array.from({ length: 5 }, () => nextProviderInRotation());
-    assert.deepEqual(seq, ['vast', 'vast', 'vast', 'vast', 'clore']);
+    assert.deepEqual(seq, ['vast', 'clore', 'salad', 'vast', 'clore']);
   });
 
   it('failsover to the other provider', () => {
     assert.equal(failoverProvider('clore'), 'vast');
     assert.equal(failoverProvider('vast'), 'clore');
-    assert.deepEqual(resolveProviderAttemptOrder('vast'), ['vast', 'clore']);
-    assert.deepEqual(resolveProviderAttemptOrder(), ['vast', 'clore']);
   });
 
-  it('excludes Clore for 5090/Studio even when CLORE_ONLY or forced', () => {
-    assert.deepEqual(
-      resolveProviderAttemptOrder({ gpuLine: 'rtx5090_1x' }),
-      ['vast'],
-    );
-    assert.deepEqual(
-      resolveProviderAttemptOrder({ forcedPrimary: 'clore', gpuLine: 'rtx5090_1x' }),
-      ['vast'],
-    );
-    assert.deepEqual(
-      resolveProviderAttemptOrder({ gpuLine: 'rtx3090' }),
-      ['vast', 'clore'],
-    );
-    assert.deepEqual(
-      resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
-      ['vast', 'clore'],
-    );
+  it('Admin policy + emergency env; Clore includes 5090 when enabled', () => {
     const prev = process.env.GPU_CLORE_ONLY;
     const prevWorker = process.env.GPUVIETNAM_LIFECYCLE_WORKER;
     const prevAllowVast = process.env.GPU_ALLOW_VAST;
     const prevVastOnly = process.env.GPU_VAST_ONLY;
+    const prevSalad = process.env.GPU_SALAD_ONLY;
     try {
-      process.env.GPU_CLORE_ONLY = 'true';
+      delete process.env.GPU_CLORE_ONLY;
+      delete process.env.GPU_VAST_ONLY;
+      delete process.env.GPU_SALAD_ONLY;
+      delete process.env.GPUVIETNAM_LIFECYCLE_WORKER;
+      delete process.env.GPU_ALLOW_VAST;
+
+      const both = {
+        providers: { vast: true, clore: true, salad: false },
+        priority: ['vast', 'clore', 'salad'],
+      };
       assert.deepEqual(
-        resolveProviderAttemptOrder({ gpuLine: 'rtx5090_1x' }),
+        resolveProviderAttemptOrder({ gpuLine: 'rtx5090_1x', policy: both }),
+        ['vast', 'clore'],
+      );
+      assert.deepEqual(
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x', policy: both }),
+        ['vast', 'clore'],
+      );
+
+      // Default file/cache policy is Vast-only when no inject — use explicit policy.
+      const vastOnly = {
+        providers: { vast: true, clore: false, salad: false },
+        priority: ['vast', 'clore', 'salad'],
+      };
+      assert.deepEqual(
+        resolveProviderAttemptOrder({ gpuLine: 'rtx3090', policy: vastOnly }),
         ['vast'],
       );
+
+      process.env.GPU_CLORE_ONLY = 'true';
       assert.deepEqual(
-        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
+        resolveProviderAttemptOrder({ gpuLine: 'rtx5090_1x', policy: both }),
         ['clore'],
       );
-      // Windows CRLF on EnvironmentFile must not disable Clore-only.
       process.env.GPU_CLORE_ONLY = 'true\r';
       assert.deepEqual(
-        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x', policy: both }),
         ['clore'],
       );
-      // Lifecycle worker defaults to Clore-only even without GPU_CLORE_ONLY.
+      // Lifecycle worker alone no longer forces Clore (Admin policy is SoT).
       delete process.env.GPU_CLORE_ONLY;
-      delete process.env.GPU_ALLOW_VAST;
       process.env.GPUVIETNAM_LIFECYCLE_WORKER = '1';
       assert.deepEqual(
-        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
-        ['clore'],
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x', policy: both }),
+        ['vast', 'clore'],
       );
-      // Explicit Vast-only probe beats Clore-only + lifecycle default.
       process.env.GPU_CLORE_ONLY = 'true';
       process.env.GPU_VAST_ONLY = 'true';
       assert.deepEqual(
-        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x' }),
+        resolveProviderAttemptOrder({ gpuLine: 'rtx4090_1x', policy: both }),
         ['vast'],
       );
     } finally {
@@ -278,6 +283,8 @@ describe('provider-routing', () => {
       else process.env.GPU_ALLOW_VAST = prevAllowVast;
       if (prevVastOnly === undefined) delete process.env.GPU_VAST_ONLY;
       else process.env.GPU_VAST_ONLY = prevVastOnly;
+      if (prevSalad === undefined) delete process.env.GPU_SALAD_ONLY;
+      else process.env.GPU_SALAD_ONLY = prevSalad;
     }
   });
 

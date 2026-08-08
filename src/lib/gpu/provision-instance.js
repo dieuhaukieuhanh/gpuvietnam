@@ -14,9 +14,10 @@ import {
 } from './provider-abstraction/index.js';
 import {
   provisionWithProviderFailover,
-  resolveProviderAttemptOrder,
+  resolveProviderAttemptOrderAsync,
   isCloreOnlyMode,
   isSaladOnlyMode,
+  isEnvFlagTrue,
 } from './provider-routing.js';
 import { CloreClient } from './providers/clore/clore-client.js';
 import { logger } from '../logging/index.js';
@@ -65,12 +66,15 @@ export async function provisionGpuInstance(_gpuService, params) {
 
   const cloreClient = new CloreClient();
 
+  // Policy refresh at NEW rent boundary (does not touch running sessions).
+  const attemptOrder = await resolveProviderAttemptOrderAsync({
+    forcedPrimary: params.forceProvider,
+    gpuLine: params.gpuLine,
+  });
+
   return provisionWithProviderFailover({
     gpuLine: params.gpuLine,
-    attemptOrder: resolveProviderAttemptOrder({
-      forcedPrimary: params.forceProvider,
-      gpuLine: params.gpuLine,
-    }),
+    attemptOrder,
     isConfigured(providerId) {
       if (providerId === 'salad') {
         return Boolean((process.env.SALAD_API_KEY ?? '').trim()) &&
@@ -81,13 +85,21 @@ export async function provisionGpuInstance(_gpuService, params) {
         return cloreClient.isConfigured() && isCloreGpuLineSupported(params.gpuLine);
       }
       if (providerId === 'vast') {
-        if (isCloreOnlyMode() || isSaladOnlyMode()) return false;
+        // Emergency env only — Admin policy already filtered attemptOrder.
+        if (isSaladOnlyMode()) return false;
+        if (isCloreOnlyMode() && !isEnvFlagTrue('GPU_VAST_ONLY')) return false;
         return Boolean((process.env.VAST_AI_KEY ?? process.env.VAST_API_KEY ?? '').trim());
       }
       return false;
     },
     async createWithProvider(providerId) {
-      if (providerId === 'vast' && (isCloreOnlyMode() || isSaladOnlyMode())) {
+      if (providerId === 'vast' && isSaladOnlyMode()) {
+        throw new GPUProviderError('Provider-only mode: refusing Vast provision', {
+          retryable: false,
+          code: 'PROVIDER_ONLY_REFUSE_VAST',
+        });
+      }
+      if (providerId === 'vast' && isCloreOnlyMode() && !isEnvFlagTrue('GPU_VAST_ONLY')) {
         throw new GPUProviderError('Provider-only mode: refusing Vast provision', {
           retryable: false,
           code: 'PROVIDER_ONLY_REFUSE_VAST',
@@ -110,9 +122,10 @@ export async function provisionGpuInstance(_gpuService, params) {
           gpuLine: createParams.gpuLine,
           image,
           diskGb: diskSize,
+          attemptOrder,
           cloreOnly: isCloreOnlyMode(),
         },
-        `provider=${providerId} plan=${createParams.plan} gpu=${createParams.gpuLine} image=${image} disk=${diskSize}GB`,
+        `provider=${providerId} plan=${createParams.plan} gpu=${createParams.gpuLine} image=${image} disk=${diskSize}GB order=${attemptOrder.join('>')}`,
       );
       return adapter.createMachine(createParams);
     },

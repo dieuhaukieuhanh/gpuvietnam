@@ -558,6 +558,14 @@
       "depends_on": [
         "0051"
       ]
+    },
+    {
+      "id": "0056",
+      "file": "supabase/provider-routing-policy.sql",
+      "category": "migration",
+      "description": "Admin Hạ tầng: provider_routing_policy SoT (enable + priority for NEW rents)",
+      "idempotent": true,
+      "depends_on": []
     }
   ],
   "seeds": [

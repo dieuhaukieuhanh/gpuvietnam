@@ -5,6 +5,8 @@ import AdminAuthGate from '@/components/admin/AdminAuthGate';
 import AdminInfrastructurePanel from '@/components/admin/AdminInfrastructurePanel';
 import AdminReconciliationPanel from '@/components/admin/AdminReconciliationPanel';
 import AdminHostIntelligencePanel from '@/components/admin/AdminHostIntelligencePanel';
+import AdminHostIntelligenceClorePanel from '@/components/admin/AdminHostIntelligenceClorePanel';
+import AdminProviderRoutingPanel from '@/components/admin/AdminProviderRoutingPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdminMobileShell } from '@/hooks/useAdminMobileShell';
 import {
@@ -163,9 +165,11 @@ export default function AdminInfrastructurePage() {
           </header>
 
           <div className="content">
+            <AdminProviderRoutingPanel />
+            <AdminHostIntelligencePanel />
+            <AdminHostIntelligenceClorePanel />
             <AdminInfrastructurePanel />
             <AdminReconciliationPanel />
-            <AdminHostIntelligencePanel />
           </div>
         </div>
         </div>

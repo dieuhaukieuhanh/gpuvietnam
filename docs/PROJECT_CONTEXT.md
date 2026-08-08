@@ -46,7 +46,7 @@
 | **Mô hình kinh doanh** | Resell GPU marketplace + giá trị gia tăng (workflow, hỗ trợ, thanh toán VN) |
 | **Đối tượng chính** | Freelancer AI Art (~60%), sinh viên/người mới (~25%), agency nhỏ (~15%) |
 | **Điểm khác biệt (mục tiêu)** | Workspace/workflow không phụ thuộc một GPU; failover compute; thanh toán VN |
-| **Backend GPU thực tế** | Adapter **Vast + Clore + Salad**. **Ops P0-A / VPS worker:** `GPU_VAST_ONLY=true` (+ `GPU_ALLOW_VAST=true`). **Code default** (không set flag): attempt order `salad → vast → clore`; `PROVIDER_ROUTING.sequence` = `vast → clore → salad`. Thuê theo giờ khi KH bật máy |
+| **Backend GPU thực tế** | Adapter **Vast + Clore + Salad**. **SoT Start:** Admin Hạ tầng `provider_routing_policy` (default Vast-only). Env `GPU_*_ONLY` = break-glass. Clore hỗ trợ 3090/4090/5090. Thuê theo giờ khi KH bật máy |
 | **Control Plane** | `gpuvietnam.com` (Vercel Next) — session, billing, enqueue start |
 | **Lifecycle worker** | VPS Linux always-on (`gpuvietnam-lifecycle-worker`) — claim/execute `user_start_provision` |
 
@@ -101,7 +101,7 @@
 | **OAuth** | Google OAuth trực tiếp (`google-oauth.js`) — consent `gpuvietnam.com` |
 | **Thanh toán CK** | SePay VietQR + webhook auto-approve ✅ + Admin duyệt thủ công (fallback) |
 | **Backup storage** | Cloudflare R2 qua `@aws-sdk/client-s3` |
-| **GPU backend** | Vast + Clore + Salad adapters; **P0-A VPS:** `GPU_VAST_ONLY=true` + `GPU_ALLOW_VAST=true` |
+| **GPU backend** | Vast + Clore + Salad; Start order từ Admin Hạ tầng (`provider_routing_policy`); `GPU_*_ONLY` = break-glass |
 | **Lifecycle worker** | VPS systemd → `scripts/lifecycle-worker.mjs` (claim `machine_operations`) |
 | **ComfyUI image** | Docker Hub `:v3.7` (Starter/Pro) + `:v4.4` (Studio/5090); port **8080**; listen qua `COMFYUI_LISTEN` |
 | **Host-intel test image** | `dieuhaukieuhanh/gpu-test:v1` (~200–300MB); bake/default `HOST=0.0.0.0` (Vast IPv4) |
@@ -321,7 +321,7 @@ Xác thực: `AdminAuthGate` — Bearer role `admin` hoặc header `x-admin-secr
 
 | Ngữ cảnh | Attempt order |
 |----------|---------------|
-| VPS lifecycle (Go-Live / P0-A) | **`GPU_VAST_ONLY=true`** → chỉ Vast |
+| VPS lifecycle Start routing | Admin `provider_routing_policy` (default Vast-only); unset `GPU_VAST_ONLY` để Admin điều khiển |
 | `GPU_CLORE_ONLY` / worker default không allow Vast | chỉ Clore (3090/4090/5090 qua `CLORE_SUPPORTED_GPU_LINES`) |
 | `GPU_SALAD_ONLY` | chỉ Salad |
 | Không set flag (code default) | **salad → vast → clore** |
@@ -359,7 +359,7 @@ POST /api/user/start-machine
 → claim subscription / idempotency single-start
 → enqueue machine_operations (user_start_provision) → 200 { operationId }
 → VPS lifecycle-worker: lease + heartbeat + provision
-→ provider order: GPU_VAST_ONLY=true → Vast only (prod P0-A)
+→ provider order: Admin policy (default Vast) unless emergency GPU_*_ONLY
 → rent + L2 gate (HTTP/Comfy) → machines row
 → UI poll /api/machines/status + provision-progress
 → Comfy traffic-ready → op completed + billing anchor
