@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | Channel | **Email** (Resend) |
-| To | `OPS_ALERT_EMAIL` (default `dieuhaukieuhanh@gmail.com`, fallback `ADMIN_NOTIFY_EMAIL`) |
+| To | `OPS_ALERT_EMAIL` (default `dieuhaukieuhanh@gmail.com`) |
 | From | `GPUVietnam <notify@gpuvietnam.com>` |
 
 Discord/Slack webhook có thể thêm sau; hiện tại chỉ email.
